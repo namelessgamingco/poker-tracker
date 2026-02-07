@@ -1,104 +1,163 @@
-# supabase_client.py — per-session anon client + cached service-role admin client
+# supabase_client.py — Supabase Connection Client
+# Handles both regular (anon) and admin (service role) connections
+
 from __future__ import annotations
 
 import os
-import streamlit as st
+from typing import Optional
 
+import streamlit as st
 from supabase import create_client, Client
 
-# ---- client options import (version-proof) ----
-try:
-    # newer supabase-py versions
-    from supabase.lib.client_options import ClientOptions as _ClientOptions
-except Exception:
-    _ClientOptions = None  # type: ignore
 
+# ---------- Secret/Env Helpers ----------
 
-class SupabaseConfigError(RuntimeError):
-    pass
-
-
-def _get_secret(name: str, default: str | None = None) -> str | None:
+def _get_secret(name: str, default=None):
+    """Read from env var or Streamlit secrets."""
     v = os.getenv(name)
     if v:
         return v
     try:
         if name in st.secrets:
-            v2 = st.secrets[name]
-            if v2:
-                return str(v2)
+            return st.secrets[name]
     except Exception:
         pass
     return default
 
 
-def _env() -> str:
-    return (_get_secret("APP_ENV", "prod") or "prod").lower().strip()
+def _get_app_env() -> str:
+    """Get current environment (dev or prod)."""
+    return str(_get_secret("APP_ENV", "prod")).lower().strip()
 
 
-def _cfg():
-    env = _env()
+# ---------- Connection URLs and Keys ----------
 
+def _get_supabase_url() -> str:
+    """Get Supabase URL based on environment."""
+    env = _get_app_env()
     if env == "dev":
-        url = _get_secret("SUPABASE_URL_DEV")
-        anon = _get_secret("SUPABASE_ANON_KEY_DEV")
-        svc = _get_secret("SUPABASE_SERVICE_ROLE_KEY_DEV") or _get_secret("SUPABASE_SERVICE_ROLE_KEY")
-    else:
-        url = _get_secret("SUPABASE_URL_PROD")
-        anon = _get_secret("SUPABASE_ANON_KEY_PROD")
-        svc = _get_secret("SUPABASE_SERVICE_ROLE_KEY_PROD") or _get_secret("SUPABASE_SERVICE_ROLE_KEY")
-
-    if not url or not anon:
-        raise SupabaseConfigError(
-            "Missing Supabase credentials. Need SUPABASE_URL_* and SUPABASE_ANON_KEY_* for active APP_ENV."
-        )
-
-    return env, url, anon, svc
+        return str(_get_secret("SUPABASE_URL_DEV") or "")
+    return str(_get_secret("SUPABASE_URL_PROD") or "")
 
 
-def _make_client(url: str, key: str) -> Client:
-    """
-    We are NOT using the SDK's local persistence/refresh.
-    Auth is handled by our own cookies + GoTrue refresh flow.
-    """
-    if _ClientOptions is None:
-        # Older supabase-py: no client options available
-        return create_client(url, key)
+def _get_supabase_anon_key() -> str:
+    """Get Supabase anon key based on environment."""
+    env = _get_app_env()
+    if env == "dev":
+        return str(_get_secret("SUPABASE_ANON_KEY_DEV") or "")
+    return str(_get_secret("SUPABASE_ANON_KEY_PROD") or "")
 
-    opts = _ClientOptions(
-        persist_session=False,
-        auto_refresh_token=False,
-    )
-    return create_client(url, key, options=opts)  # type: ignore[arg-type]
+
+def _get_supabase_service_role_key() -> str:
+    """Get Supabase service role key based on environment."""
+    env = _get_app_env()
+    if env == "dev":
+        return str(_get_secret("SUPABASE_SERVICE_ROLE_KEY_DEV") or "")
+    return str(_get_secret("SUPABASE_SERVICE_ROLE_KEY_PROD") or "")
+
+
+# ---------- Client Instances ----------
+
+# Module-level cache for clients
+_supabase_client: Optional[Client] = None
+_supabase_admin_client: Optional[Client] = None
 
 
 def get_supabase() -> Client:
-    """Per-Streamlit-session ANON client (RLS enforced)."""
-    if st.session_state.get("supabase_client_anon") is not None:
-        return st.session_state.supabase_client_anon
-
-    _, url, anon, _ = _cfg()
-    st.session_state.supabase_client_anon = _make_client(url, anon)
-    return st.session_state.supabase_client_anon
+    """
+    Get the regular Supabase client (uses anon key).
+    
+    This client respects Row Level Security (RLS).
+    Use for normal user operations.
+    """
+    global _supabase_client
+    
+    if _supabase_client is None:
+        url = _get_supabase_url()
+        key = _get_supabase_anon_key()
+        
+        if not url or not key:
+            raise RuntimeError(
+                "Supabase not configured. "
+                "Set SUPABASE_URL_PROD/DEV and SUPABASE_ANON_KEY_PROD/DEV in secrets."
+            )
+        
+        _supabase_client = create_client(url, key)
+    
+    return _supabase_client
 
 
 def get_supabase_admin() -> Client:
-    """Cached SERVICE ROLE client (bypasses RLS)."""
-    if st.session_state.get("supabase_client_admin") is not None:
-        return st.session_state.supabase_client_admin
+    """
+    Get the admin Supabase client (uses service role key).
+    
+    This client BYPASSES Row Level Security (RLS).
+    Use only for admin operations like:
+    - Creating users
+    - Managing profiles across all users
+    - Webhook handlers
+    """
+    global _supabase_admin_client
+    
+    if _supabase_admin_client is None:
+        url = _get_supabase_url()
+        key = _get_supabase_service_role_key()
+        
+        if not url or not key:
+            raise RuntimeError(
+                "Supabase admin not configured. "
+                "Set SUPABASE_SERVICE_ROLE_KEY_PROD/DEV in secrets."
+            )
+        
+        _supabase_admin_client = create_client(url, key)
+    
+    return _supabase_admin_client
 
-    _, url, _, svc = _cfg()
-    if not svc:
-        raise SupabaseConfigError(
-            "Missing service role key. Provide SUPABASE_SERVICE_ROLE_KEY_DEV/PROD (or SUPABASE_SERVICE_ROLE_KEY)."
-        )
-
-    st.session_state.supabase_client_admin = _make_client(url, svc)
-    return st.session_state.supabase_client_admin
 
 def reset_supabase_client():
     """
-    Force creation of a new anon client on next get_supabase() call.
-    Call this after login to ensure no stale auth state bleeds between users.
+    Reset the cached Supabase client.
+    
+    Call this when:
+    - User logs out (clear session binding)
+    - Switching environments
+    - After auth errors
     """
-    st.session_state.pop("supabase_client_anon", None)
+    global _supabase_client
+    _supabase_client = None
+
+
+def reset_supabase_admin_client():
+    """Reset the cached admin client."""
+    global _supabase_admin_client
+    _supabase_admin_client = None
+
+
+# ---------- Connection Test ----------
+
+def test_connection() -> dict:
+    """
+    Test the Supabase connection.
+    
+    Returns dict with connection status and details.
+    Useful for System Health page.
+    """
+    result = {
+        "env": _get_app_env(),
+        "url_configured": bool(_get_supabase_url()),
+        "anon_key_configured": bool(_get_supabase_anon_key()),
+        "service_role_configured": bool(_get_supabase_service_role_key()),
+        "connection_ok": False,
+        "error": None,
+    }
+    
+    try:
+        client = get_supabase()
+        # Try a simple query to verify connection
+        response = client.table("poker_stakes_reference").select("stakes_label").limit(1).execute()
+        result["connection_ok"] = True
+        result["test_query"] = "poker_stakes_reference OK"
+    except Exception as e:
+        result["error"] = str(e)
+    
+    return result

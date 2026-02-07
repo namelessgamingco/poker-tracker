@@ -1,1460 +1,1376 @@
-# db.py — persistence helpers for profiles + tracks + track_state + track_events
+# db.py — Database Operations for Poker Decision App
+# All Supabase queries and mutations
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, List
-import datetime as dt
-import json  # needed to decode jsonb coming back as strings
-
 import os
+from typing import Optional, List, Dict, Any
+from datetime import datetime, timezone, timedelta
+from decimal import Decimal
 
-import time
-import httpx
+import streamlit as st
 
 from supabase_client import get_supabase, get_supabase_admin
 
-# =========================
-# Admin / Service-role client (bypasses RLS)
-# Single source of truth: supabase_client.get_supabase_admin()
-# =========================
 
-def _admin_required():
-    """
-    Returns the service-role Supabase client (bypasses RLS).
-    This is required for admin operations like create/delete users, list profiles, etc.
-    """
-    sb = get_supabase_admin()
-    if sb is None:
-        raise RuntimeError(
-            "Admin client not configured. Add SUPABASE_SERVICE_ROLE_KEY_* to secrets "
-            "for the active APP_ENV (dev/prod)."
-        )
-    return sb
-
-def _sid(x: Any) -> str:
-    """Safe id normalize (uuid.UUID -> str, None -> '')."""
-    if x is None:
-        return ""
-    try:
-        return str(x)
-    except Exception:
-        return ""
+# ---------- Helpers ----------
 
 def _now_iso() -> str:
-    return dt.datetime.now(dt.timezone.utc).isoformat()
+    """Get current UTC timestamp in ISO format."""
+    return datetime.now(timezone.utc).isoformat()
 
-def _execute_with_retry(q, *, tries: int = 3, base_sleep: float = 0.2):
-    """
-    Retry wrapper for transient PostgREST/httpx read/connect hiccups (common on Streamlit Cloud).
-    q must be a PostgREST query object that supports .execute().
-    """
-    last_err = None
-    for attempt in range(tries):
-        try:
-            return q.execute()
-        except (httpx.ReadError, httpx.ConnectError, httpx.TimeoutException) as e:
-            last_err = e
-            time.sleep(base_sleep * (2 ** attempt))  # 0.2, 0.4, 0.8
-    raise last_err  # bubble after retries
 
-# --- PST day key helper (canonical) ---
-def _pst_today_key() -> str:
+def _get_secret(name: str, default=None):
+    """Read from env var or Streamlit secrets."""
+    v = os.getenv(name)
+    if v:
+        return v
     try:
-        from zoneinfo import ZoneInfo
-        tz = ZoneInfo("America/Los_Angeles")
-        return dt.datetime.now(tz).strftime("%Y-%m-%d")
-    except Exception:
-        # fallback: utc date (not ideal, but better than crashing)
-        return dt.datetime.utcnow().strftime("%Y-%m-%d")
-
-# ---------- USERS (profiles) ----------
-
-def get_or_create_user(auth_id: str, email: str) -> Dict[str, Any]:
-    sb = get_supabase()
-
-    if not auth_id:
-        raise RuntimeError("Missing auth_id (supabase user id). Refusing to map user.")
-
-    email = (email or "").strip().lower()
-    if not email:
-        raise RuntimeError("Missing email. Refusing to create profile without email.")
-
-    # ✅ Look up by auth user id (profiles.user_id)
-    res = (
-        sb.table("profiles")
-        .select("*")
-        .eq("user_id", auth_id)
-        .maybe_single()
-        .execute()
-    )
-    row = res.data
-
-    if not row:
-        payload = {
-            "user_id": auth_id,
-            "email": email,
-            "role": "player",
-            "is_active": True,
-            "is_admin": False,
-            "allowed": True,
-        }
-
-        # Try anon first
-        try:
-            insert_res = sb.table("profiles").insert(payload).execute()
-            if insert_res.data:
-                row = insert_res.data[0]
-            else:
-                raise RuntimeError("Anon insert returned no data.")
-        except Exception:
-            # Fallback: service-role bypasses RLS
-            admin = _admin_required()
-            insert_res = admin.table("profiles").insert(payload).execute()
-            if not insert_res.data:
-                raise RuntimeError("Failed to insert profile row in 'profiles' (admin fallback).")
-            row = insert_res.data[0]
-
-    role = row.get("role", "player")
-    is_active = bool(row.get("is_active", True))
-
-    return {
-        "user_id": row.get("user_id"),
-        "email": row.get("email"),
-        "role": role,
-        "is_active": is_active,
-        "is_admin": bool(role == "admin" or row.get("is_admin")),
-        "allowed": row.get("allowed", True),
-    }
-
-def ensure_profile(auth_id: str, email: str) -> Dict[str, Any]:
-    """
-    Canonical helper used by app.py and pages:
-    Ensures a profiles row exists for this Supabase auth user id.
-    """
-    return get_or_create_user(auth_id=auth_id, email=email)
-
-# =========================
-# ADMIN READ HELPERS (service-role, RLS bypass)
-# =========================
-
-def get_tracks_for_user_admin(user_id: str) -> List[Dict[str, Any]]:
-    sb = _admin_required()
-    user_id = _sid(user_id)
-    if not user_id:
-        return []
-    q = (
-        sb.table("tracks")
-        .select("*")
-        .eq("user_id", user_id)
-        .order("created_at", desc=False)
-    )
-    res = _execute_with_retry(q)
-    return list(res.data or [])
-
-
-def load_track_state_admin(user_id: str, track_id: str) -> Dict[str, Any]:
-    admin = _admin_required()
-    user_id = _sid(user_id)
-    track_id = _sid(track_id)
-    if not user_id or not track_id:
-        return {}
-
-    try:
-        res = (
-            admin.table("track_state")
-            .select(
-                "engine_state_json,week_state_json,sessions_today,lines_in_session,updated_at,week_number,week_pl"
-            )
-            .eq("user_id", user_id)
-            .eq("track_id", track_id)
-            .limit(1)
-            .execute()
-        )
-
-        rows = getattr(res, "data", None) or []
-        if not rows:
-            return {}
-
-        row = rows[0] or {}
-
-        raw_engine = row.get("engine_state_json") or {}
-        raw_week   = row.get("week_state_json") or {}
-
-        if isinstance(raw_engine, str):
-            try:
-                raw_engine = json.loads(raw_engine)
-            except Exception:
-                raw_engine = {}
-        if isinstance(raw_week, str):
-            try:
-                raw_week = json.loads(raw_week)
-            except Exception:
-                raw_week = {}
-
-        return {
-            "engine": raw_engine if isinstance(raw_engine, dict) else {},
-            "week": raw_week if isinstance(raw_week, dict) else {},
-            "sessions_today": row.get("sessions_today", 0) or 0,
-            "lines_in_session": row.get("lines_in_session", 0) or 0,
-            "updated_at": row.get("updated_at"),
-            "week_number": row.get("week_number"),
-            "week_pl": row.get("week_pl"),
-        }
-
-    except Exception as e:
-        print(f"[db] load_track_state_admin error user={user_id} track={track_id}: {e!r}")
-        return {}
-
-# ---------- TRACKS ----------
-
-def get_tracks_for_user(user_id: str) -> List[Dict[str, Any]]:
-    sb = get_supabase()
-    user_id = _sid(user_id)
-    if not user_id:
-        return []
-
-    q = (
-        sb.table("tracks")
-        .select("*")
-        .eq("user_id", user_id)
-        .order("created_at", desc=False)
-    )
-    res = _execute_with_retry(q)
-    tracks = res.data or []
-
-    # Seed track_state so Overview/Snapshot works even before Tracker loads
-    for t in tracks:
-        tid = _sid(t.get("id"))
-        if not tid:
-            continue
-        try:
-            ensure_track_state(user_id, tid)
-        except Exception:
-            pass
-
-    return tracks
-
-def create_track_for_user(user_id: str, name: str) -> Dict[str, Any]:
-    sb = get_supabase()
-
-    insert_res = sb.table("tracks").insert(
-        {"user_id": user_id, "track_label": name}
-    ).execute()
-
-    if not insert_res.data:
-        raise RuntimeError("Failed to insert track row in 'tracks' table.")
-
-    new_track = insert_res.data[0]
-
-    # ✅ Seed track_state so Overview works immediately
-    try:
-        ensure_track_state(user_id, str(new_track["id"]))
-    except Exception as e:
-        print(f"[create_track_for_user] ensure_track_state failed: {e!r}")
-
-    return new_track
-
-def _user_owns_track(sb, user_id: str, track_id: str) -> bool:
-    user_id = _sid(user_id)
-    track_id = _sid(track_id)
-    if not user_id or not track_id:
-        return False
-
-    try:
-        tr = (
-            sb.table("tracks")
-            .select("id")
-            .eq("id", track_id)
-            .eq("user_id", user_id)
-            .limit(1)
-            .execute()
-        )
-        return bool(tr.data)
-    except Exception:
-        return False
-
-# ---------- TRACK STATE (engine + week + cadence counters) ----------
-
-def ensure_track_state(user_id: str, track_id: str) -> None:
-    sb = get_supabase()
-    user_id = _sid(user_id)
-    track_id = _sid(track_id)
-    if not user_id or not track_id:
-        return
-
-    if not _user_owns_track(sb, user_id, track_id):
-        print(f"[ensure_track_state] blocked: track_id={track_id} not owned by user_id={user_id}")
-        return
-
-    # existence check
-    try:
-        existing = (
-            sb.table("track_state")
-            .select("track_id")  # safer than "id"
-            .eq("user_id", user_id)
-            .eq("track_id", track_id)
-            .limit(1)
-            .execute()
-        )
-        if existing.data:
-            return
-    except Exception as e:
-        print(f"[ensure_track_state] existence check failed track_id={track_id}: {e!r}")
-
-    # insert seed row (minimal week defaults)
-    seed_week = {
-        "week_number": 1,
-        "week_pl": 0.0,
-        "cap_target": 0,
-        "closed": False,
-        "closed_reason": "",
-        "green_mode": False,
-        "red_mode": False,
-        "defensive_mode": False,
-        "stabilizer_active": False,
-    }
-
-    # --- NEW: seed a real default engine/week so Snapshot works before Tracker ---
-    seed_engine: Dict[str, Any] = {}
-    seed_week_state: Dict[str, Any] = seed_week
-
-    try:
-        from track_manager import TrackBundle  # safe: track_manager does not import db
-
-        b = TrackBundle(unit_value=1.0)
-        exported = b.export_state() or {}
-        seed_engine = exported.get("engine") or {}
-        seed_week_state = exported.get("week") or seed_week
-    except Exception as e:
-        print(f"[ensure_track_state] TrackBundle seed fallback used: {e!r}")
-        seed_engine = {}
-        seed_week_state = seed_week
-
-    payload = {
-        "user_id": user_id,
-        "track_id": track_id,
-        "engine_state_json": seed_engine,
-        "week_state_json": seed_week_state,
-        "sessions_today": 0,
-        "lines_in_session": 0,
-        "day_key": _pst_today_key(),
-
-        # summary columns (keep aligned with week_state_json)
-        "week_number": int(seed_week_state.get("week_number", 1) or 1),
-        "week_pl": float(seed_week_state.get("week_pl", 0.0) or 0.0),
-        "cap_target": int(seed_week_state.get("cap_target", 0) or 0),
-        "week_closed": bool(seed_week_state.get("closed", False)),
-        "week_closed_reason": str(seed_week_state.get("closed_reason", "") or ""),
-        "green_mode": bool(seed_week_state.get("green_mode", False)),
-        "red_mode": bool(seed_week_state.get("red_mode", False)),
-        "defensive_mode": bool(seed_week_state.get("defensive_mode", False)),
-        "stabilizer_active": bool(seed_week_state.get("stabilizer_active", False)),
-
-        "updated_at": _now_iso(),
-    }
-
-    try:
-        sb.table("track_state").insert(payload).execute()
-    except Exception as e:
-        msg = str(e).lower()
-        if "duplicate" in msg or "conflict" in msg or "23505" in msg:
-            return
-        print(f"[ensure_track_state] insert failed for track_id={track_id}: {e!r}")
-
-def save_track_state(user_id: str, track_id: str, bundle_state: Dict[str, Any]) -> None:
-    sb = get_supabase()
-    user_id = _sid(user_id)
-    track_id = _sid(track_id)
-
-    if not user_id or not track_id or not isinstance(bundle_state, dict):
-        print(f"[save_track_state] invalid args user_id={user_id} track_id={track_id} type(bundle_state)={type(bundle_state)}")
-        return
-
-    if not _user_owns_track(sb, user_id, track_id):
-        print(f"[save_track_state] blocked: track_id={track_id} not owned by user_id={user_id}")
-        return
-
-    week = bundle_state.get("week", {}) or {}
-
-    payload = {
-        "user_id": user_id,
-        "track_id": track_id,
-
-        "engine_state_json": bundle_state.get("engine", {}) or {},
-        "week_state_json": week,
-
-        "sessions_today": int(bundle_state.get("sessions_today", 0) or 0),
-        "lines_in_session": int(bundle_state.get("lines_in_session", 0) or 0),
-        "day_key": str(bundle_state.get("day_key") or _pst_today_key()),
-
-        "week_number": int(week.get("week_number", 1) or 1),
-        "week_pl": float(week.get("week_pl", 0.0) or 0.0),
-        "cap_target": int(week.get("cap_target", 0) or 0),
-        "week_closed": bool(week.get("closed", False)),
-        "week_closed_reason": str(week.get("closed_reason", "") or ""),
-        "green_mode": bool(week.get("green_mode", False)),
-        "red_mode": bool(week.get("red_mode", False)),
-        "defensive_mode": bool(week.get("defensive_mode", False)),
-        "stabilizer_active": bool(week.get("stabilizer_active", False)),
-
-        "updated_at": _now_iso(),
-    }
-
-    try:
-        # ✅ real upsert by (user_id, track_id)
-        sb.table("track_state").upsert(
-            payload,
-            on_conflict="user_id,track_id",
-        ).execute()
-    except Exception as e:
-        print(f"[save_track_state] error while saving track_id={track_id}: {e!r}")
-
-def load_track_state(user_id: str, track_id: str) -> Optional[Dict[str, Any]]:
-    sb = get_supabase()
-    user_id = _sid(user_id)
-    track_id = _sid(track_id)
-
-    if not user_id or not track_id:
-        return None
-
-    # Ownership guard
-    if not _user_owns_track(sb, user_id, track_id):
-        print(f"[load_track_state] blocked: track_id={track_id} not owned by user_id={user_id}")
-        return None
-
-    try:
-        res = (
-            sb.table("track_state")
-            .select("*")
-            .eq("track_id", track_id)
-            .eq("user_id", user_id)
-            .order("updated_at", desc=True)
-            .limit(1)
-            .execute()
-        )
-    except Exception as e:
-        print(f"[load_track_state] error for track_id={track_id}: {e!r}")
-        return None
-
-    # If missing, seed once and retry once (THIS fixes snapshot needing tracker)
-    if not res.data:
-        ensure_track_state(user_id, track_id)
-        try:
-            res = (
-                sb.table("track_state")
-                .select("*")
-                .eq("track_id", track_id)
-                .eq("user_id", user_id)
-                .order("updated_at", desc=True)
-                .limit(1)
-                .execute()
-            )
-        except Exception as e:
-            print(f"[load_track_state] retry error for track_id={track_id}: {e!r}")
-            return None
-
-    if not res.data:
-        return None
-
-    row = res.data[0]
-
-    # ✅ Canonical midnight reset (PST) — DB source of truth
-    try:
-        today_key = _pst_today_key()
-        row_day_key = str(row.get("day_key") or "")
-
-        if row_day_key != today_key:
-            # reset counters in DB
-            sb.table("track_state").update({
-                "day_key": today_key,
-                "sessions_today": 0,
-                "lines_in_session": 0,
-                "updated_at": _now_iso(),
-            }).eq("user_id", user_id).eq("track_id", track_id).execute()
-
-            # also reset the in-memory row we return
-            row["day_key"] = today_key
-            row["sessions_today"] = 0
-            row["lines_in_session"] = 0
-    except Exception as e:
-        print(f"[load_track_state] day_key reset check suppressed: {e!r}")
-
-    raw_engine = row.get("engine_state_json") or {}
-    raw_week = row.get("week_state_json") or {}
-
-    if isinstance(raw_engine, str):
-        try:
-            raw_engine = json.loads(raw_engine)
-        except Exception:
-            print("[load_track_state] failed to json.loads(engine_state_json); using empty dict.")
-            raw_engine = {}
-
-    if isinstance(raw_week, str):
-        try:
-            raw_week = json.loads(raw_week)
-        except Exception:
-            print("[load_track_state] failed to json.loads(week_state_json); using empty dict.")
-            raw_week = {}
-
-    # --- NEW: legacy reseed if this track_state was created with empty engine/week ---
-    try:
-        engine_empty = (not isinstance(raw_engine, dict)) or (len(raw_engine) == 0)
-        week_empty = (not isinstance(raw_week, dict)) or (len(raw_week) == 0)
-
-        if engine_empty or week_empty:
-            from track_manager import TrackBundle
-
-            b = TrackBundle(unit_value=1.0)
-            exported = b.export_state() or {}
-
-            if engine_empty:
-                raw_engine = exported.get("engine") or {}
-            if week_empty:
-                raw_week = exported.get("week") or raw_week
-
-            save_track_state(
-                user_id,
-                track_id,
-                {
-                    "engine": raw_engine,
-                    "week": raw_week,
-                    "sessions_today": row.get("sessions_today", 0),
-                    "lines_in_session": row.get("lines_in_session", 0),
-                },
-            )
-    except Exception as e:
-        print(f"[load_track_state] legacy reseed failed: {e!r}")
-
-# --- NEW: hydrate week_pl from session_results so Snapshot works without Tracker ---
-    try:
-        week_number = int(raw_week.get("week_number") or row.get("week_number") or 1)
-        booked_data = get_week_pl_booked(user_id, track_id, week_number)
-        # Handle both dict (new) and float (legacy) return types
-        if isinstance(booked_data, dict):
-            raw_week["week_pl"] = float(booked_data.get("units", 0.0))
-        else:
-            raw_week["week_pl"] = float(booked_data or 0.0)
-    except Exception as e:
-        print(f"[load_track_state] week_pl hydrate failed: {e!r}")
-
-    return {
-        "engine": raw_engine,
-        "week": raw_week,
-        "sessions_today": row.get("sessions_today", 0),
-        "lines_in_session": row.get("lines_in_session", 0),
-        "day_key": row.get("day_key"),
-    }
-
-# ---------- TRACK EVENTS (Event Feed) ----------
-
-def log_track_event(user_id: str, track_id: str, kind: str, title: str, body: str, ts: Optional[str] = None) -> None:
-    """
-    Append a single major event for a track into track_events, and hard-prune
-    older rows so we only keep ~50 per track.
-
-    kind ∈ { "line", "session", "week", "defensive", "optimizer" } (and future variants)
-    """
-    sb = get_supabase()
-
-    # normalize ids
-    user_id = _sid(user_id)
-    track_id = _sid(track_id)
-
-    # ✅ Ownership guard (prevents writing events to someone else's track)
-    if not user_id or not track_id:
-        return
-    if not _user_owns_track(sb, user_id, track_id):
-        print(f"[log_track_event] blocked: track_id={track_id} not owned by user_id={user_id}")
-        return
-
-    if ts is None:
-        ts = _now_iso()
-
-    payload = {
-        "track_id": track_id,
-        "kind": kind,
-        "title": title,
-        "body": body,
-        "ts": ts,
-    }
-
-    try:
-        sb.table("track_events").insert(payload).execute()
-    except Exception as e:
-        print(f"[log_track_event] insert failed for track_id={track_id}: {e!r}")
-        return
-
-    # Hard-prune: keep ONLY the most recent ~50 rows per track
-    try:
-        while True:
-            old = (
-                sb.table("track_events")
-                .select("id")
-                .eq("track_id", track_id)
-                .order("ts", desc=True)
-                .offset(50)   # skip the newest 50
-                .limit(500)   # grab older rows to delete in chunks
-                .execute()
-            )
-            if not old.data:
-                break
-
-            old_ids = [row["id"] for row in old.data if "id" in row]
-            if not old_ids:
-                break
-
-            sb.table("track_events").delete().in_("id", old_ids).execute()
-
-            # If fewer than 500 came back, we just cleared everything beyond 50
-            if len(old.data) < 500:
-                break
-    except Exception as e:
-        print(f"[log_track_event] prune failed for track_id={track_id}: {e!r}")
-
-
-def fetch_track_events(user_id: str, track_id: str, limit: int = 50) -> List[Dict[str, Any]]:
-    """
-    Fetch the most recent N events for a given track, newest first.
-    """
-    sb = get_supabase()
-
-    # normalize ids
-    user_id = _sid(user_id)
-    track_id = _sid(track_id)
-
-    # ✅ Ownership guard (prevents data bleed)
-    if not user_id or not track_id:
-        return []
-
-    if not _user_owns_track(sb, user_id, track_id):
-        print(f"[fetch_track_events] blocked: track_id={track_id} not owned by user_id={user_id}")
-        return []
-
-    try:
-        res = (
-            sb.table("track_events")
-            .select("*")
-            .eq("track_id", track_id)
-            .order("ts", desc=True)
-            .limit(limit)
-            .execute()
-        )
-    except Exception as e:
-        print(f"[fetch_track_events] error for track_id={track_id}: {e!r}")
-        return []
-
-    return res.data or []
-
-# ---------- HAND OUTCOMES (Live + Testing) ----------
-
-def log_hand_outcome(
-    user_id: str,
-    track_id: str,
-    week_number: int,
-    session_index: int,
-    hand_index: int,
-    delta_units: float,
-    outcome: str,
-    ts: Optional[str] = None,
-    unit_value: Optional[float] = None,
-):
-    """
-    Log a single hand outcome (Win / Loss / Tie), fully session-scoped.
-    """
-    sb = get_supabase()
-
-    if ts is None:
-        ts = _now_iso()
-
-    from streamlit import session_state as ss
-    is_test = bool(ss.get("testing_mode", False))
-
-    # ✅ Get unit_value from session state if not provided
-    if unit_value is None:
-        try:
-            from streamlit import session_state as ss
-            unit_value = float(ss.get("unit_value", 1.0))
-        except Exception:
-            unit_value = 1.0
-
-    payload = {
-        "user_id": user_id,
-        "track_id": track_id,
-        "week_number": int(week_number),
-        "session_index": int(session_index),
-        "hand_index": int(hand_index),
-        "delta_units": float(delta_units),
-        "outcome": outcome,   # 'W', 'L', or 'T'
-        "is_test": is_test,
-        "ts": ts,
-        "unit_value": float(unit_value),
-    }
-
-    try:
-        sb.table("hand_outcomes").insert(payload).execute()
-    except Exception as e:
-        print(f"[log_hand_outcome] insert failed: {e!r}")
-
-# ---------- LINE EVENTS (Live only) ----------
-
-def log_line_event(
-    user_id: str,
-    track_id: str,
-    week_number: int,
-    session_index: int,
-    reason: str,
-    ts: Optional[str] = None,
-    line_duration_sec: Optional[float] = None,
-    unit_value: Optional[float] = None,
-) -> None:
-    """
-    Persist a single line-close event into line_events.
-    """
-    sb = get_supabase()
-
-    if ts is None:
-        ts = _now_iso()
-
-    from streamlit import session_state as ss
-    is_test = bool(ss.get("testing_mode", False))
-
-    # ✅ Get unit_value from session state if not provided
-    if unit_value is None:
-        try:
-            from streamlit import session_state as ss
-            unit_value = float(ss.get("unit_value", 1.0))
-        except Exception:
-            unit_value = 1.0
-
-    payload = {
-        "user_id": user_id,
-        "track_id": track_id,
-        "week_number": int(week_number),
-        "session_index": int(session_index),
-        "reason": reason,
-        "is_test": is_test,
-        "created_at": ts,
-        "unit_value": float(unit_value),
-    }
-
-    if line_duration_sec is not None:
-        try:
-            payload["line_duration_sec"] = float(line_duration_sec)
-        except Exception:
-            pass
-
-    try:
-        sb.table("line_events").insert(payload).execute()
-    except Exception as e:
-        print(f"[log_line_event] insert failed: {e!r}")
-
-# ---------- SESSION RESULTS (Live + Testing; marked by is_test) ----------
-
-def close_session(
-    user_id: str,
-    track_id: str,
-    week_number: int,
-    session_index: int,
-    session_pl_units: float,
-    end_reason: str,
-    ts: Optional[str] = None,
-    duration_sec: Optional[float] = None,
-    unit_value: Optional[float] = None,
-    soft_shield_active: Optional[bool] = None,  # ✅ NEW: +233 Diamond+ Soft Shield
-) -> None:
-    """
-    Canonical session close write.
-    Writes one row to session_results with session_index + is_test so we can:
-      - compute sessions_today reliably
-      - compute week_pl_booked reliably
-      - rehydrate Tracker (LOD/nb) across track switches / refresh
-    """
-    sb = get_supabase()
-
-    if ts is None:
-        ts = _now_iso()
-
-    from streamlit import session_state as ss
-    is_test = bool(ss.get("testing_mode", False))
-
-    # ✅ Get unit_value from session state if not provided
-    if unit_value is None:
-        try:
-            from streamlit import session_state as ss
-            unit_value = float(ss.get("unit_value", 1.0))
-        except Exception:
-            unit_value = 1.0
-
-    # ✅ Get soft_shield_active from session state if not provided
-    if soft_shield_active is None:
-        try:
-            from streamlit import session_state as ss
-            soft_shield_active = bool(ss.get("soft_shield_active", False))
-        except Exception:
-            soft_shield_active = False
-
-    payload = {
-        "user_id": user_id,
-        "track_id": track_id,
-        "week_number": int(week_number),
-        "session_index": int(session_index),
-        "session_pl_units": float(session_pl_units),
-        "end_reason": str(end_reason),
-        "is_test": is_test,
-        "created_at": ts,  # keep explicit for deterministic ordering
-        "unit_value": float(unit_value),
-        "soft_shield_active": bool(soft_shield_active),  # ✅ NEW: +233 Diamond+
-    }
-
-    if duration_sec is not None:
-        try:
-            payload["duration_sec"] = float(duration_sec)
-        except Exception:
-            pass
-
-    try:
-        sb.table("session_results").upsert(
-            payload,
-            on_conflict="user_id,track_id,week_number,session_index,is_test",
-        ).execute()
-        return
+        if name in st.secrets:
+            return st.secrets[name]
     except Exception:
         pass
+    return default
 
+
+def _admin_required():
+    """Get admin client or raise error."""
     try:
-        sb.table("session_results").insert(payload).execute()
+        return get_supabase_admin()
     except Exception as e:
-        msg = repr(e)
-        if ("23505" in msg) or ("duplicate key" in msg.lower()) or ("unique" in msg.lower()):
-            return
-        print(f"[close_session] insert failed: {e!r}")
-        raise
-
-# ---------- SESSION RESULTS (Live only) ----------
-
-def log_session_result(
-    user_id: str,
-    track_id: str,
-    week_number: int,
-    session_index: int,
-    session_pl_units: float,
-    end_reason: str,
-    ts: Optional[str] = None,
-    duration_sec: Optional[float] = None,
-    unit_value: Optional[float] = None,
-    soft_shield_active: Optional[bool] = None,  # ✅ NEW: +233 Diamond+ Soft Shield
-) -> None:
-    """
-    Backwards-friendly wrapper that writes the canonical session close row.
-
-    session_results (current schema):
-      - id               (uuid, PK)
-      - user_id          (uuid)
-      - track_id         (uuid)
-      - week_number      (int4)
-      - session_index    (int4)
-      - session_pl_units (numeric)
-      - end_reason       (text)
-      - is_test          (bool)
-      - created_at       (timestamptz)
-      - duration_sec     (numeric, optional)
-      - unit_value       (numeric)
-      - soft_shield_active (bool)  ✅ NEW: +233 Diamond+
-    """
-    close_session(
-        user_id=user_id,
-        track_id=track_id,
-        week_number=int(week_number),
-        session_index=int(session_index),
-        session_pl_units=float(session_pl_units),
-        end_reason=str(end_reason),
-        ts=ts,
-        duration_sec=duration_sec,
-        unit_value=unit_value,
-        soft_shield_active=soft_shield_active,  # ✅ NEW
-    )
-
-# ---------- WEEK CLOSURES (Live only) ----------
-def log_week_closure(
-    user_id: str,
-    track_id: str,
-    week_number: int,
-    week_pl_units: float,
-    outcome_bucket: str,
-    is_test: bool = False,
-    ts: Optional[str] = None,
-    unit_value: Optional[float] = None,
-) -> None:
-    """
-    Persist a single closed week into week_closures.
-    Bulletproof against refresh/device duplicates via DB unique index:
-      (user_id, track_id, week_number, is_test)
-
-    Strategy: INSERT-first, ignore 23505 duplicates.
-    """
-    sb = get_supabase()
-
-    from streamlit import session_state as ss
-    if bool(ss.get("testing_mode", False)):
-        return
-
-    if ts is None:
-        ts = _now_iso()
-
-    # ✅ Get unit_value from session state if not provided
-    if unit_value is None:
-        try:
-            from streamlit import session_state as ss
-            unit_value = float(ss.get("unit_value", 1.0))
-        except Exception:
-            unit_value = 1.0
-
-    data = {
-        "user_id": str(user_id),
-        "track_id": str(track_id),
-        "week_number": int(week_number),
-        "week_pl_units": float(week_pl_units),
-        "outcome_bucket": str(outcome_bucket),
-        "is_test": bool(is_test),
-        "ts": ts,
-        "unit_value": float(unit_value),
-    }
-
-    try:
-        sb.table("week_closures").insert(data).execute()
-    except Exception as e:
-        msg = str(e)
-
-        # ✅ Unique violation (Postgres 23505) = already logged → treat as success
-        if ("23505" in msg) or ("duplicate key value violates unique constraint" in msg):
-            return
-
-        print(f"[db.log_week_closure] suppressed error: {e!r}")
+        raise RuntimeError(f"Admin client not available: {e}")
 
 
-# ---------- ADMIN HELPERS (profiles via service-role) ---------
+# =============================================================================
+# PROFILE OPERATIONS
+# =============================================================================
 
-def get_profile_by_email(email: str) -> Optional[Dict[str, Any]]:
-    raise RuntimeError(
-        "Do not query profiles by email. Use get_profile_by_auth_id(auth_id) "
-        "where profiles.user_id == auth.users.id."
-    )
-
-def get_profile_by_auth_id(auth_id: str) -> Optional[Dict[str, Any]]:
+def get_profile_by_auth_id(auth_id: str) -> Optional[dict]:
+    """Get profile by auth user ID."""
     if not auth_id:
         return None
-
-    sb = get_supabase()
+    
     try:
-        res = (
-            sb.table("profiles")
+        sb = get_supabase_admin()
+        resp = (
+            sb.table("poker_profiles")
             .select("*")
             .eq("user_id", auth_id)
             .maybe_single()
             .execute()
         )
-        row = res.data
+        return resp.data if resp.data else None
     except Exception as e:
-        print(f"[db.get_profile_by_auth_id] error: {e!r}")
+        print(f"[db] get_profile_by_auth_id error: {e}")
         return None
 
-    if not row:
+
+def get_profile_by_email(email: str) -> Optional[dict]:
+    """Get profile by email."""
+    if not email:
         return None
-
-    row.setdefault("role", row.get("role", "player"))
-    row.setdefault("is_active", row.get("is_active", True))
-    return row
-
-
-def list_profiles_for_admin() -> List[Dict[str, Any]]:
-    admin = _admin_required()
-    res = (
-        admin.table("profiles")
-        .select("user_id, email, role, is_active, created_at, role_assigned_at")
-        .order("created_at", desc=True)
-        .execute()
-    )
-    return list(res.data or [])
-
-# ---------- TELEMETRY HELPERS (per-user recent data) ----------
-
-def get_sessions_this_week_count(user_id: str, track_id: str, week_number: int) -> int:
-    if not user_id or not track_id or not week_number:
-        return 0
-
-    sb = get_supabase()
-
-    def _run(with_is_test: bool) -> int:
-        q = (
-            sb.table("session_results")
-            .select("id", count="exact")
-            .eq("user_id", str(user_id))
-            .eq("track_id", str(track_id))
-            .eq("week_number", int(week_number))
-        )
-        if with_is_test:
-            q = q.eq("is_test", False)
-        res = q.execute()
-        c = getattr(res, "count", None)
-        if c is not None:
-            return int(c or 0)
-        data = getattr(res, "data", None) or []
-        return int(len(data))
-
-    try:
-        # try with is_test filter first (if schema supports it)
-        return _run(with_is_test=True)
-    except Exception as e:
-        msg = str(e)
-        # column does not exist -> retry without is_test
-        if ("42703" in msg and "is_test" in msg) or ("does not exist" in msg and "is_test" in msg):
-            try:
-                return _run(with_is_test=False)
-            except Exception as e2:
-                print(f"[db.get_sessions_this_week_count] fallback error: {e2!r}")
-                return 0
-
-        print(f"[db.get_sessions_this_week_count] error: {e!r}")
-        return 0
-
-def get_week_pl_booked(user_id: str, track_id: str, week_number: int) -> Dict[str, float]:
-    """
-    Sum of CLOSED session P/L for this user/track/week.
-    Returns both units and dollars (using stored unit_value per session).
-    Source of truth = session_results table.
-    """
-    result = {"units": 0.0, "dollars": 0.0}
     
-    if not user_id or not track_id or not week_number:
-        return result
-
-    sb = get_supabase()
-
-    def _run(with_is_test: bool) -> Dict[str, float]:
-        q = (
-            sb.table("session_results")
-            .select("session_pl_units, unit_value")
-            .eq("user_id", str(user_id))
-            .eq("track_id", str(track_id))
-            .eq("week_number", int(week_number))
+    try:
+        sb = get_supabase_admin()
+        resp = (
+            sb.table("poker_profiles")
+            .select("*")
+            .eq("email", email.lower().strip())
+            .maybe_single()
+            .execute()
         )
-        if with_is_test:
-            q = q.eq("is_test", False)
-
-        res = q.execute()
-        total_units = 0.0
-        total_dollars = 0.0
-        for r in (res.data or []):
-            try:
-                u = float(r.get("session_pl_units") or 0.0)
-                uv = float(r.get("unit_value") or 1.0)
-                if uv <= 0:
-                    uv = 1.0
-                total_units += u
-                total_dollars += u * uv
-            except Exception:
-                pass
-        return {"units": total_units, "dollars": total_dollars}
-
-    try:
-        return _run(with_is_test=True)
+        return resp.data if resp.data else None
     except Exception as e:
-        msg = str(e)
-        if ("42703" in msg and "is_test" in msg) or ("does not exist" in msg and "is_test" in msg):
-            try:
-                return _run(with_is_test=False)
-            except Exception as e2:
-                print(f"[db.get_week_pl_booked] fallback error: {e2!r}")
-                return result
+        print(f"[db] get_profile_by_email error: {e}")
+        return None
 
-        print(f"[db.get_week_pl_booked] error: {e!r}")
-        return result
 
-def get_recent_sessions_for_user_admin(user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
-    sb = _admin_required()
-    user_id = _sid(user_id)
-    if not user_id:
-        return []
-    res = (
-        sb.table("session_results")
-        .select("*")
-        .eq("user_id", user_id)
-        .order("created_at", desc=True)
-        .limit(limit)
-        .execute()
-    )
-    return list(res.data or [])
-
-def get_recent_lines_for_user_admin(user_id: str, limit: int = 100) -> List[Dict[str, Any]]:
-    sb = _admin_required()
-    user_id = _sid(user_id)
-    if not user_id:
-        return []
-    res = (
-        sb.table("line_events")
-        .select("*")
-        .eq("user_id", user_id)
-        .order("created_at", desc=True)
-        .limit(limit)
-        .execute()
-    )
-    return list(res.data or [])
-
-def get_recent_closed_weeks_for_user_admin(user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
-    sb = _admin_required()
-    user_id = _sid(user_id)
-    if not user_id:
-        return []
-    res = (
-        sb.table("week_closures")
-        .select("*")
-        .eq("user_id", user_id)
-        .eq("is_test", False)
-        .order("week_number", desc=True)
-        .limit(limit)
-        .execute()
-    )
-    return list(res.data or [])
-
-def get_closed_weeks_distribution_admin(user_id: str, limit: int = 200) -> Dict[str, int]:
-    sb = _admin_required()
-    user_id = _sid(user_id)
-    if not user_id:
-        return {}
-
-    res = (
-        sb.table("week_closures")
-        .select("outcome_bucket")
-        .eq("user_id", user_id)
-        .eq("is_test", False)
-        .order("week_number", desc=True)
-        .limit(limit)
-        .execute()
-    )
-
-    buckets: Dict[str, int] = {}
-    for r in (res.data or []):
-        k = (r.get("outcome_bucket") or "").strip() or "unknown"
-        buckets[k] = buckets.get(k, 0) + 1
-    return buckets
-
-def delete_profile_by_user_id(user_id: str) -> bool:
-    if not user_id:
+def update_profile(user_id: str, updates: dict) -> bool:
+    """Update profile fields."""
+    if not user_id or not updates:
         return False
-    sb = _admin_required()
+    
     try:
-        sb.table("profiles").delete().eq("user_id", str(user_id)).execute()
+        sb = get_supabase_admin()
+        updates["updated_at"] = _now_iso()
+        sb.table("poker_profiles").update(updates).eq("user_id", user_id).execute()
         return True
     except Exception as e:
-        print(f"[db.delete_profile_by_user_id] error: {e!r}")
+        print(f"[db] update_profile error: {e}")
         return False
 
-def get_recent_sessions_for_user(user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+
+def update_user_settings(user_id: str, settings: dict) -> bool:
     """
-    Fetch recent live sessions for a user, newest first.
+    Update user settings.
+    
+    Accepts a dict with any of these keys:
+        - bankroll (maps to current_bankroll)
+        - risk_mode (maps to user_mode)
+        - default_stakes
+        - buy_in_count
+        - stop_loss_bi
+        - stop_win_bi
+        - time_alerts_enabled
+        - time_warning_hours
+        - stop_loss_alerts_enabled
+        - stop_win_alerts_enabled
+        - table_check_interval
+        - show_explanations
+        - sound_enabled
+        - theme
+    """
+    if not user_id or not settings:
+        return False
+    
+    try:
+        # Map our friendly names to actual column names
+        column_mapping = {
+            "bankroll": "current_bankroll",
+            "risk_mode": "user_mode",
+        }
+        
+        # Build update dict with correct column names
+        updates = {}
+        for key, value in settings.items():
+            # Use mapped name if exists, otherwise use as-is
+            col_name = column_mapping.get(key, key)
+            updates[col_name] = value
+        
+        # Special handling for bankroll - also update timestamp
+        if "current_bankroll" in updates:
+            updates["bankroll_updated_at"] = _now_iso()
+        
+        updates["updated_at"] = _now_iso()
+        
+        sb = get_supabase_admin()
+        sb.table("poker_profiles").update(updates).eq("user_id", user_id).execute()
+        return True
+        
+    except Exception as e:
+        print(f"[db] update_user_settings error: {e}")
+        return False
+
+
+def update_user_bankroll(user_id: str, bankroll: float) -> bool:
+    """Update user's current bankroll."""
+    return update_profile(user_id, {
+        "current_bankroll": bankroll,
+        "bankroll_updated_at": _now_iso(),
+    })
+
+
+# =============================================================================
+# SESSION OPERATIONS
+# =============================================================================
+
+def create_session(
+    user_id: str,
+    stakes: str,
+    bb_size: float,
+    buy_in_amount: float,
+    bankroll_at_start: float = None,
+    stop_loss_amount: float = None,
+    stop_win_amount: float = None,
+) -> Optional[dict]:
+    """
+    Create a new poker session.
+    
+    Args:
+        user_id: User's UUID
+        stakes: Stakes label (e.g., "$1/$2")
+        bb_size: Big blind size in dollars
+        buy_in_amount: Starting stack amount
+        bankroll_at_start: User's bankroll when session started
+        stop_loss_amount: Dollar amount for stop-loss threshold
+        stop_win_amount: Dollar amount for stop-win threshold
+    
+    Returns:
+        Created session dict or None
     """
     if not user_id:
-        return []
-
-    sb = get_supabase()
+        return None
+    
     try:
-        res = (
-            sb.table("session_results")
+        sb = get_supabase()
+        
+        session_data = {
+            "user_id": user_id,
+            "stakes": stakes,
+            "bb_size": bb_size,
+            "buy_in_amount": buy_in_amount,
+            "bankroll_at_start": bankroll_at_start,
+            "stop_loss_amount": stop_loss_amount,
+            "stop_win_amount": stop_win_amount,
+            "started_at": _now_iso(),
+            "status": "active",
+            "hands_played": 0,
+            "decisions_requested": 0,
+            "outcomes_won": 0,
+            "outcomes_lost": 0,
+            "outcomes_folded": 0,
+            "is_test": False,
+        }
+        
+        resp = sb.table("poker_sessions").insert(session_data).execute()
+        
+        if resp.data and len(resp.data) > 0:
+            return resp.data[0]
+        return None
+        
+    except Exception as e:
+        print(f"[db] create_session error: {e}")
+        return None
+
+
+def get_active_session(user_id: str) -> Optional[dict]:
+    """Get user's currently active session."""
+    if not user_id:
+        return None
+    
+    try:
+        sb = get_supabase()
+        resp = (
+            sb.table("poker_sessions")
             .select("*")
             .eq("user_id", user_id)
-            .order("created_at", desc=True)
-            .limit(limit)
+            .eq("status", "active")
+            .order("started_at", desc=True)
+            .limit(1)
+            .maybe_single()
             .execute()
         )
-        return res.data or []
+        return resp.data if resp.data else None
     except Exception as e:
-        print(f"[db.get_recent_sessions_for_user] error: {e!r}")
-        return []
+        print(f"[db] get_active_session error: {e}")
+        return None
 
 
-def get_recent_lines_for_user(user_id: str, limit: int = 100) -> List[Dict[str, Any]]:
-    """
-    Fetch recent line_close events for a user, newest first.
-    """
-    if not user_id:
-        return []
-
-    sb = get_supabase()
+def update_session(session_id: str, updates: dict) -> bool:
+    """Update session fields."""
+    if not session_id or not updates:
+        return False
+    
     try:
-        res = (
-            sb.table("line_events")
+        sb = get_supabase()
+        sb.table("poker_sessions").update(updates).eq("id", session_id).execute()
+        return True
+    except Exception as e:
+        print(f"[db] update_session error: {e}")
+        return False
+
+
+def increment_session_stats(session_id: str, hands: int = 0, decisions: int = 0) -> bool:
+    """Increment hands played and decisions requested counters."""
+    if not session_id:
+        return False
+    
+    try:
+        sb = get_supabase()
+        
+        # Get current values
+        resp = (
+            sb.table("poker_sessions")
+            .select("hands_played, decisions_requested")
+            .eq("id", session_id)
+            .single()
+            .execute()
+        )
+        
+        if not resp.data:
+            return False
+        
+        current_hands = resp.data.get("hands_played", 0) or 0
+        current_decisions = resp.data.get("decisions_requested", 0) or 0
+        
+        # Update with new values
+        sb.table("poker_sessions").update({
+            "hands_played": current_hands + hands,
+            "decisions_requested": current_decisions + decisions,
+        }).eq("id", session_id).execute()
+        
+        return True
+    except Exception as e:
+        print(f"[db] increment_session_stats error: {e}")
+        return False
+
+
+def end_session(
+    session_id: str,
+    cash_out_amount: float,
+    end_reason: str = "manual",
+) -> Optional[dict]:
+    """
+    End a poker session and calculate P/L.
+    
+    Args:
+        session_id: Session UUID
+        cash_out_amount: Final stack amount
+        end_reason: 'manual', 'stop_loss', 'stop_win', 'time_limit', 'bankroll_alert'
+    
+    Returns:
+        Updated session dict or None
+    """
+    if not session_id:
+        return None
+    
+    try:
+        sb = get_supabase()
+        
+        # Get session to calculate P/L
+        resp = (
+            sb.table("poker_sessions")
             .select("*")
-            .eq("user_id", user_id)
-            .order("created_at", desc=True)
-            .limit(limit)
+            .eq("id", session_id)
+            .single()
             .execute()
         )
-        return res.data or []
-    except Exception as e:
-        print(f"[db.get_recent_lines_for_user] error: {e!r}")
-        return []
-
-def get_closed_weeks_distribution(user_id: str, limit: int = 200) -> Dict[str, int]:
-    if not user_id:
-        return {}
-
-    sb = get_supabase()
-
-    def _run(with_is_test: bool) -> Dict[str, int]:
-        q = (
-            sb.table("week_closures")
-            .select("outcome_bucket")
-            .eq("user_id", user_id)
-            .order("week_number", desc=True)
-            .limit(limit)
-        )
-        if with_is_test:
-            q = q.eq("is_test", False)
-
-        res = q.execute()
-        buckets: Dict[str, int] = {}
-        for r in (res.data or []):
-            k = (r.get("outcome_bucket") or "").strip() or "unknown"
-            buckets[k] = buckets.get(k, 0) + 1
-        return buckets
-
-    try:
-        return _run(with_is_test=True)
-    except Exception as e:
-        msg = str(e)
-        if "42703" in msg or "does not exist" in msg or "is_test" in msg:
+        
+        if not resp.data:
+            return None
+        
+        session = resp.data
+        buy_in = float(session.get("buy_in_amount", 0))
+        bb_size = float(session.get("bb_size", 2))
+        started_at = session.get("started_at")
+        
+        # Calculate P/L
+        profit_loss = cash_out_amount - buy_in
+        profit_loss_bb = profit_loss / bb_size if bb_size > 0 else 0
+        
+        # Calculate duration
+        duration_minutes = None
+        duration_sec = None
+        if started_at:
             try:
-                return _run(with_is_test=False)
-            except Exception as e2:
-                print(f"[db.get_closed_weeks_distribution] fallback error: {e2!r}")
-                return {}
-        print(f"[db.get_closed_weeks_distribution] error: {e!r}")
-        return {}
+                start = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+                now = datetime.now(timezone.utc)
+                delta = now - start
+                duration_sec = int(delta.total_seconds())
+                duration_minutes = int(delta.total_seconds() / 60)
+            except Exception:
+                pass
+        
+        # Update session
+        updates = {
+            "ended_at": _now_iso(),
+            "cash_out_amount": cash_out_amount,
+            "profit_loss": profit_loss,
+            "profit_loss_bb": profit_loss_bb,
+            "session_pl_units": profit_loss_bb,  # Alias for compatibility
+            "duration_minutes": duration_minutes,
+            "duration_sec": duration_sec,
+            "end_reason": end_reason,
+            "status": "completed",
+        }
+        
+        sb.table("poker_sessions").update(updates).eq("id", session_id).execute()
+        
+        # Return updated session
+        session.update(updates)
+        return session
+        
+    except Exception as e:
+        print(f"[db] end_session error: {e}")
+        return None
 
-def get_recent_closed_weeks_for_user(user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
-    """
-    Fetch recent closed weeks for a user, newest first (by week_number).
-    """
+
+def get_user_sessions(
+    user_id: str,
+    limit: int = 50,
+    include_test: bool = False,
+) -> List[dict]:
+    """Get user's session history."""
     if not user_id:
         return []
-
-    sb = get_supabase()
+    
     try:
-        res = (
-            sb.table("week_closures")
+        sb = get_supabase()
+        query = (
+            sb.table("poker_sessions")
             .select("*")
             .eq("user_id", user_id)
-            .eq("is_test", False)
-            .order("week_number", desc=True)
+            .eq("status", "completed")
+        )
+        
+        if not include_test:
+            query = query.eq("is_test", False)
+        
+        resp = query.order("started_at", desc=True).limit(limit).execute()
+        
+        return resp.data if resp.data else []
+    except Exception as e:
+        print(f"[db] get_user_sessions error: {e}")
+        return []
+
+
+def get_sessions_in_date_range(
+    user_id: str,
+    start_date: datetime,
+    end_date: datetime,
+    include_test: bool = False,
+) -> List[dict]:
+    """Get sessions within a date range."""
+    if not user_id:
+        return []
+    
+    try:
+        sb = get_supabase()
+        query = (
+            sb.table("poker_sessions")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("status", "completed")
+            .gte("started_at", start_date.isoformat())
+            .lte("started_at", end_date.isoformat())
+        )
+        
+        if not include_test:
+            query = query.eq("is_test", False)
+        
+        resp = query.order("started_at", desc=True).execute()
+        
+        return resp.data if resp.data else []
+    except Exception as e:
+        print(f"[db] get_sessions_in_date_range error: {e}")
+        return []
+
+
+# =============================================================================
+# BANKROLL OPERATIONS
+# =============================================================================
+
+def record_bankroll_change(
+    user_id: str,
+    bankroll_amount: float,
+    change_amount: float,
+    change_type: str,
+    session_id: str = None,
+    notes: str = None,
+    current_stakes: str = None,
+) -> bool:
+    """
+    Record a bankroll change in history.
+    
+    Args:
+        change_type: 'session_result', 'deposit', 'withdrawal', 'adjustment', 'initial'
+    """
+    if not user_id:
+        return False
+    
+    try:
+        sb = get_supabase()
+        
+        # Calculate buy-ins available (assuming $1/$2 = $200 buy-in as default)
+        # This should be adjusted based on actual stakes
+        stakes_to_buyin = {
+            "$0.50/$1": 100,
+            "$1/$2": 200,
+            "$2/$5": 500,
+            "$5/$10": 1000,
+            "$10/$20": 2000,
+            "$25/$50": 5000,
+        }
+        buyin = stakes_to_buyin.get(current_stakes, 200)
+        buy_ins_available = bankroll_amount / buyin if buyin > 0 else 0
+        
+        record = {
+            "user_id": user_id,
+            "bankroll_amount": bankroll_amount,
+            "change_amount": change_amount,
+            "change_type": change_type,
+            "session_id": session_id,
+            "buy_ins_available": round(buy_ins_available, 2),
+            "current_stakes": current_stakes,
+            "notes": notes,
+            "recorded_at": _now_iso(),
+        }
+        
+        sb.table("poker_bankroll_history").insert(record).execute()
+        return True
+        
+    except Exception as e:
+        print(f"[db] record_bankroll_change error: {e}")
+        return False
+
+
+def get_bankroll_history(user_id: str, limit: int = 100) -> List[dict]:
+    """Get user's bankroll history."""
+    if not user_id:
+        return []
+    
+    try:
+        sb = get_supabase()
+        resp = (
+            sb.table("poker_bankroll_history")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("recorded_at", desc=True)
             .limit(limit)
             .execute()
         )
-        return res.data or []
+        return resp.data if resp.data else []
     except Exception as e:
-        print(f"[db.get_recent_closed_weeks_for_user] error: {e!r}")
+        print(f"[db] get_bankroll_history error: {e}")
         return []
 
-# ---------- AUTH ADMIN HELPERS (create / delete / email / password) ----------
+
+# =============================================================================
+# STATS OPERATIONS
+# =============================================================================
+
+def get_player_stats(user_id: str, include_test: bool = False) -> dict:
+    """
+    Get aggregated player statistics.
+    
+    Returns dict with:
+        - total_sessions
+        - total_hands
+        - total_hours
+        - total_profit_loss
+        - total_profit_loss_bb
+        - win_rate_bb_100 (BB/100 hands)
+        - winning_sessions
+        - losing_sessions
+        - biggest_win
+        - biggest_loss
+    """
+    if not user_id:
+        return {}
+    
+    try:
+        sessions = get_user_sessions(user_id, limit=1000, include_test=include_test)
+        
+        if not sessions:
+            return {
+                "total_sessions": 0,
+                "total_hands": 0,
+                "total_hours": 0,
+                "total_profit_loss": 0,
+                "total_profit_loss_bb": 0,
+                "win_rate_bb_100": 0,
+                "winning_sessions": 0,
+                "losing_sessions": 0,
+                "biggest_win": 0,
+                "biggest_loss": 0,
+            }
+        
+        total_sessions = len(sessions)
+        total_hands = sum(s.get("hands_played", 0) or 0 for s in sessions)
+        total_minutes = sum(s.get("duration_minutes", 0) or 0 for s in sessions)
+        total_hours = round(total_minutes / 60, 1)
+        
+        total_profit_loss = sum(float(s.get("profit_loss", 0) or 0) for s in sessions)
+        total_profit_loss_bb = sum(float(s.get("profit_loss_bb", 0) or 0) for s in sessions)
+        
+        # Calculate win rate (BB/100 hands)
+        win_rate_bb_100 = 0
+        if total_hands > 0:
+            win_rate_bb_100 = round((total_profit_loss_bb / total_hands) * 100, 2)
+        
+        # Session outcomes
+        winning_sessions = sum(1 for s in sessions if float(s.get("profit_loss", 0) or 0) > 0)
+        losing_sessions = sum(1 for s in sessions if float(s.get("profit_loss", 0) or 0) < 0)
+        
+        # Biggest win/loss
+        profits = [float(s.get("profit_loss", 0) or 0) for s in sessions]
+        biggest_win = max(profits) if profits else 0
+        biggest_loss = min(profits) if profits else 0
+        
+        return {
+            "total_sessions": total_sessions,
+            "total_hands": total_hands,
+            "total_hours": total_hours,
+            "total_profit_loss": round(total_profit_loss, 2),
+            "total_profit_loss_bb": round(total_profit_loss_bb, 2),
+            "win_rate_bb_100": win_rate_bb_100,
+            "winning_sessions": winning_sessions,
+            "losing_sessions": losing_sessions,
+            "biggest_win": round(biggest_win, 2),
+            "biggest_loss": round(biggest_loss, 2),
+        }
+        
+    except Exception as e:
+        print(f"[db] get_player_stats error: {e}")
+        return {}
+
+
+def get_today_stats(user_id: str) -> dict:
+    """Get today's session stats."""
+    if not user_id:
+        return {"sessions": 0, "profit_loss": 0}
+    
+    try:
+        today_start = datetime.now(timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        today_end = today_start + timedelta(days=1)
+        
+        sessions = get_sessions_in_date_range(user_id, today_start, today_end)
+        
+        total_pl = sum(float(s.get("profit_loss", 0) or 0) for s in sessions)
+        
+        return {
+            "sessions": len(sessions),
+            "profit_loss": round(total_pl, 2),
+        }
+        
+    except Exception as e:
+        print(f"[db] get_today_stats error: {e}")
+        return {"sessions": 0, "profit_loss": 0}
+
+
+# =============================================================================
+# STAKES REFERENCE
+# =============================================================================
+
+def get_stakes_options() -> List[dict]:
+    """Get all supported stakes from reference table."""
+    try:
+        sb = get_supabase()
+        resp = (
+            sb.table("poker_stakes_reference")
+            .select("*")
+            .order("display_order")
+            .execute()
+        )
+        return resp.data if resp.data else []
+    except Exception as e:
+        print(f"[db] get_stakes_options error: {e}")
+        # Return hardcoded fallback
+        return [
+            {"stakes_label": "$0.50/$1", "bb_size": 1.0, "standard_buy_in": 100},
+            {"stakes_label": "$1/$2", "bb_size": 2.0, "standard_buy_in": 200},
+            {"stakes_label": "$2/$5", "bb_size": 5.0, "standard_buy_in": 500},
+            {"stakes_label": "$5/$10", "bb_size": 10.0, "standard_buy_in": 1000},
+            {"stakes_label": "$10/$20", "bb_size": 20.0, "standard_buy_in": 2000},
+            {"stakes_label": "$25/$50", "bb_size": 50.0, "standard_buy_in": 5000},
+        ]
+
+
+def get_stakes_info(stakes_label: str) -> Optional[dict]:
+    """Get info for specific stakes level."""
+    try:
+        sb = get_supabase()
+        resp = (
+            sb.table("poker_stakes_reference")
+            .select("*")
+            .eq("stakes_label", stakes_label)
+            .maybe_single()
+            .execute()
+        )
+        return resp.data if resp.data else None
+    except Exception as e:
+        print(f"[db] get_stakes_info error: {e}")
+        return None
+
+
+# =============================================================================
+# ADMIN OPERATIONS
+# =============================================================================
+
+def list_profiles_for_admin() -> List[dict]:
+    """List all profiles for admin console."""
+    try:
+        sb = _admin_required()
+        resp = (
+            sb.table("poker_profiles")
+            .select("*")
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return resp.data if resp.data else []
+    except Exception as e:
+        print(f"[db] list_profiles_for_admin error: {e}")
+        return []
+
 
 def admin_create_user(
     email: str,
     password: str,
     role: str = "player",
-    is_active: bool = True,
-) -> Dict[str, Any]:
+    is_active: bool = False,
+    subscription_status: str = "pending",
+    subscription_plan: str = "monthly",
+    subscription_amount: float = 299.00,
+    start_trial: bool = False,
+    trial_days: int = 7,
+) -> dict:
+    """
+    Create a new user (admin only).
+    
+    Creates auth user and profile with subscription settings.
+    """
     admin = _admin_required()
-
+    
     email = (email or "").strip().lower()
-    if not email:
-        raise ValueError("Email is required.")
-    if not password:
-        raise ValueError("Password is required.")
-
-    # 1) Create auth user
-    auth_res = admin.auth.admin.create_user({
+    password = (password or "").strip()
+    
+    if not email or not password:
+        raise ValueError("Email and password required.")
+    
+    # Create auth user
+    auth_resp = admin.auth.admin.create_user({
         "email": email,
         "password": password,
         "email_confirm": True,
     })
-
-    auth_user = getattr(auth_res, "user", None) or getattr(auth_res, "data", None) or auth_res
-    auth_id = auth_user.get("id") if isinstance(auth_user, dict) else getattr(auth_user, "id", None)
-    if not auth_id:
-        raise RuntimeError("create_user did not return a user id.")
-
-    # 2) Upsert profile row (profiles.user_id == auth.users.id)
-    profile_payload = {
-        "user_id": auth_id,
+    
+    user_id = auth_resp.user.id
+    now = _now_iso()
+    
+    # Set up trial if requested
+    trial_ends_at = None
+    if start_trial:
+        subscription_status = "trial"
+        is_active = True
+        trial_ends_at = (datetime.now(timezone.utc) + timedelta(days=trial_days)).isoformat()
+    
+    # Generate payment link URL
+    payment_link_base = _get_secret("RADOM_PAYMENT_LINK_BASE")
+    payment_link_url = f"{payment_link_base}?user_email={email}" if payment_link_base else None
+    
+    # Create profile
+    profile_data = {
+        "user_id": user_id,
         "email": email,
         "role": role,
+        "role_assigned_at": now,
         "is_active": is_active,
-        "role_assigned_at": _now_iso(),
+        "is_admin": role == "admin",
+        "allowed": True,
+        "subscription_status": subscription_status,
+        "subscription_plan": subscription_plan,
+        "subscription_amount": subscription_amount,
+        "subscription_currency": "USD",
+        "payment_link_url": payment_link_url,
+        "trial_ends_at": trial_ends_at,
+        "is_trial": start_trial,
+        "user_mode": "balanced",
+        "default_stakes": "$1/$2",
+        "created_at": now,
+    }
+    
+    admin.table("poker_profiles").insert(profile_data).execute()
+    
+    return {
+        "user_id": user_id,
+        "email": email,
+        "subscription_status": subscription_status,
+        "payment_link_url": payment_link_url,
+        "trial_ends_at": trial_ends_at,
     }
 
-    # Only include these if your schema actually has them (prevents PGRST204)
-    # If you're 100% sure they exist, you can inline them above instead.
+
+def admin_delete_user(user_id: str) -> bool:
+    """Delete auth user (admin only). Profile cascades."""
+    if not user_id:
+        return False
+    
     try:
-        profile_payload["allowed"] = True
-    except Exception:
-        pass
+        admin = _admin_required()
+        admin.auth.admin.delete_user(user_id)
+        return True
+    except Exception as e:
+        print(f"[db] admin_delete_user error: {e}")
+        return False
+
+
+def delete_profile_by_user_id(user_id: str) -> bool:
+    """Delete profile directly (backup if cascade fails)."""
+    if not user_id:
+        return False
+    
     try:
-        profile_payload["is_admin"] = (role == "admin")
-    except Exception:
-        pass
+        admin = _admin_required()
+        admin.table("poker_profiles").delete().eq("user_id", user_id).execute()
+        return True
+    except Exception as e:
+        print(f"[db] delete_profile_by_user_id error: {e}")
+        return False
 
-    admin.table("profiles").upsert(profile_payload, on_conflict="user_id").execute()
 
-    return {"user_id": auth_id, "email": email, "role": role, "is_active": is_active}
-
-def admin_delete_user(user_id: str) -> None:
-    admin = _admin_required()
-    if not user_id:
-        raise ValueError("user_id required.")
-
-    # delete auth user
-    admin.auth.admin.delete_user(user_id)
-
-    # delete profile row
-    admin.table("profiles").delete().eq("user_id", user_id).execute()
-
-def admin_update_user_email(user_id: str, new_email: str) -> None:
-    admin = _admin_required()
-
-    new_email = (new_email or "").strip().lower()
-    if not user_id:
-        raise ValueError("user_id required.")
-    if not new_email:
-        raise ValueError("new_email required.")
-
-    admin.auth.admin.update_user_by_id(user_id, {"email": new_email, "email_confirm": True})
-    admin.table("profiles").update({"email": new_email}).eq("user_id", user_id).execute()
-
-def admin_set_user_password(user_id: str, new_password: str) -> None:
-    admin = _admin_required()
-
-    new_password = (new_password or "").strip()
-    if not user_id:
-        raise ValueError("user_id required.")
-    if not new_password:
-        raise ValueError("new_password required.")
-
-    admin.auth.admin.update_user_by_id(user_id, {"password": new_password})
-
-def set_profile_role(user_id: str, new_role: str) -> None:
-    admin = _admin_required()
-    if not user_id:
-        raise ValueError("user_id required.")
-
-    admin.table("profiles").update({
-        "role": new_role,
-        "role_assigned_at": _now_iso(),
-    }).eq("user_id", user_id).execute()
-
-def set_profile_active(user_id: str, is_active: bool) -> None:
-    admin = _admin_required()
-    if not user_id:
-        raise ValueError("user_id required.")
-
-    admin.table("profiles").update({"is_active": bool(is_active)}).eq("user_id", user_id).execute()
-
-# ---------- USER UNIT VALUE (per-user persistence) ----------
-
-def get_user_unit_value(user_id: str) -> float:
-    """Get the user's unit_value from profiles, default 1.0."""
-    if not user_id:
-        return 1.0
-    sb = get_supabase()
+def admin_update_user_email(user_id: str, new_email: str) -> bool:
+    """Update user's email in auth.users."""
+    if not user_id or not new_email:
+        return False
+    
     try:
-        res = (
-            sb.table("profiles")
-            .select("unit_value")
+        admin = _admin_required()
+        admin.auth.admin.update_user_by_id(user_id, {"email": new_email.lower().strip()})
+        # Also update profile
+        admin.table("poker_profiles").update({"email": new_email.lower().strip()}).eq("user_id", user_id).execute()
+        return True
+    except Exception as e:
+        print(f"[db] admin_update_user_email error: {e}")
+        return False
+
+
+def admin_set_user_password(user_id: str, new_password: str) -> bool:
+    """Set user's password (admin only)."""
+    if not user_id or not new_password:
+        return False
+    
+    try:
+        admin = _admin_required()
+        admin.auth.admin.update_user_by_id(user_id, {"password": new_password})
+        return True
+    except Exception as e:
+        print(f"[db] admin_set_user_password error: {e}")
+        return False
+
+
+def set_profile_role(user_id: str, role: str) -> bool:
+    """Set user's role."""
+    if not user_id:
+        return False
+    
+    try:
+        admin = _admin_required()
+        admin.table("poker_profiles").update({
+            "role": role,
+            "role_assigned_at": _now_iso(),
+            "is_admin": role == "admin",
+        }).eq("user_id", user_id).execute()
+        return True
+    except Exception as e:
+        print(f"[db] set_profile_role error: {e}")
+        return False
+
+
+def set_profile_active(user_id: str, is_active: bool) -> bool:
+    """Set user's active status."""
+    if not user_id:
+        return False
+    
+    try:
+        admin = _admin_required()
+        admin.table("poker_profiles").update({
+            "is_active": is_active,
+        }).eq("user_id", user_id).execute()
+        return True
+    except Exception as e:
+        print(f"[db] set_profile_active error: {e}")
+        return False
+
+
+# =============================================================================
+# SUBSCRIPTION ADMIN OPERATIONS
+# =============================================================================
+
+def admin_grant_free_access(user_id: str, reason: str = "Admin override") -> bool:
+    """Grant free access to a user (admin override)."""
+    if not user_id:
+        return False
+    
+    try:
+        admin = _admin_required()
+        admin.table("poker_profiles").update({
+            "admin_override_active": True,
+            "is_active": True,
+            "lockout_reason": None,
+        }).eq("user_id", user_id).execute()
+        return True
+    except Exception as e:
+        print(f"[db] admin_grant_free_access error: {e}")
+        return False
+
+
+def admin_revoke_free_access(user_id: str) -> bool:
+    """Revoke admin override - user needs valid subscription."""
+    if not user_id:
+        return False
+    
+    try:
+        admin = _admin_required()
+        
+        # Get current subscription status
+        resp = (
+            admin.table("poker_profiles")
+            .select("subscription_status")
             .eq("user_id", user_id)
-            .limit(1)
+            .single()
             .execute()
         )
-        if res.data and res.data[0].get("unit_value") is not None:
-            return float(res.data[0]["unit_value"])
-    except Exception as e:
-        print(f"[db.get_user_unit_value] error: {e!r}")
-    return 1.0
-
-
-def set_user_unit_value(user_id: str, unit_value: float) -> None:
-    """Persist the user's unit_value to profiles."""
-    if not user_id:
-        return
-    sb = get_supabase()
-    try:
-        sb.table("profiles").update({"unit_value": float(unit_value)}).eq("user_id", user_id).execute()
-    except Exception as e:
-        print(f"[db.set_user_unit_value] error: {e!r}")
-
-def save_bankroll_plan(user_id: str, plan: dict) -> bool:
-    """
-    Save a user's bankroll plan to the database.
-    
-    Creates or updates a row in bankroll_plans table:
-    - user_id (uuid, primary key)
-    - active_usd (numeric)
-    - reserve_usd (numeric)
-    - track_count (int)
-    - updated_at (timestamptz)
-    
-    Returns True on success, False on failure.
-    """
-    if not user_id:
-        return False
-    
-    try:
-        sb = get_supabase()
         
-        data = {
-            "user_id": user_id,
-            "active_usd": float(plan.get("active_usd", 0.0)),
-            "reserve_usd": float(plan.get("reserve_usd", 0.0)),
-            "track_count": int(plan.get("track_count", 1)),
-            "updated_at": _now_iso(),
-        }
+        current_status = resp.data.get("subscription_status", "pending") if resp.data else "pending"
+        should_be_active = current_status in ("active", "grace_period", "trial")
         
-        # Upsert - insert or update if exists
-        sb.table("bankroll_plans").upsert(data, on_conflict="user_id").execute()
+        admin.table("poker_profiles").update({
+            "admin_override_active": False,
+            "is_active": should_be_active,
+        }).eq("user_id", user_id).execute()
         return True
-        
     except Exception as e:
-        print(f"[db] save_bankroll_plan error: {e!r}")
+        print(f"[db] admin_revoke_free_access error: {e}")
         return False
 
 
-def load_bankroll_plan(user_id: str) -> dict | None:
-    """
-    Load a user's saved bankroll plan from the database.
+def admin_set_subscription_status(user_id: str, status: str) -> bool:
+    """Force subscription status (admin only)."""
+    valid_statuses = ["pending", "trial", "active", "grace_period", "overdue", "cancelled", "expired"]
+    if not user_id or status not in valid_statuses:
+        return False
     
-    Returns dict with keys: active_usd, reserve_usd, track_count
-    Returns None if no plan exists or on error.
-    """
+    try:
+        admin = _admin_required()
+        
+        is_active = status in ("active", "grace_period", "trial")
+        
+        admin.table("poker_profiles").update({
+            "subscription_status": status,
+            "is_active": is_active,
+        }).eq("user_id", user_id).execute()
+        return True
+    except Exception as e:
+        print(f"[db] admin_set_subscription_status error: {e}")
+        return False
+
+
+def admin_get_subscription_details(user_id: str) -> Optional[dict]:
+    """Get full subscription details for a user."""
     if not user_id:
+        return None
+    
+    try:
+        admin = _admin_required()
+        resp = (
+            admin.table("poker_profiles")
+            .select(
+                "email, subscription_status, subscription_plan, subscription_amount, "
+                "subscription_started_at, subscription_current_period_end, "
+                "last_successful_payment_at, failed_payment_count, admin_override_active, "
+                "payment_link_url, trial_ends_at, is_trial"
+            )
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+        )
+        return resp.data if resp.data else None
+    except Exception as e:
+        print(f"[db] admin_get_subscription_details error: {e}")
+        return None
+
+
+def admin_extend_trial(user_id: str, days: int = 7) -> bool:
+    """Extend user's trial period."""
+    if not user_id or days <= 0:
+        return False
+    
+    try:
+        admin = _admin_required()
+        
+        # Get current trial end
+        resp = (
+            admin.table("poker_profiles")
+            .select("trial_ends_at")
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+        )
+        
+        current_end = None
+        if resp.data and resp.data.get("trial_ends_at"):
+            try:
+                current_end = datetime.fromisoformat(
+                    resp.data["trial_ends_at"].replace("Z", "+00:00")
+                )
+            except Exception:
+                pass
+        
+        # Extend from current end or from now
+        base = current_end if current_end else datetime.now(timezone.utc)
+        new_end = base + timedelta(days=days)
+        
+        admin.table("poker_profiles").update({
+            "trial_ends_at": new_end.isoformat(),
+            "subscription_status": "trial",
+            "is_trial": True,
+            "is_active": True,
+        }).eq("user_id", user_id).execute()
+        
+        return True
+    except Exception as e:
+        print(f"[db] admin_extend_trial error: {e}")
+        return False
+
+
+def admin_resend_payment_link(user_id: str) -> Optional[str]:
+    """Get payment link for a user (to resend)."""
+    if not user_id:
+        return None
+    
+    try:
+        admin = _admin_required()
+        resp = (
+            admin.table("poker_profiles")
+            .select("payment_link_url")
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+        )
+        return resp.data.get("payment_link_url") if resp.data else None
+    except Exception as e:
+        print(f"[db] admin_resend_payment_link error: {e}")
+        return None
+
+# =============================================================================
+# HAND OUTCOME RECORDING
+# =============================================================================
+
+def record_hand_outcome(
+    session_id: str,
+    user_id: str,
+    outcome: str,  # 'won', 'lost', 'folded'
+    profit_loss: float,
+    pot_size: float,
+    our_position: str,
+    street_reached: str,
+    our_hand: str = None,
+    board: str = None,
+    action_taken: str = None,
+    recommendation_given: str = None,
+    we_were_aggressor: bool = False,
+) -> Optional[dict]:
+    """
+    Record a hand outcome to poker_hands table.
+    
+    Called after user clicks WIN/LOSS/FOLD button.
+    """
+    if not session_id or not user_id:
         return None
     
     try:
         sb = get_supabase()
         
+        # Get current hand count for this session
         resp = (
-            sb.table("bankroll_plans")
-            .select("active_usd, reserve_usd, track_count")
+            sb.table("poker_hands")
+            .select("id")
+            .eq("session_id", session_id)
+            .execute()
+        )
+        hand_number = len(resp.data) + 1 if resp.data else 1
+        
+        hand_data = {
+            "session_id": session_id,
+            "user_id": user_id,
+            "hand_number": hand_number,
+            "played_at": _now_iso(),
+            "result": outcome,
+            "profit_loss": profit_loss,
+            "pot_size": pot_size,
+            "our_position": our_position,
+            "street_reached": street_reached,
+            "our_hand": our_hand,
+            "board": board,
+            "action_taken": action_taken,
+            "recommendation_given": recommendation_given,
+            "we_were_aggressor": we_were_aggressor,
+            "followed_recommendation": True,
+            "is_test": False,
+        }
+        
+        resp = sb.table("poker_hands").insert(hand_data).execute()
+        
+        if resp.data and len(resp.data) > 0:
+            return resp.data[0]
+        return None
+        
+    except Exception as e:
+        print(f"[db] record_hand_outcome error: {e}")
+        return None
+
+
+def get_session_hands(session_id: str) -> List[dict]:
+    """Get all hands for a session."""
+    if not session_id:
+        return []
+    
+    try:
+        sb = get_supabase()
+        resp = (
+            sb.table("poker_hands")
+            .select("*")
+            .eq("session_id", session_id)
+            .order("hand_number", desc=False)
+            .execute()
+        )
+        return resp.data if resp.data else []
+    except Exception as e:
+        print(f"[db] get_session_hands error: {e}")
+        return []
+
+
+def get_session_outcome_summary(session_id: str) -> dict:
+    """Get outcome breakdown for a session (wins/losses/folds)."""
+    if not session_id:
+        return {"wins": 0, "losses": 0, "folds": 0, "total": 0}
+    
+    try:
+        hands = get_session_hands(session_id)
+        
+        wins = sum(1 for h in hands if h.get("result") == "won")
+        losses = sum(1 for h in hands if h.get("result") == "lost")
+        folds = sum(1 for h in hands if h.get("result") == "folded")
+        
+        return {
+            "wins": wins,
+            "losses": losses,
+            "folds": folds,
+            "total": len(hands),
+        }
+    except Exception as e:
+        print(f"[db] get_session_outcome_summary error: {e}")
+        return {"wins": 0, "losses": 0, "folds": 0, "total": 0}
+
+# =============================================================================
+# ADMIN SESSION QUERIES
+# =============================================================================
+
+def get_recent_sessions_for_user_admin(user_id: str, limit: int = 50) -> List[dict]:
+    """Get recent sessions for a user (admin view)."""
+    if not user_id:
+        return []
+    
+    try:
+        admin = _admin_required()
+        resp = (
+            admin.table("poker_sessions")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("started_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return resp.data if resp.data else []
+    except Exception as e:
+        print(f"[db] get_recent_sessions_for_user_admin error: {e}")
+        return []
+    
+# =============================================================================
+# NEW FUNCTION: get_user_settings()
+# =============================================================================
+# Add this function to get all user settings for Settings page
+
+def get_user_settings(user_id: str) -> dict:
+    """
+    Get all user settings for the Settings page.
+    
+    Returns dict with all configurable settings, with defaults if not set.
+    """
+    if not user_id:
+        return _default_user_settings()
+    
+    try:
+        sb = get_supabase_admin()
+        resp = (
+            sb.table("poker_profiles")
+            .select(
+                "current_bankroll, user_mode, default_stakes, "
+                "buy_in_count, stop_loss_bi, stop_win_bi, "
+                "time_alerts_enabled, time_warning_hours, "
+                "stop_loss_alerts_enabled, stop_win_alerts_enabled, "
+                "table_check_interval, show_explanations, sound_enabled, theme"
+            )
             .eq("user_id", user_id)
             .maybe_single()
             .execute()
         )
         
-        if resp.data:
-            return {
-                "active_usd": float(resp.data.get("active_usd", 0.0)),
-                "reserve_usd": float(resp.data.get("reserve_usd", 0.0)),
-                "track_count": int(resp.data.get("track_count", 1)),
-            }
+        if not resp.data:
+            return _default_user_settings()
         
-        return None
+        data = resp.data
+        
+        # Return with defaults for any None values
+        return {
+            "bankroll": float(data.get("current_bankroll") or 0),
+            "risk_mode": data.get("user_mode") or "balanced",
+            "default_stakes": data.get("default_stakes") or "$1/$2",
+            "buy_in_count": int(data.get("buy_in_count") or 15),
+            "stop_loss_bi": float(data.get("stop_loss_bi") or 1.0),
+            "stop_win_bi": float(data.get("stop_win_bi") or 3.0),
+            "time_alerts_enabled": data.get("time_alerts_enabled", True),
+            "time_warning_hours": int(data.get("time_warning_hours") or 3),
+            "stop_loss_alerts_enabled": data.get("stop_loss_alerts_enabled", True),
+            "stop_win_alerts_enabled": data.get("stop_win_alerts_enabled", True),
+            "table_check_interval": int(data.get("table_check_interval") or 20),
+            "show_explanations": data.get("show_explanations", True),
+            "sound_enabled": data.get("sound_enabled", False),
+            "theme": data.get("theme") or "dark",
+        }
         
     except Exception as e:
-        print(f"[db] load_bankroll_plan error: {e!r}")
-        return None
+        print(f"[db] get_user_settings error: {e}")
+        return _default_user_settings()
+
+
+def _default_user_settings() -> dict:
+    """Return default settings."""
+    return {
+        "bankroll": 0.0,
+        "risk_mode": "balanced",
+        "default_stakes": "$1/$2",
+        "buy_in_count": 15,
+        "stop_loss_bi": 1.0,
+        "stop_win_bi": 3.0,
+        "time_alerts_enabled": True,
+        "time_warning_hours": 3,
+        "stop_loss_alerts_enabled": True,
+        "stop_win_alerts_enabled": True,
+        "table_check_interval": 20,
+        "show_explanations": True,
+        "sound_enabled": False,
+        "theme": "dark",
+    }
+
+# =============================================================================
+# NEW FUNCTION: update_session_outcome()
+# =============================================================================
+# Add this function to increment outcome counters
+
+def update_session_outcome(session_id: str, outcome: str) -> bool:
+    """
+    Increment the appropriate outcome counter for a session.
+    
+    Args:
+        session_id: Session UUID
+        outcome: 'won', 'lost', or 'folded'
+    
+    Returns:
+        True if successful
+    """
+    if not session_id or outcome not in ('won', 'lost', 'folded'):
+        return False
+    
+    try:
+        sb = get_supabase()
+        
+        # Map outcome to column name
+        column_map = {
+            'won': 'outcomes_won',
+            'lost': 'outcomes_lost',
+            'folded': 'outcomes_folded',
+        }
+        column = column_map[outcome]
+        
+        # Get current value
+        resp = (
+            sb.table("poker_sessions")
+            .select(column)
+            .eq("id", session_id)
+            .single()
+            .execute()
+        )
+        
+        if not resp.data:
+            return False
+        
+        current_value = resp.data.get(column, 0) or 0
+        
+        # Increment
+        sb.table("poker_sessions").update({
+            column: current_value + 1
+        }).eq("id", session_id).execute()
+        
+        return True
+        
+    except Exception as e:
+        print(f"[db] update_session_outcome error: {e}")
+        return False
+    
+# =============================================================================
+# NEW FUNCTION: get_session_outcomes_from_session()
+# =============================================================================
+# Get outcome counts directly from session (faster than counting hands)
+
+def get_session_outcomes_from_session(session_id: str) -> dict:
+    """
+    Get outcome counts from the session record itself.
+    
+    This is faster than counting from poker_hands table.
+    Falls back to counting hands if session columns are empty.
+    """
+    if not session_id:
+        return {"won": 0, "lost": 0, "folded": 0, "total": 0}
+    
+    try:
+        sb = get_supabase()
+        resp = (
+            sb.table("poker_sessions")
+            .select("outcomes_won, outcomes_lost, outcomes_folded")
+            .eq("id", session_id)
+            .single()
+            .execute()
+        )
+        
+        if not resp.data:
+            return {"won": 0, "lost": 0, "folded": 0, "total": 0}
+        
+        won = resp.data.get("outcomes_won", 0) or 0
+        lost = resp.data.get("outcomes_lost", 0) or 0
+        folded = resp.data.get("outcomes_folded", 0) or 0
+        
+        return {
+            "won": won,
+            "lost": lost,
+            "folded": folded,
+            "total": won + lost + folded,
+        }
+        
+    except Exception as e:
+        print(f"[db] get_session_outcomes_from_session error: {e}")
+        return {"won": 0, "lost": 0, "folded": 0, "total": 0}
+
+
+# =============================================================================
+# NEW FUNCTION: calculate_stop_amounts()
+# =============================================================================
+# Helper to calculate stop-loss/win amounts from settings
+
+def calculate_stop_amounts(buy_in: float, stop_loss_bi: float, stop_win_bi: float) -> dict:
+    """
+    Calculate dollar amounts for stop-loss and stop-win.
+    
+    Args:
+        buy_in: Buy-in amount in dollars
+        stop_loss_bi: Stop-loss in buy-ins (e.g., 1.0 = 1 buy-in)
+        stop_win_bi: Stop-win in buy-ins (e.g., 3.0 = 3 buy-ins)
+    
+    Returns:
+        dict with stop_loss_amount and stop_win_amount
+    """
+    return {
+        "stop_loss_amount": buy_in * stop_loss_bi,
+        "stop_win_amount": buy_in * stop_win_bi,
+    }
+
+
+# =============================================================================
+# NEW FUNCTION: sync_settings_to_session_state()
+# =============================================================================
+# Helper to sync DB settings to Streamlit session state
+
+def sync_settings_to_session_state(user_id: str) -> None:
+    """
+    Load user settings from DB and sync to st.session_state.
+    
+    Call this after login or when settings might have changed.
+    """
+    import streamlit as st
+    
+    settings = get_user_settings(user_id)
+    
+    # Sync to session state
+    st.session_state["bankroll"] = settings.get("bankroll", 0)
+    st.session_state["risk_mode"] = settings.get("risk_mode", "balanced")
+    st.session_state["default_stakes"] = settings.get("default_stakes", "$1/$2")
+    st.session_state["buy_in_count"] = settings.get("buy_in_count", 15)
+    st.session_state["stop_loss_bi"] = settings.get("stop_loss_bi", 1.0)
+    st.session_state["stop_win_bi"] = settings.get("stop_win_bi", 3.0)
+    st.session_state["time_alerts_enabled"] = settings.get("time_alerts_enabled", True)
+    st.session_state["time_warning_hours"] = settings.get("time_warning_hours", 3)
+    st.session_state["stop_loss_alerts_enabled"] = settings.get("stop_loss_alerts_enabled", True)
+    st.session_state["stop_win_alerts_enabled"] = settings.get("stop_win_alerts_enabled", True)
+    st.session_state["table_check_interval"] = settings.get("table_check_interval", 20)

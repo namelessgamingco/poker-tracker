@@ -1,4 +1,4 @@
-# pages/97_System_Health.py — Admin system health + Supabase checks
+# pages/97_System_Health.py — Admin system health + Supabase checks for Poker App
 
 import os
 import time
@@ -6,13 +6,13 @@ import streamlit as st
 
 from auth import require_auth
 from sidebar import render_sidebar
-from supabase_client import get_supabase
+from supabase_client import get_supabase, get_supabase_admin
 
 from db import (
     list_profiles_for_admin,
-    get_recent_sessions_for_user,
-    get_recent_lines_for_user,
-    get_tracks_for_user,
+    get_user_sessions,
+    get_player_stats,
+    get_user_settings,
 )
 
 st.set_page_config(page_title="System Health", page_icon="🩺", layout="wide")
@@ -25,7 +25,7 @@ render_sidebar()
 role = st.session_state.get("role", "player")
 is_admin = bool(st.session_state.get("is_admin", False))
 is_active = bool(st.session_state.get("is_active", True))
-email = st.session_state.get("email", "unknown@example.com")
+email = st.session_state.get("user_email", "unknown@example.com")
 
 if not is_admin:
     st.error("System Health is admin-only.")
@@ -63,7 +63,7 @@ try:
     t0 = time.perf_counter()
     sb = get_supabase()
     _ = (
-        sb.table("profiles")
+        sb.table("poker_profiles")
         .select("user_id, email")
         .limit(1)
         .execute()
@@ -156,6 +156,7 @@ for name in [
     "SUPABASE_URL_DEV", "SUPABASE_URL_PROD",
     "SUPABASE_ANON_KEY_DEV", "SUPABASE_ANON_KEY_PROD",
     "SUPABASE_SERVICE_ROLE_KEY",
+    "RADOM_PAYMENT_LINK_BASE",
 ]:
     val = os.getenv(name)
     env_rows.append(
@@ -166,7 +167,7 @@ for name in [
         }
     )
 
-st.dataframe(env_rows, use_container_width=True, height=150)
+st.dataframe(env_rows, use_container_width=True, height=180)
 
 st.divider()
 
@@ -177,15 +178,13 @@ st.subheader("Core tables sample data")
 if sb is None or sb_status != "OK":
     st.warning("Skipping table checks because anon client is not available.")
 else:
+    # Poker app tables
     core_tables = [
-        "profiles",
-        "tracks",
-        "track_state",
-        "week_closures",
-        "session_results",
-        "line_events",
-        "hand_outcomes",
-        "track_events",
+        "poker_profiles",
+        "poker_sessions",
+        "poker_hands",
+        "poker_stakes_reference",
+        "poker_bankroll_history",
     ]
 
     table_rows = []
@@ -210,7 +209,7 @@ else:
             }
         )
 
-    st.dataframe(table_rows, use_container_width=True, height=260)
+    st.dataframe(table_rows, use_container_width=True, height=220)
 
 st.divider()
 
@@ -220,21 +219,19 @@ st.subheader("Row-count snapshot (key tables)")
 
 count_rows = []
 if sb is not None and sb_status == "OK":
-    for tname in ["profiles", "tracks", "week_closures", "session_results", "line_events"]:
+    # Table name -> count column mapping
+    tables_to_count = {
+        "poker_profiles": "user_id",
+        "poker_sessions": "id",
+        "poker_hands": "id",
+        "poker_stakes_reference": "id",
+    }
+    
+    for tname, count_col in tables_to_count.items():
         total = None
         status = "OK"
         err = ""
         try:
-            # COUNT(*) using Supabase exact count
-            # Some tables don't have an "id" column (e.g., profiles uses user_id)
-            count_col = {
-                "profiles": "user_id",
-                "tracks": "id",
-                "week_closures": "id",
-                "session_results": "id",
-                "line_events": "id",
-            }.get(tname, "id")
-
             res = (
                 sb.table(tname)
                 .select(count_col, count="exact")
@@ -255,7 +252,7 @@ if sb is not None and sb_status == "OK":
             }
         )
 
-    st.dataframe(count_rows, use_container_width=True, height=220)
+    st.dataframe(count_rows, use_container_width=True, height=180)
 else:
     st.caption("Row-count snapshot skipped (anon client unavailable).")
 
@@ -265,19 +262,19 @@ st.divider()
 
 st.subheader("RLS sanity checks (current user)")
 
-uid = getattr(user, "id", None) or getattr(user, "user_id", None) or ""
+uid = st.session_state.get("user_db_id") or ""
 uid = str(uid or "")
 
 c_rls1, c_rls2 = st.columns(2)
 
 if sb is not None and sb_status == "OK" and uid:
-    # 1) profiles row for this user_id
+    # 1) poker_profiles row for this user_id
     with c_rls1:
-        st.markdown("**profiles → current user**")
+        st.markdown("**poker_profiles → current user**")
         try:
             res = (
-                sb.table("profiles")
-                .select("user_id, email, role, is_active")
+                sb.table("poker_profiles")
+                .select("user_id, email, role, is_active, subscription_status")
                 .eq("user_id", uid)
                 .execute()
             )
@@ -290,26 +287,26 @@ if sb is not None and sb_status == "OK" and uid:
                 st.error(f"❌ {n} profile rows visible for this user_id (should be 1).")
             st.json(res.data or [])
         except Exception as e:
-            st.error("profiles RLS check failed.")
+            st.error("poker_profiles RLS check failed.")
             st.code(repr(e), language="python")
 
-    # 2) session_results visibility for this user
+    # 2) poker_sessions visibility for this user
     with c_rls2:
-        st.markdown("**session_results → current user**")
+        st.markdown("**poker_sessions → current user**")
         try:
             res = (
-                sb.table("session_results")
-                .select("id, week_number, session_pl_units, created_at")
+                sb.table("poker_sessions")
+                .select("id, stakes, profit_loss, status, created_at")
                 .eq("user_id", uid)
                 .limit(3)
                 .execute()
             )
             n = len(res.data or [])
             if n >= 0:
-                st.success(f"✅ RLS allowed {n} session_results rows for this user (showing up to 3).")
+                st.success(f"✅ RLS allowed {n} poker_sessions rows for this user (showing up to 3).")
             st.json(res.data or [])
         except Exception as e:
-            st.error("session_results RLS check failed.")
+            st.error("poker_sessions RLS check failed.")
             st.code(repr(e), language="python")
 else:
     st.caption("RLS checks skipped (no anon client or no current user id).")
@@ -320,74 +317,106 @@ st.divider()
 
 st.subheader("Current user data sanity")
 
-tracks = []
+settings = {}
 sessions = []
-lines = []
+stats = {}
 
 cols = st.columns(3)
 
 with cols[0]:
-    st.markdown("**Tracks**")
+    st.markdown("**User Settings**")
     try:
-        tracks = get_tracks_for_user(uid) if uid else []
-        st.write(f"Count: **{len(tracks)}**")
+        settings = get_user_settings(uid) if uid else {}
+        if settings:
+            st.write(f"Bankroll: **${settings.get('bankroll', 0):,.2f}**")
+            st.write(f"Risk Mode: **{settings.get('risk_mode', 'N/A')}**")
+            st.write(f"Default Stakes: **{settings.get('default_stakes', 'N/A')}**")
+        else:
+            st.warning("No settings found")
     except Exception as e:
-        st.error("Error loading tracks")
+        st.error("Error loading settings")
         st.code(repr(e), language="python")
 
 with cols[1]:
-    st.markdown("**Recent sessions (live)**")
+    st.markdown("**Recent Sessions**")
     try:
-        sessions = get_recent_sessions_for_user(uid, limit=5) if uid else []
+        sessions = get_user_sessions(uid, limit=5) if uid else []
         st.write(f"Count: **{len(sessions)}** (showing up to 5)")
     except Exception as e:
         st.error("Error loading sessions")
         st.code(repr(e), language="python")
 
 with cols[2]:
-    st.markdown("**Recent closed lines**")
+    st.markdown("**Player Stats**")
     try:
-        lines = get_recent_lines_for_user(uid, limit=5) if uid else []
-        st.write(f"Count: **{len(lines)}** (showing up to 5)")
+        stats = get_player_stats(uid) if uid else {}
+        if stats:
+            st.write(f"Total Sessions: **{stats.get('total_sessions', 0)}**")
+            st.write(f"Total Profit: **${stats.get('total_profit_loss', 0):,.2f}**")
+            st.write(f"Win Rate: **{stats.get('win_rate_bb_100', 0):+.2f} BB/100**")
+        else:
+            st.warning("No stats available")
     except Exception as e:
-        st.error("Error loading closed lines")
+        st.error("Error loading stats")
         st.code(repr(e), language="python")
-
-if tracks:
-    st.markdown("##### Sample tracks")
-    st.dataframe(
-        [{"id": t.get("id"), "label": t.get("track_label")} for t in tracks[:5]],
-        use_container_width=True,
-        height=200,
-    )
 
 if sessions:
     st.markdown("##### Sample recent sessions")
     sess_rows = [
         {
-            "created_at": s.get("created_at"),
-            "track_id": s.get("track_id"),
-            "week_number": s.get("week_number"),
-            "session_pl_units": s.get("session_pl_units"),
+            "started_at": s.get("started_at"),
+            "stakes": s.get("stakes"),
+            "profit_loss": s.get("profit_loss"),
+            "hands_played": s.get("hands_played"),
+            "status": s.get("status"),
         }
         for s in sessions[:5]
     ]
     st.dataframe(sess_rows, use_container_width=True, height=200)
 
-if lines:
-    st.markdown("##### Sample recent closed lines")
-    line_rows = [
-        {
-            "created_at": le.get("created_at"),
-            "track_id": le.get("track_id"),
-            "week_number": le.get("week_number"),
-            "reason": le.get("reason"),
-        }
-        for le in lines[:5]
-    ]
-    st.dataframe(line_rows, use_container_width=True, height=200)
+st.divider()
+
+# ---------- Subscription status overview ----------
+
+st.subheader("Subscription Status Overview (Admin)")
+
+if service_role_status == "OK":
+    try:
+        all_profiles = list_profiles_for_admin()
+        
+        # Count by subscription status
+        status_counts = {}
+        for p in all_profiles:
+            status = p.get("subscription_status", "unknown")
+            status_counts[status] = status_counts.get(status, 0) + 1
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Total Users", len(all_profiles))
+        with col2:
+            st.metric("Active", status_counts.get("active", 0))
+        with col3:
+            st.metric("Trial", status_counts.get("trial", 0))
+        with col4:
+            st.metric("Pending/Other", 
+                      len(all_profiles) - status_counts.get("active", 0) - status_counts.get("trial", 0))
+        
+        # Show status breakdown
+        st.markdown("**Subscription Status Breakdown:**")
+        st.dataframe(
+            [{"status": k, "count": v} for k, v in sorted(status_counts.items())],
+            use_container_width=True,
+            height=150
+        )
+        
+    except Exception as e:
+        st.error("Error loading subscription overview")
+        st.code(repr(e), language="python")
+else:
+    st.caption("Subscription overview requires service-role access.")
 
 st.caption(
     "Use this page to quickly see if Supabase connectivity, service-role access, "
-    "RLS, environment variables, or core tables are failing before blaming the tracker."
+    "RLS, environment variables, or core tables are failing."
 )

@@ -1,4 +1,15 @@
-# pages/99_Admin.py — Admin Console (Supabase-backed)
+# pages/99_Admin.py — Admin Console for Poker Decision App
+# =============================================================================
+#
+# COMPLETE CONTROL CENTER FOR $299/MONTH SUBSCRIPTION MANAGEMENT
+#
+# TABS:
+# 1. Dashboard - Revenue metrics, user counts, quick stats
+# 2. User Management - Create/Edit/Delete users
+# 3. Subscriptions - Subscription control, trials, overrides
+# 4. Player Detail - Deep dive into individual user data
+#
+# =============================================================================
 
 import streamlit as st
 st.set_page_config(page_title="Admin Console", page_icon="🔐", layout="wide")
@@ -9,12 +20,9 @@ from sidebar import render_sidebar
 from datetime import datetime, timezone, timedelta
 from math import isfinite
 import os
-import json
 
 # DB helpers
 from db import (
-    get_tracks_for_user_admin,
-    load_track_state_admin,
     get_profile_by_auth_id,
     list_profiles_for_admin,
     set_profile_role,
@@ -25,19 +33,19 @@ from db import (
     admin_set_user_password,
     delete_profile_by_user_id,
     get_recent_sessions_for_user_admin,
-    get_recent_lines_for_user_admin,
-    get_recent_closed_weeks_for_user_admin,
+    get_player_stats,
+    get_user_settings,
+    admin_grant_free_access,
+    admin_revoke_free_access,
+    admin_set_subscription_status,
+    admin_get_subscription_details,
+    admin_extend_trial,
+    admin_resend_payment_link,
 )
 
-# Correct import for admin supabase client
 from supabase_client import get_supabase_admin
 
-from db_stats import get_player_totals, get_closed_weeks_distribution
-
-from track_manager import TrackManager
-from week_manager import WeekManager
-
-# Get admin client (may be None if not configured)
+# Get admin client
 try:
     sb_admin = get_supabase_admin()
 except Exception:
@@ -67,7 +75,7 @@ def _extract_auth_identity(u):
 
 auth_id, cur_email = _extract_auth_identity(user)
 
-# Pull profile so we know role/is_active
+# Pull profile for role check
 try:
     profile = get_profile_by_auth_id(auth_id) or {}
 except Exception as e:
@@ -77,7 +85,7 @@ except Exception as e:
 role = profile.get("role", "player") or "player"
 is_active = bool(profile.get("is_active", True))
 
-# Fallback: env ADMIN_EMAILS still works for bootstrapping
+# Fallback: env ADMIN_EMAILS for bootstrapping
 ADMIN_EMAILS = os.getenv("ADMIN_EMAILS", "")
 if ADMIN_EMAILS:
     admin_set = {e.strip().lower() for e in ADMIN_EMAILS.split(",") if e.strip()}
@@ -87,7 +95,7 @@ if ADMIN_EMAILS:
 st.session_state["role"] = role
 st.session_state["is_active"] = is_active
 st.session_state["is_admin"] = bool(is_active and role == "admin")
-st.session_state["email"] = cur_email
+st.session_state["user_email"] = cur_email
 
 if not st.session_state["is_admin"]:
     reason = "inactive" if not is_active else f"role = '{role}'"
@@ -95,7 +103,10 @@ if not st.session_state["is_admin"]:
     st.page_link("app.py", label="← Back to Home", icon="🏠")
     st.stop()
 
-# ---------- Shared helpers ----------
+
+# =============================================================================
+# HELPERS
+# =============================================================================
 
 def _safe_float(x, default=0.0):
     try:
@@ -104,10 +115,11 @@ def _safe_float(x, default=0.0):
     except Exception:
         return default
 
-def _fmt_u(units: float) -> str:
-    u = _safe_float(units)
-    sign = "+" if u >= 0 else ""
-    return f"{sign}{u:.2f}u"
+
+def _fmt_currency(amount: float) -> str:
+    """Format as currency."""
+    return f"${amount:,.2f}"
+
 
 def _fmt_ts(ts_raw) -> str:
     """Format ISO timestamp → 'YYYY-MM-DD HH:MM' (UTC)."""
@@ -121,65 +133,62 @@ def _fmt_ts(ts_raw) -> str:
         return str(ts_raw)
 
 
-def _sec_to_min_str(sec) -> str:
-    """Convert seconds → minutes string with 1 decimal."""
-    s = _safe_float(sec)
-    if s <= 0:
-        return "0.0"
-    return f"{s / 60.0:.1f}"
+def _fmt_date(ts_raw) -> str:
+    """Format ISO timestamp → 'YYYY-MM-DD'."""
+    if not ts_raw:
+        return "—"
+    try:
+        dt = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))
+        return dt.strftime("%Y-%m-%d")
+    except Exception:
+        return str(ts_raw)
 
-def _coerce_counts(dist: dict) -> tuple[dict, int]:
-    """
-    Supports multiple shapes:
-      A) {"counts": {...}, "total_closed": n}
-      B) {"counts": [{"bucket":"primary_cap","count":3}, ...], "total_closed": n}
-      C) {"counts": "<json string>", "total_closed": n}
-      D) {"primary_cap": 3, "optimizer_cap": 2, ..., "total_closed": n}  (flat)
-    """
-    if not isinstance(dist, dict):
-        return ({}, 0)
 
-    total_closed = int(_safe_float(dist.get("total_closed", 0) or 0))
+def _days_until(ts_raw) -> int:
+    """Days until a future timestamp."""
+    if not ts_raw:
+        return 0
+    try:
+        dt = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))
+        dt_utc = dt.astimezone(timezone.utc)
+        now_utc = datetime.now(timezone.utc)
+        delta = dt_utc - now_utc
+        return max(0, delta.days)
+    except Exception:
+        return 0
 
-    counts_raw = dist.get("counts", None)
 
-    # D) flat shape (no "counts" key)
-    if counts_raw is None:
-        # treat all non-total_closed keys as counts
-        flat = {k: v for k, v in dist.items() if k != "total_closed"}
-        if flat:
-            return (flat, total_closed)
+def _days_ago(ts_raw) -> int:
+    """Days since a past timestamp."""
+    if not ts_raw:
+        return 999
+    try:
+        dt = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))
+        dt_utc = dt.astimezone(timezone.utc)
+        now_utc = datetime.now(timezone.utc)
+        delta = now_utc - dt_utc
+        return max(0, delta.days)
+    except Exception:
+        return 999
 
-    # C) counts is a JSON string
-    if isinstance(counts_raw, str):
-        try:
-            counts_raw = json.loads(counts_raw)
-        except Exception:
-            return ({}, total_closed)
 
-    # A) counts is already a dict
-    if isinstance(counts_raw, dict):
-        return (counts_raw, total_closed)
+def _status_color(status: str) -> str:
+    """Return color for subscription status."""
+    colors = {
+        "active": "🟢",
+        "trial": "🔵",
+        "grace_period": "🟡",
+        "pending": "⚪",
+        "overdue": "🟠",
+        "cancelled": "🔴",
+        "expired": "⚫",
+    }
+    return colors.get(status, "⚪")
 
-    # B) counts is a list of objects
-    if isinstance(counts_raw, list):
-        out = {}
-        for item in counts_raw:
-            if not isinstance(item, dict):
-                continue
-            k = str(item.get("bucket") or item.get("key") or "")
-            v = item.get("count") if "count" in item else item.get("value")
-            if k:
-                out[k] = v
-        return (out, total_closed)
 
-    return ({}, total_closed)
-
-if "tm" not in st.session_state:
-    st.session_state.tm = TrackManager(unit_value=float(st.session_state.get("unit_value", 1.0)))
-tm: TrackManager = st.session_state.tm
-
-# ---------- Page chrome ----------
+# =============================================================================
+# PAGE HEADER
+# =============================================================================
 
 st.title("🔐 Admin Console")
 
@@ -189,443 +198,628 @@ with top1:
 with top2:
     st.metric("Role", role)
 with top3:
-    st.metric("Active", "Yes" if is_active else "No")
+    env = os.getenv("APP_ENV", "unknown")
+    st.metric("Environment", env.upper())
 
 st.divider()
 
-tabs = st.tabs(["👤 Users & Roles", "📂 Player Detail"])
 
-# ============================
-# TAB 1 — Users & Roles
-# ============================
+# =============================================================================
+# LOAD ALL PROFILES ONCE
+# =============================================================================
+
+all_profiles = list_profiles_for_admin()
+
+
+# =============================================================================
+# TABS
+# =============================================================================
+
+tabs = st.tabs(["📊 Dashboard", "👤 User Management", "💳 Subscriptions", "🔍 Player Detail"])
+
+
+# =============================================================================
+# TAB 1: DASHBOARD
+# =============================================================================
+
 with tabs[0]:
-    st.subheader("Users & Roles")
+    st.subheader("📊 Revenue Dashboard")
+    
+    # Calculate metrics
+    total_users = len(all_profiles)
+    
+    active_subs = [p for p in all_profiles if p.get("subscription_status") == "active"]
+    trial_users = [p for p in all_profiles if p.get("subscription_status") == "trial"]
+    pending_users = [p for p in all_profiles if p.get("subscription_status") == "pending"]
+    cancelled_users = [p for p in all_profiles if p.get("subscription_status") in ("cancelled", "expired")]
+    override_users = [p for p in all_profiles if p.get("admin_override_active")]
+    
+    # MRR calculation ($299/month per active subscriber)
+    mrr = len(active_subs) * 299
+    
+    # Revenue at risk (trials expiring in 3 days)
+    trials_expiring_soon = []
+    for p in trial_users:
+        trial_ends = p.get("trial_ends_at")
+        if trial_ends and _days_until(trial_ends) <= 3:
+            trials_expiring_soon.append(p)
+    
+    # Display metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Users", total_users)
+    with col2:
+        st.metric("Active Subscribers", len(active_subs), 
+                  help="Users with subscription_status = 'active'")
+    with col3:
+        st.metric("Monthly Revenue (MRR)", _fmt_currency(mrr))
+    with col4:
+        st.metric("Trial Users", len(trial_users),
+                  help="Users currently in trial period")
+    
+    col5, col6, col7, col8 = st.columns(4)
+    
+    with col5:
+        st.metric("Pending Signup", len(pending_users),
+                  help="Users who haven't completed payment")
+    with col6:
+        st.metric("Cancelled/Expired", len(cancelled_users))
+    with col7:
+        st.metric("Admin Overrides", len(override_users),
+                  help="Users with free access granted")
+    with col8:
+        st.metric("Trials Expiring Soon", len(trials_expiring_soon),
+                  help="Trial users expiring in 3 days or less")
+    
+    st.divider()
+    
+    # Subscription breakdown
+    st.markdown("#### Subscription Status Breakdown")
+    
+    status_counts = {}
+    for p in all_profiles:
+        status = p.get("subscription_status", "unknown") or "unknown"
+        status_counts[status] = status_counts.get(status, 0) + 1
+    
+    status_data = []
+    for status, count in sorted(status_counts.items(), key=lambda x: -x[1]):
+        status_data.append({
+            "Status": f"{_status_color(status)} {status}",
+            "Count": count,
+            "% of Total": f"{count/total_users*100:.1f}%" if total_users > 0 else "0%",
+        })
+    
+    st.dataframe(status_data, use_container_width=True, height=250)
+    
+    # Trials expiring soon
+    if trials_expiring_soon:
+        st.markdown("#### ⚠️ Trials Expiring Soon")
+        expiring_data = []
+        for p in trials_expiring_soon:
+            expiring_data.append({
+                "Email": p.get("email"),
+                "Trial Ends": _fmt_date(p.get("trial_ends_at")),
+                "Days Left": _days_until(p.get("trial_ends_at")),
+            })
+        st.dataframe(expiring_data, use_container_width=True, height=150)
+    
+    # Recent activity
+    st.markdown("#### Recent User Activity")
+    
+    recent_activity = []
+    for p in all_profiles:
+        last_active = p.get("updated_at") or p.get("created_at")
+        recent_activity.append({
+            "email": p.get("email"),
+            "status": p.get("subscription_status"),
+            "last_active": last_active,
+            "days_ago": _days_ago(last_active),
+        })
+    
+    # Sort by most recent
+    recent_activity.sort(key=lambda x: x["days_ago"])
+    
+    activity_display = []
+    for a in recent_activity[:10]:
+        activity_display.append({
+            "Email": a["email"],
+            "Status": f"{_status_color(a['status'])} {a['status']}",
+            "Last Active": _fmt_date(a["last_active"]),
+            "Days Ago": a["days_ago"],
+        })
+    
+    st.dataframe(activity_display, use_container_width=True, height=300)
 
+
+# =============================================================================
+# TAB 2: USER MANAGEMENT
+# =============================================================================
+
+with tabs[1]:
+    st.subheader("👤 User Management")
+    
     # ----- Create new user -----
-    with st.expander("➕ Create new user", expanded=False):
-        new_email = st.text_input("Email", key="admin_new_email")
-        new_pw = st.text_input("Password", type="password", key="admin_new_pw")
-        new_role = st.selectbox(
-            "Role",
-            ["trial_player", "player", "admin"],
-            index=1,
-            key="admin_new_role",
-        )
-        new_active = st.checkbox("Active", value=True, key="admin_new_active")
-
-        if st.button("Create user", type="primary", key="admin_create_user_btn"):
+    with st.expander("➕ Create New User", expanded=False):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            new_email = st.text_input("Email", key="admin_new_email")
+            new_pw = st.text_input("Password", type="password", key="admin_new_pw")
+        
+        with col2:
+            new_role = st.selectbox(
+                "Role",
+                ["player", "admin"],
+                index=0,
+                key="admin_new_role",
+            )
+            new_active = st.checkbox("Active immediately", value=False, key="admin_new_active")
+            start_trial = st.checkbox("Start 7-day trial", value=True, key="admin_start_trial")
+        
+        if st.button("Create User", type="primary", key="admin_create_user_btn"):
             if not new_email.strip() or not new_pw.strip():
                 st.error("Email and password are required.")
             else:
                 try:
                     created = admin_create_user(
                         email=new_email,
-                        password=new_pw,   # not optional anymore
+                        password=new_pw,
                         role=new_role,
-                        is_active=new_active,
+                        is_active=new_active or start_trial,
+                        start_trial=start_trial,
                     )
-                    st.success(f"Created user {created.get('email')}.")
+                    st.success(f"✅ Created user: {created.get('email')}")
+                    if created.get("payment_link_url"):
+                        st.info(f"Payment link: {created.get('payment_link_url')}")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Failed to create user: {e!r}")
-
-    # ----- Existing profiles & editing -----
-    profiles = list_profiles_for_admin()
-
-    if not profiles:
-        st.info(
-            "No profiles found yet. If you already have users in Supabase, double-check "
-            "that SUPABASE_SERVICE_ROLE_KEY is configured for this app. "
-            "New users created above will appear here once they're saved."
-        )
-        st.caption(
-            "Auth users are still managed here via the service-role client. "
-            "Schema changes and deep DB admin still live in the Supabase console."
-        )
-    else:
-        with st.expander("🛠 Edit existing user", expanded=False):
-            # 1) Build labels + lookup map
-            labels: list[str] = []
-            label_to_profile: dict[str, dict] = {}
-
-            for p in profiles:
+    
+    # ----- Edit existing user -----
+    if all_profiles:
+        with st.expander("🛠 Edit Existing User", expanded=False):
+            # Build selection
+            labels = []
+            label_to_profile = {}
+            
+            for p in all_profiles:
                 email = (p.get("email") or "—").strip()
-                user_id = str(p.get("user_id") or "")
-                short = user_id[:8] if user_id else "--------"
-
-                label = f"{email} · {short}"
+                status = p.get("subscription_status", "unknown")
+                label = f"{email} ({status})"
                 labels.append(label)
                 label_to_profile[label] = p
-
-            # 2) Select user (ONE time, outside the loop)
-            sel_label = st.selectbox(
-                "Select user",
-                options=labels,
-                key="admin_select_user",
-            )
-
-            selected = label_to_profile.get(sel_label, {}) or {}
-
-            # 3) Canonical id used everywhere
+            
+            sel_label = st.selectbox("Select user", options=labels, key="admin_select_user")
+            selected = label_to_profile.get(sel_label, {})
+            
             sel_user_id = str(selected.get("user_id") or "")
             if not sel_user_id:
                 st.error("Selected profile has no user_id.")
-                st.stop()
-
-            # Editable fields
-            email_val = st.text_input("Email", value=selected.get("email", ""), key="admin_edit_email")
-
-            col_a, col_b, col_c = st.columns(3)
-            with col_a:
-                cur_role = selected.get("role", "player") or "player"
-                role_choices = ["trial_player", "player", "admin"]
-                if cur_role not in role_choices:
-                    role_choices.insert(0, cur_role)
-                new_role = st.selectbox("Role", role_choices, index=role_choices.index(cur_role))
-            with col_b:
-                cur_active = bool(selected.get("is_active", True))
-                new_active = st.checkbox("Active", value=cur_active, key="admin_edit_active")
-            with col_c:
-                role_since_raw = selected.get("role_assigned_at") or selected.get("created_at")
-                role_since_str = "—"
-                role_days_str = "—"
-                if role_since_raw:
-                    try:
-                        ts = datetime.fromisoformat(str(role_since_raw).replace("Z", "+00:00"))
-                        # Use timezone-aware UTC datetimes instead of deprecated utcnow()
-                        now_utc = datetime.now(timezone.utc)
-                        ts_utc = ts.astimezone(timezone.utc)
-                        days = (now_utc - ts_utc).days
-
-                        role_since_str = ts_utc.strftime("%Y-%m-%d")
-                        role_days_str = f"{days} days"
-                    except Exception:
-                        role_since_str = str(role_since_raw)
-
-                st.markdown(f"**Role since:** {role_since_str}")
-                st.markdown(f"**In role:** {role_days_str}")
-
-            temp_pw = st.text_input(
-                "Set new TEMP password (optional)",
-                type="password",
-                key="admin_edit_temp_pw",
-                help="If set, this will overwrite their password. Give it to them directly."
-            )
-
-            action_cols = st.columns(2)
-
-            with action_cols[0]:
-                if st.button("Save changes", type="primary", key="admin_save_changes"):
-                    if not sel_user_id:
-                        st.error("Selected profile has no user_id.")
-                        st.stop()
-
-                    something_changed = False
-
-                    # 1) Email change (AUTH)
-                    try:
-                        old_email = (selected.get("email") or "").strip().lower()
-                        new_email_clean = (email_val or "").strip().lower()
-                        if new_email_clean and new_email_clean != old_email:
-                            admin_update_user_email(sel_user_id, new_email_clean)  # auth.users update
-                            something_changed = True
-                    except Exception as e:
-                        st.error(f"Email update failed: {e!r}")
-
-                    # 2) Role / active flags (profiles table)
-                    try:
-                        if new_role != cur_role:
-                            set_profile_role(sel_user_id, new_role)
-                            something_changed = True
-                        if new_active != cur_active:
-                            set_profile_active(sel_user_id, new_active)
-                            something_changed = True
-                    except Exception as e:
-                        st.error(f"Role/active update failed: {e!r}")
-
-                    # 3) Temp password (AUTH)
-                    try:
-                        if temp_pw:
-                            admin_set_user_password(sel_user_id, temp_pw)  # auth.users update
-                            something_changed = True
-                    except Exception as e:
-                        st.error(f"Password update failed: {e!r}")
-
-                    if something_changed:
-                        st.success("User updated.")
-                        st.rerun()
-                    else:
-                        st.info("No changes to save.")
-
-            with action_cols[1]:
-                if st.button("Delete user", type="secondary", key="admin_delete_user"):
-                    if not sel_user_id:
-                        st.error("Selected profile has no user_id.")
-                        st.stop()
-
-                    try:
-                        # Delete auth user
-                        admin_delete_user(sel_user_id)
-
-                        # Also delete profile row (prevents ghost rows in admin lists)
-                        # You need a DB helper for this if you don't already have one:
-                        delete_profile_by_user_id(sel_user_id)
-
-                        st.success("User deleted.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Failed to delete user: {e!r}")
-
-        # ----- All profiles table -----
-        st.markdown("#### All profiles")
-
+            else:
+                # Editable fields
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    email_val = st.text_input("Email", value=selected.get("email", ""), key="admin_edit_email")
+                    
+                    cur_role = selected.get("role", "player") or "player"
+                    role_choices = ["player", "admin"]
+                    if cur_role not in role_choices:
+                        role_choices.insert(0, cur_role)
+                    new_role = st.selectbox("Role", role_choices, 
+                                           index=role_choices.index(cur_role), key="admin_edit_role")
+                
+                with col2:
+                    cur_active = bool(selected.get("is_active", True))
+                    new_active = st.checkbox("Active", value=cur_active, key="admin_edit_active")
+                    
+                    temp_pw = st.text_input(
+                        "Set new password (optional)",
+                        type="password",
+                        key="admin_edit_temp_pw",
+                    )
+                
+                # Action buttons
+                col_a, col_b, col_c = st.columns(3)
+                
+                with col_a:
+                    if st.button("💾 Save Changes", type="primary", key="admin_save_changes"):
+                        something_changed = False
+                        
+                        # Email change
+                        try:
+                            old_email = (selected.get("email") or "").strip().lower()
+                            new_email_clean = (email_val or "").strip().lower()
+                            if new_email_clean and new_email_clean != old_email:
+                                admin_update_user_email(sel_user_id, new_email_clean)
+                                something_changed = True
+                        except Exception as e:
+                            st.error(f"Email update failed: {e!r}")
+                        
+                        # Role/active
+                        try:
+                            if new_role != cur_role:
+                                set_profile_role(sel_user_id, new_role)
+                                something_changed = True
+                            if new_active != cur_active:
+                                set_profile_active(sel_user_id, new_active)
+                                something_changed = True
+                        except Exception as e:
+                            st.error(f"Role/active update failed: {e!r}")
+                        
+                        # Password
+                        try:
+                            if temp_pw:
+                                admin_set_user_password(sel_user_id, temp_pw)
+                                something_changed = True
+                        except Exception as e:
+                            st.error(f"Password update failed: {e!r}")
+                        
+                        if something_changed:
+                            st.success("✅ User updated.")
+                            st.rerun()
+                        else:
+                            st.info("No changes to save.")
+                
+                with col_c:
+                    if st.button("🗑️ Delete User", type="secondary", key="admin_delete_user"):
+                        try:
+                            admin_delete_user(sel_user_id)
+                            delete_profile_by_user_id(sel_user_id)
+                            st.success("✅ User deleted.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Failed to delete user: {e!r}")
+    
+    # ----- All profiles table -----
+    st.markdown("#### All Users")
+    
+    if not all_profiles:
+        st.info("No users found.")
+    else:
         table = []
         now_utc = datetime.now(timezone.utc)
-
-        for p in profiles:
-            # role_since: prefer role_assigned_at, fall back to created_at
-            role_since_raw = p.get("role_assigned_at") or p.get("created_at")
-            role_since_str = "—"
-            days_in_role = None
-
-            if role_since_raw:
-                try:
-                    ts = datetime.fromisoformat(str(role_since_raw).replace("Z", "+00:00"))
-                    ts_utc = ts.astimezone(timezone.utc)
-                    role_since_str = ts_utc.strftime("%Y-%m-%d")
-                    days_in_role = (now_utc - ts_utc).days
-                except Exception:
-                    role_since_str = str(role_since_raw)
-
+        
+        for p in all_profiles:
             created_raw = p.get("created_at")
-            created_str = "—"
-            if created_raw:
-                try:
-                    cts = datetime.fromisoformat(str(created_raw).replace("Z", "+00:00"))
-                    created_str = cts.astimezone(timezone.utc).strftime("%Y-%m-%d")
-                except Exception:
-                    created_str = str(created_raw)
-
+            created_str = _fmt_date(created_raw)
+            
+            status = p.get("subscription_status", "unknown")
+            override = "✓" if p.get("admin_override_active") else ""
+            
             table.append({
-                "email": p.get("email"),
-                "role": p.get("role", "player"),
-                "is_active": p.get("is_active", True),
-                "role_since": role_since_str,
-                "days_in_role": days_in_role,
-                "created_at": created_str,
-                "user_id": p.get("user_id"),
+                "Email": p.get("email"),
+                "Status": f"{_status_color(status)} {status}",
+                "Role": p.get("role", "player"),
+                "Active": "✓" if p.get("is_active") else "✗",
+                "Override": override,
+                "Created": created_str,
             })
+        
+        st.dataframe(table, use_container_width=True, height=400)
 
-        st.dataframe(table, use_container_width=True, height=360)
 
-        st.caption(
-            "Auth users are now managed here via the service-role client. "
-            "Schema changes and deep DB admin still live in the Supabase console."
-        )
+# =============================================================================
+# TAB 3: SUBSCRIPTIONS
+# =============================================================================
 
-# ============================
-# TAB 2 — Player Detail
-# ============================
-with tabs[1]:
-    st.subheader("Player Detail")
-
-    profiles = list_profiles_for_admin()
-    if not profiles:
-        st.info("No profiles; can't show player stats.")
+with tabs[2]:
+    st.subheader("💳 Subscription Management")
+    
+    if not all_profiles:
+        st.info("No users found.")
     else:
-        email_to_profile = {p.get("email", ""): p for p in profiles}
+        # Select user
+        labels = []
+        label_to_profile = {}
+        
+        for p in all_profiles:
+            email = (p.get("email") or "—").strip()
+            status = p.get("subscription_status", "unknown")
+            label = f"{_status_color(status)} {email}"
+            labels.append(label)
+            label_to_profile[label] = p
+        
+        sel_label = st.selectbox("Select user", options=labels, key="sub_select_user")
+        selected = label_to_profile.get(sel_label, {})
+        sel_user_id = str(selected.get("user_id") or "")
+        
+        if not sel_user_id:
+            st.error("No user selected.")
+        else:
+            # Get subscription details
+            sub_details = admin_get_subscription_details(sel_user_id) or {}
+            
+            # Display current status
+            st.markdown("---")
+            st.markdown("#### Current Subscription Status")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                status = selected.get("subscription_status", "unknown")
+                st.metric("Status", f"{_status_color(status)} {status}")
+            
+            with col2:
+                plan = selected.get("subscription_plan", "—")
+                amount = selected.get("subscription_amount", 299)
+                st.metric("Plan", f"{plan} (${amount}/mo)")
+            
+            with col3:
+                is_trial = selected.get("is_trial", False)
+                trial_ends = selected.get("trial_ends_at")
+                if is_trial and trial_ends:
+                    days_left = _days_until(trial_ends)
+                    st.metric("Trial Ends", f"{_fmt_date(trial_ends)} ({days_left} days)")
+                else:
+                    st.metric("Trial", "N/A")
+            
+            with col4:
+                override = selected.get("admin_override_active", False)
+                st.metric("Admin Override", "✅ Active" if override else "❌ None")
+            
+            # Additional details
+            col5, col6, col7, col8 = st.columns(4)
+            
+            with col5:
+                started = sub_details.get("subscription_started_at")
+                st.metric("Started", _fmt_date(started) if started else "—")
+            
+            with col6:
+                period_end = sub_details.get("subscription_current_period_end")
+                st.metric("Period Ends", _fmt_date(period_end) if period_end else "—")
+            
+            with col7:
+                last_payment = sub_details.get("last_successful_payment_at")
+                st.metric("Last Payment", _fmt_date(last_payment) if last_payment else "—")
+            
+            with col8:
+                failed = sub_details.get("failed_payment_count", 0) or 0
+                st.metric("Failed Payments", failed)
+            
+            # Quick actions
+            st.markdown("---")
+            st.markdown("#### Quick Actions")
+            
+            col_a, col_b, col_c, col_d = st.columns(4)
+            
+            with col_a:
+                if st.button("🎁 Grant Free Access", key="sub_grant_access"):
+                    try:
+                        admin_grant_free_access(sel_user_id, "Admin granted")
+                        st.success("✅ Free access granted.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed: {e!r}")
+            
+            with col_b:
+                if st.button("🚫 Revoke Override", key="sub_revoke_access"):
+                    try:
+                        admin_revoke_free_access(sel_user_id)
+                        st.success("✅ Override revoked.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed: {e!r}")
+            
+            with col_c:
+                extend_days = st.number_input("Days", min_value=1, max_value=30, value=7, key="sub_extend_days")
+                if st.button("⏰ Extend Trial", key="sub_extend_trial"):
+                    try:
+                        admin_extend_trial(sel_user_id, days=extend_days)
+                        st.success(f"✅ Trial extended by {extend_days} days.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed: {e!r}")
+            
+            with col_d:
+                payment_link = admin_resend_payment_link(sel_user_id)
+                if payment_link:
+                    st.markdown(f"[📧 Payment Link]({payment_link})")
+                    st.caption("Copy and send to user")
+                else:
+                    st.caption("No payment link")
+            
+            # Force status change
+            st.markdown("---")
+            st.markdown("#### Force Status Change")
+            
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                new_status = st.selectbox(
+                    "New Status",
+                    ["pending", "trial", "active", "grace_period", "overdue", "cancelled", "expired"],
+                    key="sub_new_status"
+                )
+            
+            with col2:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("⚡ Force Status", type="secondary", key="sub_force_status"):
+                    try:
+                        admin_set_subscription_status(sel_user_id, new_status)
+                        st.success(f"✅ Status changed to {new_status}.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed: {e!r}")
+            
+            st.caption("⚠️ Use with caution. This directly overrides the subscription status.")
+
+
+# =============================================================================
+# TAB 4: PLAYER DETAIL
+# =============================================================================
+
+with tabs[3]:
+    st.subheader("🔍 Player Detail")
+    
+    if not all_profiles:
+        st.info("No users found.")
+    else:
+        # Select user
+        email_to_profile = {p.get("email", ""): p for p in all_profiles}
         emails_sorted = sorted(email_to_profile.keys())
-
-        sel_email = st.selectbox("Select player", options=emails_sorted, key="admin_player_detail_email")
-        sel_profile = email_to_profile.get(sel_email, {}) or {}
-
-        # ✅ Single canonical id everywhere: profiles.user_id == auth.users.id
+        
+        sel_email = st.selectbox("Select player", options=emails_sorted, key="detail_player_email")
+        sel_profile = email_to_profile.get(sel_email, {})
         sel_user_id = str(sel_profile.get("user_id") or "")
+        
         if not sel_user_id:
             st.warning("Selected profile has no user_id.")
-            st.stop()
-
-        # ⚠️ Admin client guard (RLS safety)
-        if not sb_admin:
-            st.error(
-                "Admin client not configured (SUPABASE_SERVICE_ROLE_KEY missing). "
-                "Player totals and distributions may appear as 0 due to RLS."
-            )
-
-        # ---------- Calendar P/L ----------
-        all_u = month_u = week_u = ev_diff_u = 0.0
-
-        try:
-            totals = get_player_totals(user_id=sel_user_id, sb=sb_admin) or {}
-
-            all_u = _safe_float(totals.get("all_time_units", 0.0))
-            month_u = _safe_float(totals.get("month_units", 0.0))
-            week_u = _safe_float(totals.get("week_units", 0.0))
-            ev_diff_u = _safe_float(totals.get("ev_diff_units", 0.0))
-
-        except Exception as e:
-            st.error(f"get_player_totals error: {e!r}")
-
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("All-time", _fmt_u(all_u))
-        c2.metric("This month", _fmt_u(month_u))
-        c3.metric("This week", _fmt_u(week_u))
-        c4.metric("EV diff (all-time)", _fmt_u(ev_diff_u))
-
-        st.caption(
-            "Calendar ranges from Supabase: week = Monday–Sunday (UTC). "
-            "These ignore testing_mode and sim data (same filters as Overview)."
-        )
-
-        with st.expander("Closed weeks distribution"):
+        else:
+            # User info header
+            st.markdown("---")
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                status = sel_profile.get("subscription_status", "unknown")
+                st.metric("Status", f"{_status_color(status)} {status}")
+            
+            with col2:
+                st.metric("Active", "✓" if sel_profile.get("is_active") else "✗")
+            
+            with col3:
+                created = sel_profile.get("created_at")
+                st.metric("Member Since", _fmt_date(created))
+            
+            with col4:
+                override = sel_profile.get("admin_override_active", False)
+                st.metric("Free Access", "✓" if override else "✗")
+            
+            # Settings
+            st.markdown("---")
+            st.markdown("#### Player Settings")
+            
             try:
-                dist = get_closed_weeks_distribution(user_id=sel_user_id, sb=sb_admin) or {}
-                counts, total_closed = _coerce_counts(dist)
-
-                rows = [
-                    {"Bucket": "+400", "Count": int(_safe_float(counts.get("primary_cap", 0)))},
-                    {"Bucket": "+300", "Count": int(_safe_float(counts.get("optimizer_cap", 0)))},
-                    {"Bucket": "+160", "Count": int(_safe_float(counts.get("small_green", 0)))},
-                    {"Bucket": "-85",  "Count": int(_safe_float(counts.get("red_stabilizer", 0)))},
-                    {"Bucket": "-400", "Count": int(_safe_float(counts.get("weekly_guard", 0)))},
-                    {"Bucket": "other","Count": int(_safe_float(counts.get("other", 0)))},
-                ]
-
-                st.write(f"Total closed weeks: **{total_closed}**")
-                st.dataframe(rows, use_container_width=True, height=240)
-
+                settings = get_user_settings(sel_user_id)
             except Exception as e:
-                st.info(f"Could not load closed-week distribution: {e!r}")
+                st.error(f"Could not load settings: {e!r}")
+                settings = {}
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                bankroll = settings.get("bankroll", 0)
+                st.metric("Bankroll", _fmt_currency(bankroll))
+            
+            with col2:
+                stakes = settings.get("default_stakes", "—")
+                st.metric("Default Stakes", stakes)
+            
+            with col3:
+                risk_mode = settings.get("risk_mode", "balanced")
+                st.metric("Risk Mode", risk_mode.title())
+            
+            with col4:
+                buy_ins = settings.get("buy_in_count", 15)
+                st.metric("Buy-in Requirement", f"{buy_ins} BI")
+            
+            # Stats
+            st.markdown("---")
+            st.markdown("#### Player Statistics")
+            
+            try:
+                stats = get_player_stats(sel_user_id)
+            except Exception as e:
+                st.error(f"Could not load stats: {e!r}")
+                stats = {}
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                sessions = stats.get("total_sessions", 0)
+                st.metric("Total Sessions", sessions)
+            
+            with col2:
+                hands = stats.get("total_hands", 0)
+                st.metric("Total Hands", f"{hands:,}")
+            
+            with col3:
+                hours = stats.get("total_hours", 0)
+                st.metric("Total Hours", f"{hours:.1f}")
+            
+            with col4:
+                profit = stats.get("total_profit_loss", 0)
+                color = "normal" if profit >= 0 else "inverse"
+                st.metric("Total Profit/Loss", _fmt_currency(profit), delta_color=color)
+            
+            col5, col6, col7, col8 = st.columns(4)
+            
+            with col5:
+                win_rate = stats.get("win_rate_bb_100", 0)
+                st.metric("Win Rate", f"{win_rate:+.2f} BB/100")
+            
+            with col6:
+                winning = stats.get("winning_sessions", 0)
+                st.metric("Winning Sessions", winning)
+            
+            with col7:
+                losing = stats.get("losing_sessions", 0)
+                st.metric("Losing Sessions", losing)
+            
+            with col8:
+                if sessions > 0:
+                    win_pct = (winning / sessions) * 100
+                    st.metric("Win %", f"{win_pct:.1f}%")
+                else:
+                    st.metric("Win %", "—")
+            
+            # Recent sessions
+            st.markdown("---")
+            st.markdown("#### Recent Sessions")
+            
+            try:
+                sessions_list = get_recent_sessions_for_user_admin(sel_user_id, limit=20)
+            except Exception as e:
+                st.error(f"Could not load sessions: {e!r}")
+                sessions_list = []
+            
+            if not sessions_list:
+                st.info("No sessions recorded yet.")
+            else:
+                sess_rows = []
+                for s in sessions_list:
+                    pl = _safe_float(s.get("profit_loss", 0))
+                    pl_str = f"+${pl:.2f}" if pl >= 0 else f"-${abs(pl):.2f}"
+                    
+                    sess_rows.append({
+                        "Date": _fmt_date(s.get("started_at")),
+                        "Stakes": s.get("stakes", "—"),
+                        "Duration": f"{s.get('duration_minutes', 0) or 0} min",
+                        "Hands": s.get("hands_played", 0) or 0,
+                        "P/L": pl_str,
+                        "P/L (BB)": f"{_safe_float(s.get('profit_loss_bb', 0)):+.1f}",
+                        "End Reason": s.get("end_reason", "—"),
+                    })
+                
+                st.dataframe(sess_rows, use_container_width=True, height=400)
+            
+            # Session distribution
+            if sessions_list:
+                st.markdown("#### Session P/L Distribution")
+                
+                # Group by outcome
+                wins = sum(1 for s in sessions_list if _safe_float(s.get("profit_loss", 0)) > 0)
+                losses = sum(1 for s in sessions_list if _safe_float(s.get("profit_loss", 0)) < 0)
+                breakeven = sum(1 for s in sessions_list if _safe_float(s.get("profit_loss", 0)) == 0)
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("🟢 Winning", wins)
+                with col2:
+                    st.metric("🔴 Losing", losses)
+                with col3:
+                    st.metric("⚪ Breakeven", breakeven)
 
-        # ---------- Tracks snapshot (per-track P/L + tone) ----------
-        st.markdown("### Tracks snapshot")
 
-        try:
-            db_tracks = get_tracks_for_user_admin(sel_user_id)
-        except Exception as e:
-            st.error(f"get_tracks_for_user error: {e!r}")
-            db_tracks = []
+# =============================================================================
+# FOOTER
+# =============================================================================
 
-        track_label_by_id = {}
-        rows = []
-
-        if not db_tracks:
-            st.info("No tracks for this user yet.")
-        else:
-            for idx, t in enumerate(db_tracks, start=1):
-                tid = str(t.get("id"))
-                label = (
-                    t.get("track_label")
-                    or t.get("name")
-                    or f"Track {idx}"
-                )
-                track_label_by_id[tid] = label
-
-                state = {}
-                try:
-                    state = load_track_state_admin(sel_user_id, tid)
-                except Exception as e:
-                    print(f"[admin] load_track_state error for user={sel_user_id} track={tid}: {e!r}")
-                    state = {}
-
-                wk_state = state.get("week") or {}
-                eng_state = state.get("engine") or {}
-
-                # Week P/L should come from week.week_pl (your JSON shows this)
-                week_pl = _safe_float(wk_state.get("week_pl", 0.0))
-
-                # Session/line P/L come from engine.*
-                session_pl = _safe_float(eng_state.get("session_pl_units", 0.0))
-                line_pl = _safe_float(eng_state.get("line_pl_units", 0.0))
-
-                # Optional: if you ever want the engine's running week total
-                engine_week_pl = _safe_float(eng_state.get("week_pl_units", 0.0))
-
-                tone = (
-                    wk_state.get("tone")
-                    or wk_state.get("tone_name")
-                    or wk_state.get("current_tone")
-                    or "neutral"
-                )
-                tone = str(tone).lower()
-
-                rows.append({
-                    "track_id": tid,
-                    "label": label,
-                    "tone": tone,
-                    "week_pl_u": week_pl,
-                    "session_pl_u": session_pl,
-                    "line_pl_u": line_pl,
-                })
-
-            st.dataframe(rows, use_container_width=True, height=260)
-            st.caption(
-                "Week P/L comes from persisted WeekManager state; "
-                "session/line P/L come from the last saved engine state for that track."
-            )
-
-        # ---------- Recent closed weeks ----------
-        st.markdown("### Recent closed weeks")
-
-        closed_weeks = get_recent_closed_weeks_for_user_admin(sel_user_id, limit=50)
-        if not closed_weeks:
-            st.info("No closed weeks recorded yet for this player.")
-        else:
-            week_rows = []
-            for w in closed_weeks:
-                tid = str(w.get("track_id") or "")
-                raw_ts = w.get("ts") or w.get("created_at")   # 👈 prefer ts, fallback to created_at
-                week_rows.append(
-                    {
-                        "week_number": w.get("week_number"),
-                        "track": track_label_by_id.get(tid, tid[:8]) if tid else "—",
-                        "week_pl_u": _safe_float(w.get("week_pl_units", 0.0)),
-                        "bucket": w.get("outcome_bucket"),
-                        "is_test": bool(w.get("is_test", False)),
-                        "closed_at": _fmt_ts(raw_ts),         # 👈 same formatter as sessions
-                    }
-                )
-            st.dataframe(week_rows, use_container_width=True, height=260)
-
-        # ---------- Recent sessions ----------
-        st.markdown("### Recent sessions (live)")
-
-        sessions = get_recent_sessions_for_user_admin(sel_user_id, limit=50)
-        if not sessions:
-            st.info("No live sessions recorded yet for this player.")
-        else:
-            sess_rows = []
-            for s in sessions:
-                tid = str(s.get("track_id") or "")
-                sess_rows.append(
-                    {
-                        "created_at": _fmt_ts(s.get("created_at")),
-                        "track": track_label_by_id.get(tid, tid[:8]),
-                        "week_number": s.get("week_number"),
-                        "session_pl_u": _safe_float(s.get("session_pl_units", 0.0)),
-                        "end_reason": s.get("end_reason"),
-                        "duration_min": _sec_to_min_str(s.get("duration_sec", 0.0)),
-                    }
-                )
-            st.dataframe(sess_rows, use_container_width=True, height=260)
-
-        # ---------- Recent closed lines ----------
-        st.markdown("### Recent closed lines")
-
-        lines = get_recent_lines_for_user_admin(sel_user_id, limit=100)
-        if not lines:
-            st.info("No closed lines logged yet for this player.")
-        else:
-            line_rows = []
-            for le in lines:
-                tid = str(le.get("track_id") or "")
-                line_rows.append(
-                    {
-                        "created_at": _fmt_ts(le.get("created_at")),
-                        "track": track_label_by_id.get(tid, tid[:8]),
-                        "week_number": le.get("week_number"),
-                        "reason": le.get("reason"),
-                        "duration_min": _sec_to_min_str(le.get("line_duration_sec", 0.0)),
-                    }
-                )
-            st.dataframe(line_rows, use_container_width=True, height=260)
+st.divider()
+st.caption(
+    "Admin Console for Poker Decision App. "
+    "All subscription management operations are logged. "
+    "Use with appropriate caution."
+)
