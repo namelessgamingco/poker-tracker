@@ -9,3 +9,5 @@ __pycache__/
 
 # OS junk
 .DS_Store
+node_modules/
+.DS_Store

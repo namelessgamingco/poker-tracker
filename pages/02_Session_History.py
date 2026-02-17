@@ -1,15 +1,15 @@
-# 02_Session_History.py — Session History Page for Poker Decision App
-# Individual session review with auto-generated insights
+# 02_Session_History.py — Premium Session History Page
+# Individual session review with bluff stats + auto-generated insights
+# Nameless Poker — $299/month decision engine
 
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
-import calendar
 import io
 
 st.set_page_config(
-    page_title="Session History | Poker Decision App",
+    page_title="Session History | Nameless Poker",
     page_icon="📋",
     layout="wide",
 )
@@ -21,279 +21,321 @@ from db import (
     get_sessions_in_date_range,
     get_session_hands,
     get_session_outcome_summary,
+    get_session_bluff_stats,
 )
 
 # ---------- Auth Gate ----------
 user = require_auth()
 render_sidebar()
 
+
 # =============================================================================
 # CONSTANTS
 # =============================================================================
 
 STAKES_OPTIONS = ["All Stakes", "$0.50/$1", "$1/$2", "$2/$5", "$5/$10", "$10/$20", "$25/$50"]
-RESULT_OPTIONS = ["All Results", "Winning Sessions", "Losing Sessions", "Break-even"]
+RESULT_OPTIONS = ["All Results", "Winning", "Losing", "Break-even"]
 END_REASON_OPTIONS = ["All", "Manual", "Stop-Loss", "Stop-Win", "Time Limit"]
 
 END_REASON_DISPLAY = {
     "manual": "Manual",
     "stop_loss": "Stop-Loss",
-    "stop_win": "Stop-Win", 
+    "stop_win": "Stop-Win",
     "time_limit": "Time Limit",
     None: "Unknown",
 }
 
+END_REASON_BADGE = {
+    "manual": ("⏹️", "rgba(255,255,255,0.1)"),
+    "stop_loss": ("🛑", "rgba(255,82,82,0.1)"),
+    "stop_win": ("🎉", "rgba(0,200,83,0.1)"),
+    "time_limit": ("⏱️", "rgba(66,165,245,0.1)"),
+}
+
+# Expected hourly earn rates by stakes (from spec)
+EXPECTED_HOURLY = {
+    "$0.50/$1": 4.55, "$1/$2": 9.10, "$2/$5": 22.75,
+    "$5/$10": 45.50, "$10/$20": 91.00, "$25/$50": 227.50,
+}
+
+
 # =============================================================================
-# CUSTOM CSS
+# PREMIUM CSS — Dark theme matching Play Session
 # =============================================================================
 
 st.markdown("""
 <style>
-/* Session card styling */
-.session-card {
-    background: white;
-    border: 1px solid #e5e7eb;
+[data-testid="stAppViewContainer"] { background: #0A0A12; }
+section[data-testid="stSidebar"] { background: #0F0F1A; }
+.stDeployButton, #MainMenu { display: none; }
+
+/* ── Page header ── */
+.page-title {
+    font-family: 'Inter', sans-serif;
+    font-size: 28px;
+    font-weight: 800;
+    color: #E0E0E0;
+    margin-bottom: 4px;
+}
+.page-subtitle {
+    font-size: 14px;
+    color: rgba(255,255,255,0.35);
+    margin-bottom: 24px;
+}
+
+/* ── Stats summary bar ── */
+.stats-bar {
+    background: linear-gradient(135deg, #0F0F1A 0%, #151520 100%);
+    border: 1px solid rgba(255,255,255,0.06);
     border-radius: 12px;
-    padding: 20px;
-    margin-bottom: 16px;
-    transition: box-shadow 0.2s ease;
+    padding: 20px 16px;
+    margin-bottom: 20px;
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 16px;
 }
-.session-card:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+.stats-bar-item {
+    text-align: center;
 }
-.session-card.winning {
-    border-left: 4px solid #22c55e;
-}
-.session-card.losing {
-    border-left: 4px solid #ef4444;
-}
-.session-card.breakeven {
-    border-left: 4px solid #6b7280;
-}
-
-/* Session header */
-.session-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-}
-.session-date {
-    font-size: 18px;
-    font-weight: 600;
-    color: #111827;
-}
-.session-pl {
-    font-size: 24px;
+.stats-bar-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 22px;
     font-weight: 700;
+    color: #E0E0E0;
 }
-.session-pl.positive {
-    color: #22c55e;
-}
-.session-pl.negative {
-    color: #ef4444;
-}
-.session-pl.zero {
-    color: #6b7280;
-}
-
-/* Session stats row */
-.session-stats {
-    display: flex;
-    gap: 24px;
-    margin-bottom: 12px;
-    flex-wrap: wrap;
-}
-.session-stat {
-    display: flex;
-    flex-direction: column;
-}
-.session-stat-value {
-    font-size: 16px;
-    font-weight: 600;
-    color: #111827;
-}
-.session-stat-label {
-    font-size: 12px;
-    color: #6b7280;
+.stats-bar-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 9px;
+    font-weight: 500;
     text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: rgba(255,255,255,0.3);
+    margin-top: 2px;
 }
 
-/* Insight box */
-.insight-box {
-    background: #f8fafc;
-    border-radius: 8px;
-    padding: 16px;
-    margin-top: 12px;
+/* ── Session row ── */
+.session-row {
+    background: linear-gradient(135deg, #0F0F1A 0%, #131320 100%);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 10px;
+    display: grid;
+    grid-template-columns: 180px 70px 60px 60px 80px 65px 60px 1fr;
+    align-items: center;
+    gap: 12px;
 }
-.insight-title {
+.session-row:hover {
+    border-color: rgba(255,255,255,0.12);
+}
+.session-row.winning { border-left: 3px solid #00E676; }
+.session-row.losing { border-left: 3px solid #FF5252; }
+.session-row.breakeven { border-left: 3px solid rgba(255,255,255,0.2); }
+
+.sr-date {
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.8);
+}
+.sr-date-sub {
+    font-size: 11px;
+    color: rgba(255,255,255,0.3);
+}
+.sr-val {
+    font-family: 'JetBrains Mono', monospace;
     font-size: 14px;
     font-weight: 600;
-    color: #374151;
-    margin-bottom: 8px;
+    color: #E0E0E0;
+    text-align: center;
 }
-.insight-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 6px;
-    font-size: 14px;
-    color: #4b5563;
+.sr-lbl {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255,255,255,0.25);
+    text-align: center;
+}
+.sr-pl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px;
+    font-weight: 700;
+    text-align: center;
+}
+.sr-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
 }
 
-/* Outcome breakdown */
-.outcome-grid {
+/* ── Expanded session detail ── */
+.detail-card {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 16px;
+    margin: 8px 0;
+}
+.detail-grid-3 {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 12px;
-    margin-top: 12px;
 }
-.outcome-box {
-    text-align: center;
-    padding: 12px;
-    border-radius: 8px;
-    background: #f3f4f6;
-}
-.outcome-box.wins {
-    background: #dcfce7;
-}
-.outcome-box.losses {
-    background: #fee2e2;
-}
-.outcome-box.folds {
-    background: #f3f4f6;
-}
-.outcome-count {
-    font-size: 24px;
-    font-weight: 700;
-}
-.outcome-label {
-    font-size: 12px;
-    color: #6b7280;
-    text-transform: uppercase;
-}
-.outcome-pct {
-    font-size: 14px;
-    color: #4b5563;
-}
-
-/* Calendar heatmap */
-.calendar-day {
-    width: 20px;
-    height: 20px;
-    border-radius: 4px;
-    display: inline-block;
-    margin: 2px;
-}
-.calendar-day.no-session {
-    background: #f3f4f6;
-}
-.calendar-day.winning {
-    background: #22c55e;
-}
-.calendar-day.losing {
-    background: #ef4444;
-}
-.calendar-day.breakeven {
-    background: #fbbf24;
-}
-
-/* Stats summary */
-.stats-summary {
-    background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
-    color: white;
-    border-radius: 12px;
-    padding: 24px;
-    margin-bottom: 24px;
-}
-.stats-summary-grid {
+.detail-grid-4 {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 24px;
+    gap: 12px;
 }
-.summary-stat {
+.detail-stat {
     text-align: center;
+    padding: 12px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.04);
+    border-radius: 8px;
 }
-.summary-stat-value {
-    font-size: 28px;
+.detail-stat-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 20px;
+    font-weight: 700;
+    color: #E0E0E0;
+}
+.detail-stat-lbl {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255,255,255,0.3);
+    margin-top: 2px;
+}
+.detail-stat.wins .detail-stat-val { color: #00E676; }
+.detail-stat.losses .detail-stat-val { color: #FF5252; }
+.detail-stat.folds .detail-stat-val { color: rgba(255,255,255,0.4); }
+
+/* ── Bluff section in detail ── */
+.bluff-detail {
+    background: rgba(255,179,0,0.04);
+    border: 1px solid rgba(255,179,0,0.12);
+    border-radius: 10px;
+    padding: 16px;
+    margin-top: 12px;
+}
+.bluff-detail-title {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    color: #FFD54F;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+/* ── Insight items ── */
+.insight-item {
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    color: rgba(255,255,255,0.55);
+    line-height: 1.6;
+    padding: 4px 0;
+}
+
+/* ── Filter bar ── */
+.filter-bar {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 20px;
+}
+
+/* ── Cumulative P/L chart ── */
+.chart-container {
+    background: linear-gradient(135deg, #0F0F1A 0%, #131320 100%);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+.chart-title {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: rgba(255,255,255,0.35);
+    margin-bottom: 12px;
+}
+
+/* ── Streak badges ── */
+.streak-positive {
+    color: #00E676;
+    font-family: 'JetBrains Mono', monospace;
     font-weight: 700;
 }
-.summary-stat-label {
-    font-size: 12px;
-    opacity: 0.8;
-    text-transform: uppercase;
+.streak-negative {
+    color: #FF5252;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
 }
 
-/* Filter section */
-.filter-section {
-    background: #f8fafc;
-    border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 24px;
-}
+/* ── P/L colors ── */
+.pl-positive { color: #00E676; }
+.pl-negative { color: #FF5252; }
+.pl-zero { color: rgba(255,255,255,0.4); }
 
-/* Empty state */
+/* ── Empty state ── */
 .empty-state {
     text-align: center;
-    padding: 48px;
-    color: #6b7280;
+    padding: 64px 24px;
+    color: rgba(255,255,255,0.4);
 }
-.empty-state-icon {
-    font-size: 48px;
-    margin-bottom: 16px;
-}
+.empty-state-icon { font-size: 48px; margin-bottom: 16px; }
 </style>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 """, unsafe_allow_html=True)
 
 
 # =============================================================================
-# HELPER FUNCTIONS
+# HELPERS
 # =============================================================================
 
 def get_user_id() -> Optional[str]:
-    """Get current user's database ID."""
     return st.session_state.get("user_db_id")
 
 
-def format_duration(minutes: int) -> str:
-    """Format duration in hours and minutes."""
-    if minutes is None:
+def fmt_duration(minutes: int) -> str:
+    if not minutes:
         return "—"
-    hours = minutes // 60
-    mins = minutes % 60
-    if hours > 0:
-        return f"{hours}h {mins}m"
-    return f"{mins}m"
+    h, m = minutes // 60, minutes % 60
+    return f"{h}h {m}m" if h > 0 else f"{m}m"
 
 
-def format_money(amount: float, include_sign: bool = True) -> str:
-    """Format money with optional sign."""
+def fmt_money(amount: float) -> str:
     if amount is None:
         return "—"
-    if include_sign:
-        if amount >= 0:
-            return f"+${amount:,.2f}"
-        return f"-${abs(amount):,.2f}"
-    return f"${abs(amount):,.2f}"
+    return f"+${amount:,.2f}" if amount >= 0 else f"-${abs(amount):,.2f}"
 
 
-def format_bb_per_100(bb_per_100: float) -> str:
-    """Format BB/100 with sign."""
-    if bb_per_100 is None:
+def fmt_money_short(amount: float) -> str:
+    if amount is None:
         return "—"
-    return f"{bb_per_100:+.1f}"
+    return f"+${amount:,.0f}" if amount >= 0 else f"-${abs(amount):,.0f}"
 
 
-def calculate_bb_per_100(profit_loss: float, hands: int, bb_size: float) -> float:
-    """Calculate BB/100 for a session."""
-    if not hands or hands == 0 or not bb_size or bb_size == 0:
+def pl_class(amount: float) -> str:
+    if amount > 0: return "pl-positive"
+    if amount < 0: return "pl-negative"
+    return "pl-zero"
+
+
+def calc_bb_per_100(pl: float, hands: int, bb_size: float) -> float:
+    if not hands or not bb_size:
         return 0.0
-    bb_won = profit_loss / bb_size
-    return (bb_won / hands) * 100
+    return ((pl / bb_size) / hands) * 100
 
 
-def parse_session_datetime(session: dict) -> Optional[datetime]:
-    """Parse session started_at to datetime."""
+def parse_dt(session: dict) -> Optional[datetime]:
     started_at = session.get("started_at")
     if not started_at:
         return None
@@ -303,587 +345,565 @@ def parse_session_datetime(session: dict) -> Optional[datetime]:
         return None
 
 
-def get_session_duration_minutes(session: dict) -> int:
-    """Calculate session duration in minutes."""
+def session_duration_min(session: dict) -> int:
     started_at = session.get("started_at")
     ended_at = session.get("ended_at")
-    
     if not started_at:
         return 0
-    
     try:
         start = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
-        if ended_at:
-            end = datetime.fromisoformat(ended_at.replace("Z", "+00:00"))
-        else:
-            end = datetime.now(timezone.utc)
+        end = datetime.fromisoformat(ended_at.replace("Z", "+00:00")) if ended_at else datetime.now(timezone.utc)
         return int((end - start).total_seconds() / 60)
     except Exception:
         return 0
 
 
-def generate_session_insights(session: dict, summary: dict) -> List[str]:
-    """Generate auto-insights for a session."""
-    
+def session_card_class(pl: float) -> str:
+    if pl > 0: return "winning"
+    if pl < 0: return "losing"
+    return "breakeven"
+
+
+# =============================================================================
+# INSIGHTS GENERATOR — Premium auto-analysis
+# =============================================================================
+
+def generate_insights(session: dict, summary: dict, bluff_stats: dict) -> List[str]:
+    """Generate smart insights for a session — the educational core."""
+
     insights = []
-    
-    profit_loss = float(session.get("profit_loss", 0) or 0)
-    duration = get_session_duration_minutes(session)
+    pl = float(session.get("profit_loss", 0) or 0)
+    duration = session_duration_min(session)
     hands = int(session.get("hands_played", 0) or 0)
     end_reason = session.get("end_reason")
-    
+    stakes = session.get("stakes", "$1/$2")
+
     wins = summary.get("wins", 0)
     losses = summary.get("losses", 0)
     folds = summary.get("folds", 0)
     total = wins + losses + folds
-    
-    # Calculate rates
+
     fold_rate = (folds / total * 100) if total > 0 else 0
     win_rate = (wins / (wins + losses) * 100) if (wins + losses) > 0 else 0
-    
-    # Always add play quality (excellent since they used the app)
+    hands_per_hr = (hands / duration * 60) if duration > 0 else 0
+
+    # Play quality — always first
     insights.append("✅ Play Quality: EXCELLENT — followed mathematically optimal decisions")
-    
+
+    # Volume + pace
+    if hands_per_hr >= 60:
+        insights.append(f"⚡ High pace ({hands_per_hr:.0f} hands/hr) — excellent table selection")
+    elif hands > 0:
+        insights.append(f"📊 {hands_per_hr:.0f} hands/hr")
+
     # Fold discipline
     if fold_rate >= 40:
-        insights.append(f"💡 Strong fold discipline ({fold_rate:.0f}%) preserved your edge")
+        insights.append(f"💡 Strong fold discipline ({fold_rate:.0f}%) — preserved your edge")
     elif fold_rate >= 30:
         insights.append(f"💡 Good fold discipline ({fold_rate:.0f}%)")
-    
-    # Win/Loss based insights
-    if profit_loss > 0:
-        if win_rate >= 60:
+
+    # Result context
+    expected_hr = EXPECTED_HOURLY.get(stakes, 9.10)
+    if pl > 0:
+        hourly = pl / (duration / 60) if duration > 0 else 0
+        if hourly >= expected_hr * 2:
+            insights.append(f"🔥 Exceptional result — ${hourly:.0f}/hr (expected: ~${expected_hr:.0f}/hr)")
+        elif win_rate >= 60:
             insights.append(f"🔥 Hot session — {win_rate:.0f}% win rate on contested hands")
         else:
             insights.append("🎯 Positive variance aligned with correct play")
-    elif profit_loss < 0:
-        if win_rate >= 40:
-            insights.append("📊 Variance session — correct decisions, unlucky outcomes")
-        else:
-            insights.append("📊 Tough variance — stay the course, the math will balance")
-    
-    # End reason insights
+    elif pl < 0:
+        insights.append("📊 Variance session — correct decisions, unlucky outcomes. This is normal.")
+
+    # End reason
     if end_reason == "stop_loss":
-        insights.append("🛡️ Stop-loss protected you from further losses")
+        insights.append("🛡️ Stop-loss protected your bankroll — excellent discipline")
     elif end_reason == "stop_win":
         insights.append("🎉 Locked in profits at the right time")
     elif end_reason == "time_limit":
-        insights.append("⏱️ Time limit reached — good discipline")
-    
-    # Duration insights
+        insights.append("⏱️ Time limit reached — good discipline avoiding fatigue")
+
+    # Duration insight
     if duration >= 180:
-        insights.append("⏱️ Extended session (3+ hrs) — consider shorter sessions for peak performance")
-    elif duration <= 60 and profit_loss > 100:
-        insights.append(f"⚡ Efficient session — {format_money(profit_loss)} in just {duration} minutes")
-    
-    # Hands played insights
-    if hands >= 50:
-        insights.append(f"📈 High volume session — {hands} hands played")
-    
+        insights.append("⚠️ Extended session (3+ hrs) — consider shorter for peak performance")
+
+    # Bluff insights
+    bluff_spots = bluff_stats.get("total_spots", 0)
+    bluff_profit = bluff_stats.get("total_profit", 0)
+    if bluff_spots > 0:
+        if bluff_profit > 0:
+            insights.append(f"⚡ Aggressive plays earned +${bluff_profit:.0f} this session")
+        elif bluff_profit < 0:
+            insights.append(f"⚡ Aggressive plays: -${abs(bluff_profit):.0f} (normal variance — keep betting)")
+        folds_won = bluff_stats.get("folds_won", 0)
+        times_bet = bluff_stats.get("times_bet", 0)
+        if times_bet > 0:
+            success_rate = (folds_won / times_bet) * 100
+            insights.append(f"⚡ Bluff success: {folds_won}/{times_bet} ({success_rate:.0f}%)")
+
     return insights
 
 
-def filter_sessions(
-    sessions: List[dict],
-    stakes_filter: str,
-    result_filter: str,
-    end_reason_filter: str,
-    date_from: Optional[datetime],
-    date_to: Optional[datetime],
-) -> List[dict]:
-    """Filter sessions based on criteria."""
-    
+# =============================================================================
+# FILTER SESSIONS
+# =============================================================================
+
+def filter_sessions(sessions, stakes_f, result_f, reason_f, date_from, date_to):
     filtered = []
-    
-    for session in sessions:
-        # Stakes filter
-        if stakes_filter != "All Stakes":
-            if session.get("stakes") != stakes_filter:
-                continue
-        
-        # Result filter
-        pl = float(session.get("profit_loss", 0) or 0)
-        if result_filter == "Winning Sessions" and pl <= 0:
+    for s in sessions:
+        if stakes_f != "All Stakes" and s.get("stakes") != stakes_f:
             continue
-        if result_filter == "Losing Sessions" and pl >= 0:
-            continue
-        if result_filter == "Break-even" and pl != 0:
-            continue
-        
-        # End reason filter
-        if end_reason_filter != "All":
-            reason = session.get("end_reason")
-            reason_display = END_REASON_DISPLAY.get(reason, "Unknown")
-            if reason_display != end_reason_filter:
-                continue
-        
-        # Date filter
-        session_dt = parse_session_datetime(session)
-        if session_dt:
-            session_date = session_dt.date()
-            if date_from and session_date < date_from:
-                continue
-            if date_to and session_date > date_to:
-                continue
-        
-        filtered.append(session)
-    
+        pl = float(s.get("profit_loss", 0) or 0)
+        if result_f == "Winning" and pl <= 0: continue
+        if result_f == "Losing" and pl >= 0: continue
+        if result_f == "Break-even" and pl != 0: continue
+        if reason_f != "All":
+            reason_display = END_REASON_DISPLAY.get(s.get("end_reason"), "Unknown")
+            if reason_display != reason_f: continue
+        sdt = parse_dt(s)
+        if sdt:
+            sd = sdt.date()
+            if date_from and sd < date_from: continue
+            if date_to and sd > date_to: continue
+        filtered.append(s)
     return filtered
 
 
-def sessions_to_dataframe(sessions: List[dict]) -> pd.DataFrame:
-    """Convert sessions to a pandas DataFrame for export."""
-    
-    data = []
-    for session in sessions:
-        duration = get_session_duration_minutes(session)
-        bb_size = float(session.get("bb_size", 2.0) or 2.0)
-        hands = int(session.get("hands_played", 0) or 0)
-        pl = float(session.get("profit_loss", 0) or 0)
-        bb_per_100 = calculate_bb_per_100(pl, hands, bb_size)
-        
-        session_dt = parse_session_datetime(session)
-        
-        data.append({
-            "Date": session_dt.strftime("%Y-%m-%d %H:%M") if session_dt else "",
-            "Stakes": session.get("stakes", ""),
-            "Duration (min)": duration,
-            "Hands": hands,
-            "P/L ($)": pl,
-            "BB/100": round(bb_per_100, 1),
-            "End Reason": END_REASON_DISPLAY.get(session.get("end_reason"), "Unknown"),
-            "Buy-in": float(session.get("buy_in_amount", 0) or 0),
-            "Final Stack": float(session.get("final_stack", 0) or 0),
-        })
-    
-    return pd.DataFrame(data)
-
-
 # =============================================================================
-# RENDER FUNCTIONS
+# SUMMARY STATS BAR
 # =============================================================================
 
 def render_summary_stats(sessions: List[dict]):
-    """Render summary statistics for filtered sessions."""
-    
     if not sessions:
         return
-    
     total_sessions = len(sessions)
     total_pl = sum(float(s.get("profit_loss", 0) or 0) for s in sessions)
     total_hands = sum(int(s.get("hands_played", 0) or 0) for s in sessions)
-    total_duration = sum(get_session_duration_minutes(s) for s in sessions)
-    
-    # Calculate overall BB/100 (weighted average)
+    total_duration = sum(session_duration_min(s) for s in sessions)
+
+    # Weighted BB/100
     total_bb_won = 0
     for s in sessions:
-        bb_size = float(s.get("bb_size", 2.0) or 2.0)
-        pl = float(s.get("profit_loss", 0) or 0)
-        total_bb_won += pl / bb_size if bb_size > 0 else 0
-    
-    overall_bb_per_100 = (total_bb_won / total_hands * 100) if total_hands > 0 else 0
-    
-    winning_sessions = sum(1 for s in sessions if float(s.get("profit_loss", 0) or 0) > 0)
-    win_pct = (winning_sessions / total_sessions * 100) if total_sessions > 0 else 0
-    
-    st.markdown(
-        f"""
-        <div class="stats-summary">
-            <div class="stats-summary-grid">
-                <div class="summary-stat">
-                    <div class="summary-stat-value">{total_sessions}</div>
-                    <div class="summary-stat-label">Sessions</div>
-                </div>
-                <div class="summary-stat">
-                    <div class="summary-stat-value" style="color: {'#22c55e' if total_pl >= 0 else '#ef4444'};">
-                        {format_money(total_pl)}
-                    </div>
-                    <div class="summary-stat-label">Total P/L</div>
-                </div>
-                <div class="summary-stat">
-                    <div class="summary-stat-value">{format_bb_per_100(overall_bb_per_100)}</div>
-                    <div class="summary-stat-label">BB/100</div>
-                </div>
-                <div class="summary-stat">
-                    <div class="summary-stat-value">{win_pct:.0f}%</div>
-                    <div class="summary-stat-label">Win Rate</div>
-                </div>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+        bb = float(s.get("bb_size", 2.0) or 2.0)
+        total_bb_won += float(s.get("profit_loss", 0) or 0) / bb if bb > 0 else 0
+    bb_per_100 = (total_bb_won / total_hands * 100) if total_hands > 0 else 0
 
+    # Hourly rate
+    dollars_per_hr = total_pl / (total_duration / 60) if total_duration > 0 else 0
 
-def render_calendar_heatmap(sessions: List[dict]):
-    """Render a calendar heatmap of sessions."""
-    
-    st.markdown("### 📅 Session Calendar")
-    
-    # Get sessions by date
-    sessions_by_date = {}
-    for session in sessions:
-        session_dt = parse_session_datetime(session)
-        if session_dt:
-            date_key = session_dt.date()
-            pl = float(session.get("profit_loss", 0) or 0)
-            if date_key not in sessions_by_date:
-                sessions_by_date[date_key] = 0
-            sessions_by_date[date_key] += pl
-    
-    if not sessions_by_date:
-        st.info("No sessions to display on calendar.")
-        return
-    
-    # Get date range (last 12 weeks)
-    today = datetime.now(timezone.utc).date()
-    start_date = today - timedelta(weeks=12)
-    
-    # Build calendar grid
-    cols = st.columns(12)
-    current_date = start_date
-    
-    week_idx = 0
-    while current_date <= today:
-        col_idx = week_idx % 12
-        
-        with cols[col_idx]:
-            week_html = ""
-            for day in range(7):
-                check_date = current_date + timedelta(days=day)
-                if check_date > today:
-                    break
-                
-                if check_date in sessions_by_date:
-                    pl = sessions_by_date[check_date]
-                    if pl > 0:
-                        css_class = "winning"
-                        title = f"{check_date.strftime('%b %d')}: +${pl:.0f}"
-                    elif pl < 0:
-                        css_class = "losing"
-                        title = f"{check_date.strftime('%b %d')}: -${abs(pl):.0f}"
-                    else:
-                        css_class = "breakeven"
-                        title = f"{check_date.strftime('%b %d')}: $0"
-                else:
-                    css_class = "no-session"
-                    title = check_date.strftime('%b %d')
-                
-                week_html += f'<div class="calendar-day {css_class}" title="{title}"></div>'
-            
-            st.markdown(week_html, unsafe_allow_html=True)
-        
-        current_date += timedelta(weeks=1)
-        week_idx += 1
-    
-    # Legend
-    st.markdown("""
-        <div style="display: flex; gap: 16px; margin-top: 12px; font-size: 12px; color: #6b7280;">
-            <span><span class="calendar-day winning" style="display: inline-block; vertical-align: middle;"></span> Winning</span>
-            <span><span class="calendar-day losing" style="display: inline-block; vertical-align: middle;"></span> Losing</span>
-            <span><span class="calendar-day no-session" style="display: inline-block; vertical-align: middle;"></span> No session</span>
+    # Win %
+    winning = sum(1 for s in sessions if float(s.get("profit_loss", 0) or 0) > 0)
+    win_pct = (winning / total_sessions * 100) if total_sessions > 0 else 0
+
+    pl_color = "#00E676" if total_pl >= 0 else "#FF5252"
+    bb_color = "#69F0AE" if bb_per_100 >= 0 else "#FF8A80"
+    hr_color = "#69F0AE" if dollars_per_hr >= 0 else "#FF8A80"
+
+    st.markdown(f"""
+    <div class="stats-bar">
+        <div class="stats-bar-item">
+            <div class="stats-bar-value">{total_sessions}</div>
+            <div class="stats-bar-label">Sessions</div>
         </div>
+        <div class="stats-bar-item">
+            <div class="stats-bar-value" style="color:{pl_color};">{fmt_money_short(total_pl)}</div>
+            <div class="stats-bar-label">Total P/L</div>
+        </div>
+        <div class="stats-bar-item">
+            <div class="stats-bar-value" style="color:{bb_color};">{bb_per_100:+.1f}</div>
+            <div class="stats-bar-label">BB/100</div>
+        </div>
+        <div class="stats-bar-item">
+            <div class="stats-bar-value" style="color:{hr_color};">${dollars_per_hr:+.0f}</div>
+            <div class="stats-bar-label">$/Hour</div>
+        </div>
+        <div class="stats-bar-item">
+            <div class="stats-bar-value">{win_pct:.0f}%</div>
+            <div class="stats-bar-label">Win Rate</div>
+        </div>
+        <div class="stats-bar-item">
+            <div class="stats-bar-value">{total_hands:,}</div>
+            <div class="stats-bar-label">Hands</div>
+        </div>
+    </div>
     """, unsafe_allow_html=True)
 
 
-def render_session_card(session: dict, expanded: bool = False):
-    """Render a single session card."""
-    
+# =============================================================================
+# CUMULATIVE P/L CHART
+# =============================================================================
+
+def render_cumulative_chart(sessions: List[dict]):
+    """Streamlit line chart of cumulative P/L across sessions."""
+    if len(sessions) < 2:
+        return
+
+    # Sort chronologically
+    sorted_sessions = sorted(sessions, key=lambda s: parse_dt(s) or datetime.min.replace(tzinfo=timezone.utc))
+
+    dates = []
+    cum_pl = []
+    running = 0.0
+    for s in sorted_sessions:
+        dt = parse_dt(s)
+        if dt:
+            running += float(s.get("profit_loss", 0) or 0)
+            dates.append(dt.strftime("%m/%d"))
+            cum_pl.append(running)
+
+    if len(dates) < 2:
+        return
+
+    df = pd.DataFrame({"Session": dates, "Cumulative P/L ($)": cum_pl})
+
+    st.markdown('<div class="chart-title">Cumulative P/L</div>', unsafe_allow_html=True)
+    st.line_chart(df, x="Session", y="Cumulative P/L ($)", color="#00E676" if cum_pl[-1] >= 0 else "#FF5252")
+
+
+# =============================================================================
+# SESSION ROW (compact list view)
+# =============================================================================
+
+def render_session_row(session: dict):
+    """Render a compact session row with expandable detail."""
+
     session_id = session.get("id")
-    session_dt = parse_session_datetime(session)
-    
-    # Session data
+    sdt = parse_dt(session)
     stakes = session.get("stakes", "$1/$2")
-    duration = get_session_duration_minutes(session)
+    duration = session_duration_min(session)
     hands = int(session.get("hands_played", 0) or 0)
     pl = float(session.get("profit_loss", 0) or 0)
     bb_size = float(session.get("bb_size", 2.0) or 2.0)
-    bb_per_100 = calculate_bb_per_100(pl, hands, bb_size)
+    bb100 = calc_bb_per_100(pl, hands, bb_size)
     end_reason = session.get("end_reason")
-    
-    # Determine card class
-    if pl > 0:
-        card_class = "winning"
-        pl_class = "positive"
-    elif pl < 0:
-        card_class = "losing"
-        pl_class = "negative"
-    else:
-        card_class = "breakeven"
-        pl_class = "zero"
-    
-    # Format date
-    date_str = session_dt.strftime("%A, %B %d, %Y @ %I:%M %p") if session_dt else "Unknown Date"
-    
-    # Create expander for session
-    with st.expander(f"**{date_str}** — {stakes} — {format_money(pl)}", expanded=expanded):
-        
-        # Stats row
-        col1, col2, col3, col4, col5 = st.columns(5)
-        
-        with col1:
-            st.metric("Stakes", stakes)
-        with col2:
-            st.metric("Duration", format_duration(duration))
-        with col3:
-            st.metric("Hands", hands)
-        with col4:
-            st.metric("P/L", format_money(pl), delta=None)
-        with col5:
-            st.metric("BB/100", format_bb_per_100(bb_per_100))
-        
-        # Get outcome summary
+    hands_per_hr = (hands / duration * 60) if duration > 0 else 0
+
+    card_cls = session_card_class(pl)
+    date_str = sdt.strftime("%b %d, %Y") if sdt else "Unknown"
+    time_str = sdt.strftime("%I:%M %p") if sdt else ""
+
+    # End reason badge
+    badge_icon, badge_bg = END_REASON_BADGE.get(end_reason, ("⏹️", "rgba(255,255,255,0.1)"))
+    reason_label = END_REASON_DISPLAY.get(end_reason, "Unknown")
+
+    # Expander label
+    expander_label = f"{date_str} — {stakes} — {fmt_money_short(pl)}"
+
+    with st.expander(expander_label, expanded=False):
+        # ── Top stats row ──
+        st.markdown(f"""
+        <div class="detail-card">
+            <div class="detail-grid-4">
+                <div class="detail-stat">
+                    <div class="detail-stat-val" style="color:#90CAF9;">{fmt_duration(duration)}</div>
+                    <div class="detail-stat-lbl">Duration</div>
+                </div>
+                <div class="detail-stat">
+                    <div class="detail-stat-val">{hands}</div>
+                    <div class="detail-stat-lbl">Hands</div>
+                </div>
+                <div class="detail-stat">
+                    <div class="detail-stat-val" style="color:rgba(255,255,255,0.5);">{hands_per_hr:.0f}</div>
+                    <div class="detail-stat-lbl">Hands/Hr</div>
+                </div>
+                <div class="detail-stat">
+                    <div class="detail-stat-val" style="color:{'#69F0AE' if bb100 >= 0 else '#FF8A80'};">{bb100:+.1f}</div>
+                    <div class="detail-stat-lbl">BB/100</div>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── P/L display ──
+        hourly = pl / (duration / 60) if duration > 0 else 0
+        st.markdown(f"""
+        <div style="text-align:center;margin:12px 0;">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:800;" class="{pl_class(pl)}">{fmt_money(pl)}</span>
+            <div style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:4px;">
+                SESSION P/L — ${hourly:+.0f}/hr
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── Outcome breakdown ──
         summary = get_session_outcome_summary(session_id) if session_id else {}
         wins = summary.get("wins", 0)
         losses = summary.get("losses", 0)
         folds = summary.get("folds", 0)
         total = wins + losses + folds
-        
-        # Outcome breakdown
+
         if total > 0:
-            st.markdown("#### Hand Outcomes")
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                win_pct = (wins / total * 100) if total > 0 else 0
-                st.markdown(
-                    f"""
-                    <div class="outcome-box wins">
-                        <div class="outcome-count" style="color: #22c55e;">{wins}</div>
-                        <div class="outcome-label">Wins</div>
-                        <div class="outcome-pct">{win_pct:.0f}%</div>
+            win_pct = (wins / total * 100)
+            loss_pct = (losses / total * 100)
+            fold_pct = (folds / total * 100)
+
+            st.markdown(f"""
+            <div class="detail-card">
+                <div class="detail-grid-3">
+                    <div class="detail-stat wins">
+                        <div class="detail-stat-val">{wins}</div>
+                        <div class="detail-stat-lbl">Wins ({win_pct:.0f}%)</div>
                     </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-            
-            with col2:
-                loss_pct = (losses / total * 100) if total > 0 else 0
-                st.markdown(
-                    f"""
-                    <div class="outcome-box losses">
-                        <div class="outcome-count" style="color: #ef4444;">{losses}</div>
-                        <div class="outcome-label">Losses</div>
-                        <div class="outcome-pct">{loss_pct:.0f}%</div>
+                    <div class="detail-stat losses">
+                        <div class="detail-stat-val">{losses}</div>
+                        <div class="detail-stat-lbl">Losses ({loss_pct:.0f}%)</div>
                     </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-            
-            with col3:
-                fold_pct = (folds / total * 100) if total > 0 else 0
-                st.markdown(
-                    f"""
-                    <div class="outcome-box folds">
-                        <div class="outcome-count" style="color: #6b7280;">{folds}</div>
-                        <div class="outcome-label">Folds</div>
-                        <div class="outcome-pct">{fold_pct:.0f}%</div>
+                    <div class="detail-stat folds">
+                        <div class="detail-stat-val">{folds}</div>
+                        <div class="detail-stat-lbl">Folds ({fold_pct:.0f}%)</div>
                     </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-        
-        # Auto-generated insights
-        insights = generate_session_insights(session, summary)
-        
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # ── Aggressive Plays (bluff stats) ──
+        bluff_stats = get_session_bluff_stats(session_id) if session_id else {}
+        bluff_spots = bluff_stats.get("total_spots", 0)
+
+        if bluff_spots > 0:
+            times_bet = bluff_stats.get("times_bet", 0)
+            folds_won = bluff_stats.get("folds_won", 0)
+            bluff_profit = bluff_stats.get("total_profit", 0)
+
+            st.markdown(f"""
+            <div class="bluff-detail">
+                <div class="bluff-detail-title">⚡ Aggressive Plays</div>
+                <div class="detail-grid-4">
+                    <div class="detail-stat">
+                        <div class="detail-stat-val" style="color:#FFD54F;">{bluff_spots}</div>
+                        <div class="detail-stat-lbl">Spots</div>
+                    </div>
+                    <div class="detail-stat">
+                        <div class="detail-stat-val">{times_bet}</div>
+                        <div class="detail-stat-lbl">You Bet</div>
+                    </div>
+                    <div class="detail-stat">
+                        <div class="detail-stat-val" style="color:#00E676;">{folds_won}</div>
+                        <div class="detail-stat-lbl">Folds Won</div>
+                    </div>
+                    <div class="detail-stat">
+                        <div class="detail-stat-val {pl_class(bluff_profit)}">{fmt_money_short(bluff_profit)}</div>
+                        <div class="detail-stat-lbl">Bluff P/L</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # ── Auto-generated insights ──
+        insights = generate_insights(session, summary, bluff_stats)
         if insights:
-            st.markdown("#### 📋 Session Insights")
+            st.markdown("**📋 Session Insights**")
             for insight in insights:
-                st.markdown(f"- {insight}")
-        
-        # End reason
-        st.markdown("---")
-        st.caption(f"**End Reason:** {END_REASON_DISPLAY.get(end_reason, 'Unknown')}")
+                st.markdown(f'<div class="insight-item">{insight}</div>', unsafe_allow_html=True)
 
-
-def render_filters() -> tuple:
-    """Render filter controls and return filter values."""
-    
-    st.markdown("### 🔍 Filters")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        stakes_filter = st.selectbox(
-            "Stakes",
-            STAKES_OPTIONS,
-            key="filter_stakes"
-        )
-    
-    with col2:
-        result_filter = st.selectbox(
-            "Result",
-            RESULT_OPTIONS,
-            key="filter_result"
-        )
-    
-    with col3:
-        end_reason_filter = st.selectbox(
-            "End Reason",
-            END_REASON_OPTIONS,
-            key="filter_end_reason"
-        )
-    
-    with col4:
-        date_range = st.selectbox(
-            "Date Range",
-            ["Last 7 days", "Last 30 days", "Last 90 days", "This month", "All time", "Custom"],
-            key="filter_date_range"
-        )
-    
-    # Calculate date range
-    today = datetime.now(timezone.utc).date()
-    
-    if date_range == "Last 7 days":
-        date_from = today - timedelta(days=7)
-        date_to = today
-    elif date_range == "Last 30 days":
-        date_from = today - timedelta(days=30)
-        date_to = today
-    elif date_range == "Last 90 days":
-        date_from = today - timedelta(days=90)
-        date_to = today
-    elif date_range == "This month":
-        date_from = today.replace(day=1)
-        date_to = today
-    elif date_range == "All time":
-        date_from = None
-        date_to = None
-    else:  # Custom
-        col1, col2 = st.columns(2)
-        with col1:
-            date_from = st.date_input("From", value=today - timedelta(days=30), key="custom_from")
-        with col2:
-            date_to = st.date_input("To", value=today, key="custom_to")
-    
-    return stakes_filter, result_filter, end_reason_filter, date_from, date_to
-
-
-def render_export_button(sessions: List[dict]):
-    """Render export to CSV button."""
-    
-    if not sessions:
-        return
-    
-    df = sessions_to_dataframe(sessions)
-    csv = df.to_csv(index=False)
-    
-    st.download_button(
-        label="📥 Export to CSV",
-        data=csv,
-        file_name=f"poker_sessions_{datetime.now().strftime('%Y%m%d')}.csv",
-        mime="text/csv",
-    )
-
-
-def render_empty_state():
-    """Render empty state when no sessions."""
-    
-    st.markdown(
-        """
-        <div class="empty-state">
-            <div class="empty-state-icon">📋</div>
-            <h3>No Sessions Yet</h3>
-            <p>Start a play session to begin tracking your poker journey.</p>
+        # ── End reason badge ──
+        st.markdown(f"""
+        <div style="margin-top:12px;text-align:center;">
+            <span class="sr-badge" style="background:{badge_bg};color:rgba(255,255,255,0.6);">
+                {badge_icon} {reason_label}
+            </span>
         </div>
-        """,
-        unsafe_allow_html=True
-    )
+        """, unsafe_allow_html=True)
 
 
 # =============================================================================
-# MAIN PAGE
+# FILTERS
+# =============================================================================
+
+def render_filters():
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        stakes_f = st.selectbox("Stakes", STAKES_OPTIONS, key="f_stakes")
+    with col2:
+        result_f = st.selectbox("Result", RESULT_OPTIONS, key="f_result")
+    with col3:
+        reason_f = st.selectbox("End Reason", END_REASON_OPTIONS, key="f_reason")
+    with col4:
+        date_range = st.selectbox("Date Range",
+            ["Last 7 days", "Last 30 days", "Last 90 days", "This month", "All time", "Custom"],
+            index=1, key="f_daterange")
+
+    today = datetime.now(timezone.utc).date()
+    if date_range == "Last 7 days":
+        date_from, date_to = today - timedelta(days=7), today
+    elif date_range == "Last 30 days":
+        date_from, date_to = today - timedelta(days=30), today
+    elif date_range == "Last 90 days":
+        date_from, date_to = today - timedelta(days=90), today
+    elif date_range == "This month":
+        date_from, date_to = today.replace(day=1), today
+    elif date_range == "All time":
+        date_from, date_to = None, None
+    else:
+        c1, c2 = st.columns(2)
+        with c1:
+            date_from = st.date_input("From", value=today - timedelta(days=30), key="cf")
+        with c2:
+            date_to = st.date_input("To", value=today, key="ct")
+
+    return stakes_f, result_f, reason_f, date_from, date_to
+
+
+# =============================================================================
+# EXPORT
+# =============================================================================
+
+def build_export_df(sessions: List[dict]) -> pd.DataFrame:
+    data = []
+    for s in sessions:
+        dur = session_duration_min(s)
+        bb = float(s.get("bb_size", 2.0) or 2.0)
+        hands = int(s.get("hands_played", 0) or 0)
+        pl = float(s.get("profit_loss", 0) or 0)
+        bb100 = calc_bb_per_100(pl, hands, bb)
+        sdt = parse_dt(s)
+        hr = pl / (dur / 60) if dur > 0 else 0
+
+        # Bluff stats
+        sid = s.get("id")
+        bs = get_session_bluff_stats(sid) if sid else {}
+
+        data.append({
+            "Date": sdt.strftime("%Y-%m-%d %H:%M") if sdt else "",
+            "Stakes": s.get("stakes", ""),
+            "Duration (min)": dur,
+            "Hands": hands,
+            "Hands/Hr": round((hands / dur * 60) if dur > 0 else 0, 0),
+            "P/L ($)": pl,
+            "BB/100": round(bb100, 1),
+            "$/Hour": round(hr, 0),
+            "End Reason": END_REASON_DISPLAY.get(s.get("end_reason"), "Unknown"),
+            "Bluff Spots": bs.get("total_spots", 0),
+            "Bluff Bets": bs.get("times_bet", 0),
+            "Bluff Folds Won": bs.get("folds_won", 0),
+            "Bluff P/L": bs.get("total_profit", 0),
+        })
+    return pd.DataFrame(data)
+
+
+# =============================================================================
+# STREAK TRACKER
+# =============================================================================
+
+def render_streak_info(sessions: List[dict]):
+    """Show current winning/losing streak."""
+    if not sessions:
+        return
+
+    sorted_s = sorted(sessions, key=lambda s: parse_dt(s) or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+
+    streak = 0
+    streak_type = None
+    for s in sorted_s:
+        pl = float(s.get("profit_loss", 0) or 0)
+        if pl > 0:
+            t = "win"
+        elif pl < 0:
+            t = "loss"
+        else:
+            break
+        if streak_type is None:
+            streak_type = t
+        if t == streak_type:
+            streak += 1
+        else:
+            break
+
+    if streak >= 2:
+        if streak_type == "win":
+            st.markdown(f"""
+            <div style="text-align:center;margin-bottom:16px;">
+                <span class="streak-positive">🔥 {streak}-session winning streak</span>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div style="text-align:center;margin-bottom:16px;">
+                <span class="streak-negative">📊 {streak}-session losing streak — variance is normal, the math hasn't changed</span>
+            </div>
+            """, unsafe_allow_html=True)
+
+
+# =============================================================================
+# MAIN
 # =============================================================================
 
 def main():
-    """Main render function."""
-    
-    st.title("📋 Session History")
-    st.caption("Review your individual sessions and auto-generated insights")
-    
+    st.markdown("""
+    <div class="page-title">📋 Session History</div>
+    <div class="page-subtitle">Review sessions, track your edge, and see how aggressive plays are building your profit</div>
+    """, unsafe_allow_html=True)
+
     user_id = get_user_id()
-    
     if not user_id:
         st.warning("Please log in to view your session history.")
         return
-    
-    # Get all sessions
+
     all_sessions = get_user_sessions(user_id, limit=500)
-    
+
     if not all_sessions:
-        render_empty_state()
+        st.markdown("""
+        <div class="empty-state">
+            <div class="empty-state-icon">📋</div>
+            <h3 style="color:#E0E0E0;">No Sessions Yet</h3>
+            <p>Start a play session to begin tracking your poker journey.</p>
+        </div>
+        """, unsafe_allow_html=True)
         return
-    
+
     # Filters
-    stakes_filter, result_filter, end_reason_filter, date_from, date_to = render_filters()
-    
-    # Apply filters
-    filtered_sessions = filter_sessions(
-        all_sessions,
-        stakes_filter,
-        result_filter,
-        end_reason_filter,
-        date_from,
-        date_to
-    )
-    
-    st.markdown("---")
-    
-    if not filtered_sessions:
-        st.info("No sessions match your filters. Try adjusting the criteria.")
+    stakes_f, result_f, reason_f, date_from, date_to = render_filters()
+    filtered = filter_sessions(all_sessions, stakes_f, result_f, reason_f, date_from, date_to)
+
+    if not filtered:
+        st.info("No sessions match your filters.")
         return
-    
-    # Summary stats for filtered sessions
-    render_summary_stats(filtered_sessions)
-    
+
+    # Summary bar
+    render_summary_stats(filtered)
+
+    # Streak indicator
+    render_streak_info(filtered)
+
+    # Cumulative P/L chart
+    render_cumulative_chart(filtered)
+
     # Export button
-    col1, col2 = st.columns([3, 1])
-    with col2:
-        render_export_button(filtered_sessions)
-    
-    # Tabs for different views
-    tab1, tab2 = st.tabs(["📋 Session List", "📅 Calendar View"])
-    
-    with tab1:
-        st.markdown(f"**Showing {len(filtered_sessions)} sessions**")
-        st.markdown("")
-        
-        # Sort sessions by date (newest first)
-        sorted_sessions = sorted(
-            filtered_sessions,
-            key=lambda s: parse_session_datetime(s) or datetime.min.replace(tzinfo=timezone.utc),
-            reverse=True
-        )
-        
-        # Pagination
-        sessions_per_page = 10
-        total_pages = (len(sorted_sessions) + sessions_per_page - 1) // sessions_per_page
-        
-        if total_pages > 1:
-            page = st.number_input(
-                "Page",
-                min_value=1,
-                max_value=total_pages,
-                value=1,
-                key="session_page"
-            )
-        else:
-            page = 1
-        
-        start_idx = (page - 1) * sessions_per_page
-        end_idx = start_idx + sessions_per_page
-        page_sessions = sorted_sessions[start_idx:end_idx]
-        
-        # Render session cards
-        for session in page_sessions:
-            render_session_card(session)
-        
-        if total_pages > 1:
-            st.caption(f"Page {page} of {total_pages}")
-    
-    with tab2:
-        render_calendar_heatmap(filtered_sessions)
+    col_left, col_right = st.columns([4, 1])
+    with col_left:
+        st.markdown(f"**{len(filtered)} sessions**")
+    with col_right:
+        df = build_export_df(filtered)
+        csv = df.to_csv(index=False)
+        st.download_button("📥 Export CSV", csv,
+                           f"nameless_sessions_{datetime.now().strftime('%Y%m%d')}.csv",
+                           "text/csv", use_container_width=True)
+
+    # Sort newest first
+    sorted_sessions = sorted(
+        filtered,
+        key=lambda s: parse_dt(s) or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True
+    )
+
+    # Pagination
+    per_page = 15
+    total_pages = max(1, (len(sorted_sessions) + per_page - 1) // per_page)
+
+    if total_pages > 1:
+        page = st.number_input("Page", 1, total_pages, 1, key="page")
+    else:
+        page = 1
+
+    start = (page - 1) * per_page
+    page_sessions = sorted_sessions[start:start + per_page]
+
+    # Render session cards
+    for session in page_sessions:
+        render_session_row(session)
+
+    if total_pages > 1:
+        st.caption(f"Page {page} of {total_pages}")
 
 
 if __name__ == "__main__":

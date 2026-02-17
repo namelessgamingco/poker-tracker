@@ -1021,7 +1021,7 @@ def admin_resend_payment_link(user_id: str) -> Optional[str]:
 def record_hand_outcome(
     session_id: str,
     user_id: str,
-    outcome: str,  # 'won', 'lost', 'folded'
+    outcome: str,  # 'won', 'lost', 'folded', 'they_folded'
     profit_loss: float,
     pot_size: float,
     our_position: str,
@@ -1031,11 +1031,12 @@ def record_hand_outcome(
     action_taken: str = None,
     recommendation_given: str = None,
     we_were_aggressor: bool = False,
+    bluff_context: dict = None,  # NEW: JSONB bluff metadata — None for non-bluff hands
 ) -> Optional[dict]:
     """
     Record a hand outcome to poker_hands table.
     
-    Called after user clicks WIN/LOSS/FOLD button.
+    Called after user clicks WIN/LOSS/FOLD/THEY FOLDED button.
     """
     if not session_id or not user_id:
         return None
@@ -1069,6 +1070,7 @@ def record_hand_outcome(
             "we_were_aggressor": we_were_aggressor,
             "followed_recommendation": True,
             "is_test": False,
+            "bluff_context": bluff_context,  # JSONB — None for non-bluff hands
         }
         
         resp = sb.table("poker_hands").insert(hand_data).execute()
@@ -1374,3 +1376,148 @@ def sync_settings_to_session_state(user_id: str) -> None:
     st.session_state["stop_loss_alerts_enabled"] = settings.get("stop_loss_alerts_enabled", True)
     st.session_state["stop_win_alerts_enabled"] = settings.get("stop_win_alerts_enabled", True)
     st.session_state["table_check_interval"] = settings.get("table_check_interval", 20)
+
+
+# =============================================================================
+# BLUFF STATS OPERATIONS
+# =============================================================================
+
+def update_session_bluff_stats(session_id: str, user_bet: bool, opponent_folded: bool, profit: float) -> bool:
+    """
+    Increment bluff aggregate counters on session record.
+    
+    Called after each bluff-eligible hand is completed.
+    
+    Args:
+        session_id: Session UUID
+        user_bet: True if user chose to bet (or auto-bluff fired)
+        opponent_folded: True if opponent folded to our bluff
+        profit: Dollar profit/loss from this bluff hand
+    """
+    if not session_id:
+        return False
+    try:
+        sb = get_supabase()
+        resp = (
+            sb.table("poker_sessions")
+            .select("bluff_spots_total, bluff_spots_bet, bluff_spots_checked, bluff_folds_won, bluff_profit")
+            .eq("id", session_id)
+            .single()
+            .execute()
+        )
+        if not resp.data:
+            return False
+        
+        d = resp.data
+        updates = {
+            "bluff_spots_total": (d.get("bluff_spots_total") or 0) + 1,
+            "bluff_profit": float(d.get("bluff_profit") or 0) + profit,
+        }
+        if user_bet:
+            updates["bluff_spots_bet"] = (d.get("bluff_spots_bet") or 0) + 1
+            if opponent_folded:
+                updates["bluff_folds_won"] = (d.get("bluff_folds_won") or 0) + 1
+        else:
+            updates["bluff_spots_checked"] = (d.get("bluff_spots_checked") or 0) + 1
+        
+        sb.table("poker_sessions").update(updates).eq("id", session_id).execute()
+        return True
+    except Exception as e:
+        print(f"[db] update_session_bluff_stats error: {e}")
+        return False
+
+
+def get_session_bluff_stats(session_id: str) -> dict:
+    """
+    Bluff stats for a single session from session record.
+    
+    Returns dict with: total_spots, times_bet, times_checked,
+    folds_won, total_profit, bet_pct, fold_success_pct, avg_per_attempt
+    """
+    if not session_id:
+        return _empty_bluff_stats()
+    try:
+        sb = get_supabase()
+        resp = (
+            sb.table("poker_sessions")
+            .select("bluff_spots_total, bluff_spots_bet, bluff_spots_checked, bluff_folds_won, bluff_profit")
+            .eq("id", session_id)
+            .single()
+            .execute()
+        )
+        if not resp.data:
+            return _empty_bluff_stats()
+        d = resp.data
+        total = d.get("bluff_spots_total") or 0
+        bet = d.get("bluff_spots_bet") or 0
+        folds_won = d.get("bluff_folds_won") or 0
+        profit = float(d.get("bluff_profit") or 0)
+        return {
+            "total_spots": total,
+            "times_bet": bet,
+            "times_checked": (d.get("bluff_spots_checked") or 0),
+            "folds_won": folds_won,
+            "total_profit": round(profit, 2),
+            "bet_pct": round(bet / total * 100, 1) if total > 0 else 0,
+            "fold_success_pct": round(folds_won / bet * 100, 1) if bet > 0 else 0,
+            "avg_per_attempt": round(profit / bet, 2) if bet > 0 else 0,
+        }
+    except Exception as e:
+        print(f"[db] get_session_bluff_stats error: {e}")
+        return _empty_bluff_stats()
+
+
+def get_user_bluff_stats(user_id: str) -> dict:
+    """
+    Aggregated bluff stats across all completed sessions (lifetime).
+    
+    Returns dict with: total_spots, times_bet, times_checked,
+    folds_won, total_profit, bet_pct, fold_success_pct, avg_per_attempt
+    """
+    if not user_id:
+        return _empty_bluff_stats()
+    try:
+        sb = get_supabase()
+        resp = (
+            sb.table("poker_sessions")
+            .select("bluff_spots_total, bluff_spots_bet, bluff_spots_checked, bluff_folds_won, bluff_profit")
+            .eq("user_id", user_id)
+            .eq("status", "completed")
+            .execute()
+        )
+        if not resp.data:
+            return _empty_bluff_stats()
+        
+        total = sum(s.get("bluff_spots_total") or 0 for s in resp.data)
+        bet = sum(s.get("bluff_spots_bet") or 0 for s in resp.data)
+        checked = sum(s.get("bluff_spots_checked") or 0 for s in resp.data)
+        folds_won = sum(s.get("bluff_folds_won") or 0 for s in resp.data)
+        profit = sum(float(s.get("bluff_profit") or 0) for s in resp.data)
+        
+        return {
+            "total_spots": total,
+            "times_bet": bet,
+            "times_checked": checked,
+            "folds_won": folds_won,
+            "total_profit": round(profit, 2),
+            "bet_pct": round(bet / total * 100, 1) if total > 0 else 0,
+            "fold_success_pct": round(folds_won / bet * 100, 1) if bet > 0 else 0,
+            "avg_per_attempt": round(profit / bet, 2) if bet > 0 else 0,
+        }
+    except Exception as e:
+        print(f"[db] get_user_bluff_stats error: {e}")
+        return _empty_bluff_stats()
+
+
+def _empty_bluff_stats() -> dict:
+    """Return empty bluff stats structure."""
+    return {
+        "total_spots": 0,
+        "times_bet": 0,
+        "times_checked": 0,
+        "folds_won": 0,
+        "total_profit": 0,
+        "bet_pct": 0,
+        "fold_success_pct": 0,
+        "avg_per_attempt": 0,
+    }
