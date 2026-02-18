@@ -704,14 +704,20 @@ def render_session_header():
             <div class="session-stat-label">Hands/Hr</div>
         </div>
     </div>
+    """, unsafe_allow_html=True)
+    
+    # Live-ticking timer via JS
+    started_at_js = session.get("started_at", "")
+    st.components.v1.html(f"""
     <script>
     (function() {{
-        var el = document.getElementById('live-timer');
+        var parent = window.parent.document;
+        var el = parent.getElementById('live-timer');
         if (!el) return;
-        var startStr = el.getAttribute('data-start');
-        if (!startStr) return;
-        var start = new Date(startStr).getTime();
+        var start = new Date("{started_at_js}").getTime();
         if (isNaN(start)) return;
+        if (el._timerSet) return;
+        el._timerSet = true;
         function tick() {{
             var now = Date.now();
             var elapsed = Math.floor((now - start) / 1000);
@@ -725,7 +731,7 @@ def render_session_header():
         setInterval(tick, 1000);
     }})();
     </script>
-    """, unsafe_allow_html=True)
+    """, height=0)
 
 
 # =============================================================================
