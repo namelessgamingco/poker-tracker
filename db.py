@@ -192,7 +192,7 @@ def create_session(
         return None
     
     try:
-        sb = get_supabase()
+        sb = get_supabase_admin()
         
         session_data = {
             "user_id": user_id,
