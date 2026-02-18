@@ -553,6 +553,7 @@ def require_auth():
     
     # Store subscription info in session state
     st.session_state["subscription_status"] = profile.get("subscription_status", "pending")
+    st.session_state["user_db_id"] = profile.get("id") or user_id
     st.session_state["subscription_plan"] = profile.get("subscription_plan")
     st.session_state["admin_override_active"] = profile.get("admin_override_active", False)
     st.session_state["trial_ends_at"] = profile.get("trial_ends_at")
