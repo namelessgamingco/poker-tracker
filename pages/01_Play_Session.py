@@ -223,12 +223,28 @@ section[data-testid="stSidebar"] { background: #0F0F1A; }
 }
 
 /* ── Outcome modal ── */
+.outcome-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0,0,0,0.6);
+    z-index: 9998;
+}
 .outcome-card {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 9999;
+    width: 600px;
+    max-width: 90vw;
     background: linear-gradient(135deg, #0F0F1A 0%, #151520 100%);
-    border: 1px solid rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
     border-radius: 14px;
     padding: 28px 24px;
-    margin: 16px 0;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.5);
 }
 .outcome-title {
     font-family: 'Inter', sans-serif;
@@ -892,7 +908,7 @@ def render_outcome_modal(data: dict) -> bool:
         detail_html += f'<div class="outcome-detail"><em>{_html.escape(explanation)}</em></div>'
     math_html = f'<div class="outcome-math">{_html.escape(calculation)}</div>' if calculation else ""
 
-    st.markdown(f'<div class="outcome-card"><div class="outcome-title">{icon} {title}</div>{detail_html}{math_html}<div class="outcome-message">{message}</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="outcome-backdrop"></div><div class="outcome-card"><div class="outcome-title">{icon} {title}</div>{detail_html}{math_html}<div class="outcome-message">{message}</div></div>', unsafe_allow_html=True)
 
     if st.button("Got it → Next Hand", type="primary", use_container_width=True, key="modal_dismiss"):
         dismiss_modal()
@@ -949,7 +965,7 @@ def render_bluff_outcome_modal(bluff_ctx: dict, data: dict) -> bool:
 
     math_html = f'<div class="outcome-math">{_html.escape(math_line)}</div>' if math_line else ""
 
-    st.markdown(f'<div class="outcome-card"><div class="outcome-title">{icon} {title}</div>{stat_html}{math_html}<div class="outcome-message">{message}</div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="outcome-backdrop"></div><div class="outcome-card"><div class="outcome-title">{icon} {title}</div>{stat_html}{math_html}<div class="outcome-message">{message}</div></div>', unsafe_allow_html=True)
 
     if st.button("Got it → Next Hand", type="primary", use_container_width=True, key="bluff_modal_dismiss"):
         dismiss_modal()
