@@ -1314,8 +1314,9 @@ def render_setup_mode():
     st.markdown('<div class="setup-section"><div class="setup-section-title">Input Mode</div>',
                 unsafe_allow_html=True)
 
-    input_mode = st.radio("Mode", ["Standard (Click)", "Keyboard Shortcuts", "Two-Table (Keyboard)"],
-                           index=1, horizontal=True, label_visibility="collapsed")
+    input_mode = st.radio("Mode", ["Keyboard Shortcuts", "Standard (Click)", "Two-Table (Keyboard)"],
+                           index=0, horizontal=True, label_visibility="collapsed")
+    st.caption("⚡ Keyboard mode is faster — you can still click any button if you prefer.")
 
     mode_map = {"Standard (Click)": "standard", "Keyboard Shortcuts": "keyboard",
                 "Two-Table (Keyboard)": "two_table"}
@@ -1447,6 +1448,7 @@ def render_play_mode():
     stakes = session.get("stakes", "$1/$2")
     bb_size = float(session.get("bb_size", 2.0))
 
+    st.markdown('<style>iframe[title="poker_input.poker_input"] { width: 100% !important; min-width: 800px; }</style>', unsafe_allow_html=True)
     component_value = poker_input(
         mode=st.session_state.input_mode,
         stakes=stakes,
