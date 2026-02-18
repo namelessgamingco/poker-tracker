@@ -1572,7 +1572,7 @@ class PokerDecisionEngine:
                 
                 bluff_ctx = BluffContext(
                     spot_type='river_probe',
-                    delivery='auto',
+                    delivery='choice',
                     recommended_action='BET',
                     bet_amount=bet_amount,
                     pot_size=state.pot_size,
@@ -1585,10 +1585,10 @@ class PokerDecisionEngine:
                         f"${bet_amount:.0f} to win ${state.pot_size:.0f}, "
                         f"works about 6 out of 10 times."
                     ),
-                    explanation_check="",
+                    explanation_check="Give up. They showed weakness but betting risks chips.",
                 )
                 
-                return Decision(
+                bet_decision = Decision(
                     action=Action.BET,
                     amount=bet_amount,
                     display=f"BET ${bet_amount:.2f}",
@@ -1597,6 +1597,17 @@ class PokerDecisionEngine:
                     confidence=0.72,
                     bluff_context=bluff_ctx,
                 )
+                check_decision = Decision(
+                    action=Action.CHECK,
+                    amount=None,
+                    display="CHECK",
+                    explanation=bluff_ctx.explanation_check,
+                    calculation="Checking wins $0",
+                    confidence=0.72,
+                    bluff_context=bluff_ctx,
+                )
+                bet_decision.alternative = check_decision
+                return bet_decision
         
         # Check medium strength hands to pot control
         if hand_strength in [HandStrength.TOP_PAIR, HandStrength.MIDDLE_PAIR, HandStrength.OVERPAIR]:
