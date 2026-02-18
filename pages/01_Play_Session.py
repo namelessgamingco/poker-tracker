@@ -10,7 +10,7 @@ from typing import Optional, Dict, Any
 st.set_page_config(
     page_title="Play Session | Nameless Poker",
     page_icon="🎯",
-    layout="centered",
+    layout="wide",
 )
 
 from auth import require_auth
@@ -1448,7 +1448,6 @@ def render_play_mode():
     stakes = session.get("stakes", "$1/$2")
     bb_size = float(session.get("bb_size", 2.0))
 
-    st.markdown('<style>iframe[title="poker_input.poker_input"] { width: 100% !important; min-width: 800px; }</style>', unsafe_allow_html=True)
     component_value = poker_input(
         mode=st.session_state.input_mode,
         stakes=stakes,
