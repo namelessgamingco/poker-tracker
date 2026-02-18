@@ -931,20 +931,7 @@ def render_bluff_outcome_modal(bluff_ctx: dict, data: dict) -> bool:
         icon, title = "✅", "They Folded — Bluff Worked!"
         message = (f"You won the ${pot_size:.0f} pot without showdown. "
                    f"This bet is profitable because they fold often enough to cover the misses.")
-        stat_html = f"""
-        <div class="outcome-stat-row">
-            <div class="outcome-stat">
-                <div class="outcome-stat-num pl-positive">+${pot_size:.0f}</div>
-                <div class="outcome-stat-lbl">Pot Won</div>
-            </div>
-            <div class="outcome-stat">
-                <div class="outcome-stat-num" style="color: #FFD54F;">
-                    {st.session_state.session_bluff_folds_won}/{st.session_state.session_bluff_bets}
-                </div>
-                <div class="outcome-stat-lbl">Bluffs Worked</div>
-            </div>
-        </div>
-        """
+        stat_html = f'<div class="outcome-stat-row"><div class="outcome-stat"><div class="outcome-stat-num pl-positive">+${pot_size:.0f}</div><div class="outcome-stat-lbl">Pot Won</div></div><div class="outcome-stat"><div class="outcome-stat-num" style="color: #FFD54F;">{st.session_state.session_bluff_folds_won}/{st.session_state.session_bluff_bets}</div><div class="outcome-stat-lbl">Bluffs Worked</div></div></div>'
 
     elif bluff_outcome == "call_lost":
         works_out_of_10 = fold_pct * 10
@@ -954,18 +941,7 @@ def render_bluff_outcome_modal(bluff_ctx: dict, data: dict) -> bool:
                    f"It feels bad to get caught. But players who stop bluffing after "
                    f"getting caught leave money on the table. Your opponents don't remember "
                    f"this hand — they'll fold to your next bet just as often.")
-        stat_html = f"""
-        <div class="outcome-stat-row">
-            <div class="outcome-stat">
-                <div class="outcome-stat-num pl-negative">-${abs(profit_loss):.0f}</div>
-                <div class="outcome-stat-lbl">This Hand</div>
-            </div>
-            <div class="outcome-stat">
-                <div class="outcome-stat-num" style="color: #69F0AE;">+${ev_of_bet:.2f}</div>
-                <div class="outcome-stat-lbl">Long-Term EV/Attempt</div>
-            </div>
-        </div>
-        """
+        stat_html = f'<div class="outcome-stat-row"><div class="outcome-stat"><div class="outcome-stat-num pl-negative">-${abs(profit_loss):.0f}</div><div class="outcome-stat-lbl">This Hand</div></div><div class="outcome-stat"><div class="outcome-stat-num" style="color: #69F0AE;">+${ev_of_bet:.2f}</div><div class="outcome-stat-lbl">Long-Term EV/Attempt</div></div></div>'
 
     elif bluff_outcome == "checked":
         icon, title = "✋", "You Checked — Hand Over"
@@ -976,14 +952,7 @@ def render_bluff_outcome_modal(bluff_ctx: dict, data: dict) -> bool:
     else:  # call_won
         icon, title = "✅", "They Called and You Won!"
         message = ("Even better than expected — you bet as a bluff and won at showdown. Bonus profit.")
-        stat_html = f"""
-        <div class="outcome-stat-row">
-            <div class="outcome-stat">
-                <div class="outcome-stat-num pl-positive">+${profit_loss:.0f}</div>
-                <div class="outcome-stat-lbl">Won at Showdown</div>
-            </div>
-        </div>
-        """
+        stat_html = f'<div class="outcome-stat-row"><div class="outcome-stat"><div class="outcome-stat-num pl-positive">+${profit_loss:.0f}</div><div class="outcome-stat-lbl">Won at Showdown</div></div></div>'
 
     math_html = f'<div class="outcome-math">{_html.escape(math_line)}</div>' if math_line else ""
 
