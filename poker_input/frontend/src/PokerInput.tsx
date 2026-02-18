@@ -1209,80 +1209,6 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     resetHand()
   }, [gameState, decision, chosenBluffAction, primaryHoldsTable, showSecondTable, activeTable, t2GameState, t2Step, t2Decision, t2BoardEntryIndex, resetHand])
 
-  // ---- Send bluff check (user declined river barrel) ----
-  const sendBluffCheck = useCallback(() => {
-    const gs = gameState
-    const handStr = cardToString(gs.card1) + cardToString(gs.card2)
-
-    const autoTexture = gs.street !== "preflop"
-      ? detectBoardTexture(gs.board_cards) : null
-    const autoStrength = gs.street !== "preflop"
-      ? detectHandStrength(gs.card1, gs.card2, gs.board_cards) : null
-
-    const handContext = {
-      position: gs.position,
-      cards: handStr,
-      street: gs.street,
-      action_facing: gs.action_facing,
-      facing_bet: gs.facing_bet,
-      pot_size: gs.pot_size,
-      board: gs.board_cards.filter((c) => c !== null).map((c) => cardToString(c)).join(""),
-      board_texture: gs.board_texture || autoTexture,
-      hand_strength: gs.hand_strength || autoStrength,
-      villain_type: gs.villain_type,
-      we_are_aggressor: gs.we_are_aggressor,
-      num_limpers: gs.num_limpers,
-    }
-
-    const bluff_data = decision?.bluff_context ? {
-      spot_type: decision.bluff_context.spot_type,
-      delivery: decision.bluff_context.delivery,
-      recommended: decision.bluff_context.recommended_action,
-      user_action: "CHECK",
-      outcome: "checked",
-      profit: 0,
-      bet_amount: 0,
-      pot_size: decision.bluff_context.pot_size,
-      ev_of_bet: decision.bluff_context.ev_of_bet,
-      break_even_pct: decision.bluff_context.break_even_pct,
-      estimated_fold_pct: decision.bluff_context.estimated_fold_pct,
-    } : null
-
-    const freshState = { ...FRESH_GAME_STATE }
-
-    const table1GameState = primaryHoldsTable === 1 ? freshState : t2GameState
-    const table1Step = primaryHoldsTable === 1 ? "position" as InputStep : t2Step
-    const table1Decision = primaryHoldsTable === 1 ? null : t2Decision
-    const table1BoardEntryIndex = primaryHoldsTable === 1 ? 0 : t2BoardEntryIndex
-
-    const table2GameState = primaryHoldsTable === 2 ? freshState : t2GameState
-    const table2Step = primaryHoldsTable === 2 ? "position" as InputStep : t2Step
-    const table2Decision = primaryHoldsTable === 2 ? null : t2Decision
-    const table2BoardEntryIndex = primaryHoldsTable === 2 ? 0 : t2BoardEntryIndex
-
-    Streamlit.setComponentValue({
-      type: "hand_complete",
-      table_id: primaryHoldsTable,
-      outcome: "folded",
-      action_taken: "CHECK",
-      hand_context: handContext,
-      bluff_data: bluff_data,
-      show_second_table: showSecondTable,
-      active_table: activeTable,
-      primary_holds_table: primaryHoldsTable,
-      table1_game_state: table1GameState,
-      table1_step: table1Step,
-      table1_decision: table1Decision,
-      table1_board_entry_index: table1BoardEntryIndex,
-      table2_game_state: table2GameState,
-      table2_step: table2Step,
-      table2_decision: table2Decision,
-      table2_board_entry_index: table2BoardEntryIndex,
-    })
-
-    resetHand()
-  }, [gameState, decision, primaryHoldsTable, showSecondTable, activeTable, t2GameState, t2Step, t2Decision, t2BoardEntryIndex, resetHand])
-
   // ---- They raised me back — re-query same street with new action ----
   const theyRaisedMe = useCallback(() => {
       const currentAction = gameState.action_facing
@@ -1804,7 +1730,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         if (key === "2") {
           e.preventDefault()
           setChosenBluffAction("CHECK")
-          sendBluffCheck()
+          setDecision({ ...decision, alternative: undefined })
+          setStep("outcome_select")
           return
         }
       }
@@ -1936,7 +1863,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   }, [
     keyboardActive, step, gameState.street, pendingRank, decision, mode, showSecondTable,
     selectPosition, selectRank, selectSuit, selectAction,
-    confirmAmount, confirmLimperCount, confirmPotSize, goBack, sendNewHand, sendHandComplete, sendBluffCheck, continueToStreet, theyRaisedMe, theyBet,
+    confirmAmount, confirmLimperCount, confirmPotSize, goBack, sendNewHand, sendHandComplete, continueToStreet, theyRaisedMe, theyBet,
     switchTable, chosenBluffAction,
   ])
 
@@ -2353,7 +2280,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           <button
             onClick={() => {
               setChosenBluffAction("CHECK")
-              sendBluffCheck()
+              setDecision({ ...decision, alternative: undefined })
+              setStep("outcome_select")
             }}
             style={{
               flex: 1,
