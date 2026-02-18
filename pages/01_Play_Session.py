@@ -895,10 +895,20 @@ def render_outcome_modal(data: dict) -> bool:
     st.markdown(f'<div class="outcome-card"><div class="outcome-title">{icon} {title}</div>{detail_html}{math_html}<div class="outcome-message">{message}</div></div>', unsafe_allow_html=True)
     st.components.v1.html('<script>window.parent.document.querySelector(".outcome-card").scrollIntoView({behavior:"smooth",block:"center"});</script>', height=0)
 
-    if st.button("Got it → Next Hand", type="primary", use_container_width=True, key="modal_dismiss"):
+    if st.button("Got it → Next Hand  ⌨️ N", type="primary", use_container_width=True, key="modal_dismiss"):
         dismiss_modal()
         clear_hand_state()
         st.rerun()
+
+    st.components.v1.html('''<script>
+window.parent.document.addEventListener("keydown", function handler(e) {
+    if (e.key === "n" || e.key === "N" || e.key === " " || e.key === "Enter") {
+        var btn = window.parent.document.querySelector('[data-testid="stButton"] button');
+        if (btn) { btn.click(); }
+        window.parent.document.removeEventListener("keydown", handler);
+    }
+});
+</script>''', height=0)
 
     return True
 
@@ -953,10 +963,20 @@ def render_bluff_outcome_modal(bluff_ctx: dict, data: dict) -> bool:
     st.markdown(f'<div class="outcome-card"><div class="outcome-title">{icon} {title}</div>{stat_html}{math_html}<div class="outcome-message">{message}</div></div>', unsafe_allow_html=True)
     st.components.v1.html('<script>window.parent.document.querySelector(".outcome-card").scrollIntoView({behavior:"smooth",block:"center"});</script>', height=0)
 
-    if st.button("Got it → Next Hand", type="primary", use_container_width=True, key="bluff_modal_dismiss"):
+    if st.button("Got it → Next Hand  ⌨️ N", type="primary", use_container_width=True, key="bluff_modal_dismiss"):
         dismiss_modal()
         clear_hand_state()
         st.rerun()
+
+    st.components.v1.html('''<script>
+window.parent.document.addEventListener("keydown", function handler(e) {
+    if (e.key === "n" || e.key === "N" || e.key === " " || e.key === "Enter") {
+        var btn = window.parent.document.querySelector('[data-testid="stButton"] button');
+        if (btn) { btn.click(); }
+        window.parent.document.removeEventListener("keydown", handler);
+    }
+});
+</script>''', height=0)
 
     return True
 
