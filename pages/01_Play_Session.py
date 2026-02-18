@@ -672,7 +672,8 @@ def render_session_header():
         </div>
         <div class="session-stat-divider"></div>
         <div class="session-stat">
-            <div class="session-stat-value" style="color: {timer_color};">
+            <div class="session-stat-value" style="color: {timer_color};" id="live-timer"
+                 data-start="{session.get('started_at', '')}">
                 <span class="timer-dot"></span>{duration_display}
             </div>
             <div class="session-stat-label">Session</div>
@@ -703,6 +704,27 @@ def render_session_header():
             <div class="session-stat-label">Hands/Hr</div>
         </div>
     </div>
+    <script>
+    (function() {{
+        var el = document.getElementById('live-timer');
+        if (!el) return;
+        var startStr = el.getAttribute('data-start');
+        if (!startStr) return;
+        var start = new Date(startStr).getTime();
+        if (isNaN(start)) return;
+        function tick() {{
+            var now = Date.now();
+            var elapsed = Math.floor((now - start) / 1000);
+            var h = Math.floor(elapsed / 3600);
+            var m = Math.floor((elapsed % 3600) / 60);
+            var s = elapsed % 60;
+            var dot = '<span class="timer-dot"></span>';
+            el.innerHTML = dot + h + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+        }}
+        tick();
+        setInterval(tick, 1000);
+    }})();
+    </script>
     """, unsafe_allow_html=True)
 
 
