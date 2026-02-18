@@ -291,7 +291,7 @@ section[data-testid="stSidebar"] { background: #0F0F1A; }
 /* ── Setup page ── */
 .setup-hero {
     text-align: center;
-    padding: 8px 0 12px;
+    padding: 0 0 8px;
 }
 .setup-hero h1 {
     font-family: 'Inter', sans-serif;
@@ -1259,7 +1259,7 @@ def render_setup_mode():
         return
 
     # ── Hero section ──
-    st.markdown('<div class="setup-hero"><h1>Start Session</h1><p>Configure your game, then play.</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="setup-hero"><h1>Start Session</h1><p style="text-align:center;width:100%;">Configure your game, then play.</p></div>', unsafe_allow_html=True)
 
     # ── Stakes + Buy-in ──
     st.markdown('<div class="setup-section"><div class="setup-section-title">Game Setup</div>',
