@@ -892,14 +892,7 @@ def render_outcome_modal(data: dict) -> bool:
         detail_html += f'<div class="outcome-detail"><em>{_html.escape(explanation)}</em></div>'
     math_html = f'<div class="outcome-math">{_html.escape(calculation)}</div>' if calculation else ""
 
-    st.markdown(f"""
-    <div class="outcome-card">
-        <div class="outcome-title">{icon} {title}</div>
-        {detail_html}
-        {math_html}
-        <div class="outcome-message">{message}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f'<div class="outcome-card"><div class="outcome-title">{icon} {title}</div>{detail_html}{math_html}<div class="outcome-message">{message}</div></div>', unsafe_allow_html=True)
 
     if st.button("Got it → Next Hand", type="primary", use_container_width=True, key="modal_dismiss"):
         dismiss_modal()
@@ -956,14 +949,7 @@ def render_bluff_outcome_modal(bluff_ctx: dict, data: dict) -> bool:
 
     math_html = f'<div class="outcome-math">{_html.escape(math_line)}</div>' if math_line else ""
 
-    st.markdown(f"""
-    <div class="outcome-card">
-        <div class="outcome-title">{icon} {title}</div>
-        {stat_html}
-        {math_html}
-        <div class="outcome-message">{message}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f'<div class="outcome-card"><div class="outcome-title">{icon} {title}</div>{stat_html}{math_html}<div class="outcome-message">{message}</div></div>', unsafe_allow_html=True)
 
     if st.button("Got it → Next Hand", type="primary", use_container_width=True, key="bluff_modal_dismiss"):
         dismiss_modal()
