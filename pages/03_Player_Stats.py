@@ -578,20 +578,8 @@ def render_session_stats(stats):
     mw = stats.get("max_win_streak", 0)
     ml = stats.get("max_lose_streak", 0)
 
-    st.markdown(f"""
-    <div class="stats-grid-4">
-        <div class="stat-card"><div class="stat-val pl-positive">{fmt_short(best)}</div><div class="stat-lbl">Best Session</div></div>
-        <div class="stat-card"><div class="stat-val pl-negative">{fmt_short(worst)}</div><div class="stat-lbl">Worst Session</div></div>
-        <div class="stat-card"><div class="stat-val {pl_class(avg)}">{fmt_short(avg)}</div><div class="stat-lbl">Avg Session</div></div>
-        <div class="stat-card"><div class="stat-val">{avg_dur:.0f}m</div><div class="stat-lbl">Avg Duration</div></div>
-    </div>
-    <div class="stats-grid-4">
-        <div class="stat-card"><div class="stat-val pl-positive">{winning}</div><div class="stat-lbl">Winning ({(winning/total*100):.0f}%)</div></div>
-        <div class="stat-card"><div class="stat-val pl-negative">{losing}</div><div class="stat-lbl">Losing ({(losing/total*100):.0f}%)</div></div>
-        <div class="stat-card"><div class="stat-val" style="color:#FFD54F;">{mw}</div><div class="stat-lbl">Best Win Streak</div></div>
-        <div class="stat-card"><div class="stat-val" style="color:#FF8A80;">{ml}</div><div class="stat-lbl">Worst Lose Streak</div></div>
-    </div>
-    """, unsafe_allow_html=True) if total > 0 else None
+    if total > 0:
+            st.markdown(f'<div class="stats-grid-4"><div class="stat-card"><div class="stat-val pl-positive">{fmt_short(best)}</div><div class="stat-lbl">Best Session</div></div><div class="stat-card"><div class="stat-val pl-negative">{fmt_short(worst)}</div><div class="stat-lbl">Worst Session</div></div><div class="stat-card"><div class="stat-val {pl_class(avg)}">{fmt_short(avg)}</div><div class="stat-lbl">Avg Session</div></div><div class="stat-card"><div class="stat-val">{avg_dur:.0f}m</div><div class="stat-lbl">Avg Duration</div></div></div><div class="stats-grid-4"><div class="stat-card"><div class="stat-val pl-positive">{winning}</div><div class="stat-lbl">Winning ({(winning/total*100):.0f}%)</div></div><div class="stat-card"><div class="stat-val pl-negative">{losing}</div><div class="stat-lbl">Losing ({(losing/total*100):.0f}%)</div></div><div class="stat-card"><div class="stat-val" style="color:#FFD54F;">{mw}</div><div class="stat-lbl">Best Win Streak</div></div><div class="stat-card"><div class="stat-val" style="color:#FF8A80;">{ml}</div><div class="stat-lbl">Worst Lose Streak</div></div></div>', unsafe_allow_html=True)
 
 
 def render_achievements(stats):
@@ -641,18 +629,7 @@ def render_stakes_breakdown(stats):
             <div style="text-align:center;font-family:'JetBrains Mono',monospace;font-weight:700;" class="{pl_class(bb100)}">{bb100:+.1f} BB/100</div>
         </div>"""
 
-    st.markdown(f"""
-    <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:12px 16px;">
-        <div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr 1fr;gap:8px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.08);">
-            <div style="font-size:9px;text-transform:uppercase;color:rgba(255,255,255,0.25);">Stakes</div>
-            <div style="text-align:center;font-size:9px;text-transform:uppercase;color:rgba(255,255,255,0.25);">Sessions</div>
-            <div style="text-align:center;font-size:9px;text-transform:uppercase;color:rgba(255,255,255,0.25);">Hands</div>
-            <div style="text-align:center;font-size:9px;text-transform:uppercase;color:rgba(255,255,255,0.25);">P/L</div>
-            <div style="text-align:center;font-size:9px;text-transform:uppercase;color:rgba(255,255,255,0.25);">BB/100</div>
-        </div>
-        {rows_html}
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f'<div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:10px;padding:12px 16px;"><div style="display:grid;grid-template-columns:80px 1fr 1fr 1fr 1fr;gap:8px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.08);"><div style="font-size:9px;text-transform:uppercase;color:rgba(255,255,255,0.25);">Stakes</div><div style="text-align:center;font-size:9px;text-transform:uppercase;color:rgba(255,255,255,0.25);">Sessions</div><div style="text-align:center;font-size:9px;text-transform:uppercase;color:rgba(255,255,255,0.25);">Hands</div><div style="text-align:center;font-size:9px;text-transform:uppercase;color:rgba(255,255,255,0.25);">P/L</div><div style="text-align:center;font-size:9px;text-transform:uppercase;color:rgba(255,255,255,0.25);">BB/100</div></div>{rows_html}</div>', unsafe_allow_html=True)
 
 
 def render_day_analysis(stats):
