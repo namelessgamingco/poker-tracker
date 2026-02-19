@@ -587,7 +587,7 @@ def render_session_row(session: dict):
     reason_label = END_REASON_DISPLAY.get(end_reason, "Unknown")
 
     # Expander label
-    expander_label = f"{date_str} — {stakes} — {fmt_money_short(pl)}"
+    expander_label = f"{date_str} — {stakes.replace('$', '\\$')} — {fmt_money_short(pl).replace('$', '\\$')}"
 
     with st.expander(expander_label, expanded=False):
         # ── Top stats row ──
