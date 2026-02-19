@@ -473,6 +473,7 @@ def init_session_state():
 
         # Decision tracking (for React component bridge)
         "current_decision_dict": None,  # Dict sent to React as decision_result prop
+        "decision_table_id": 1,
         "current_decision_obj": None,   # Decision object (for modal/recording)
         "last_hand_context": {},
 
@@ -1437,6 +1438,7 @@ def render_play_mode():
         bb_size=bb_size,
         stack_size=st.session_state.our_stack,
         decision_result=st.session_state.current_decision_dict,
+        decision_table_id=st.session_state.get("decision_table_id", 1),
         session_active=True,
         key="poker_input_main",
     )
@@ -1517,6 +1519,7 @@ def handle_decision_request(game_state: dict, session: dict):
         st.session_state.current_decision_dict = decision_dict
         st.session_state.current_decision_obj = decision
         st.session_state.last_hand_context = game_state
+        st.session_state.decision_table_id = game_state.get("table_id", 1)
         st.session_state.decisions_requested += 1
 
         # Increment decisions counter in DB
