@@ -30,6 +30,7 @@ from db import (
     get_session_outcome_summary,
     update_session_bluff_stats,
     get_session_bluff_stats,
+    update_session_outcome,
 )
 from engine import (
     get_decision,
@@ -1375,6 +1376,8 @@ def render_setup_mode():
             bb_size=bb_size,
             buy_in_amount=buy_in,
             bankroll_at_start=current_bankroll if current_bankroll > 0 else None,
+            stop_loss_amount=stop_loss,
+            stop_win_amount=stop_win,
         )
         if session:
             st.session_state.current_session = session
@@ -1576,6 +1579,7 @@ def handle_hand_complete(component_value: dict, session: dict):
 
     # Update session stats
     increment_session_stats(session_id, hands=1, decisions=0)
+    update_session_outcome(session_id, outcome)
 
     # Update local state
     st.session_state.hands_played += 1
