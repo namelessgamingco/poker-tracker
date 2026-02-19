@@ -229,7 +229,7 @@ def get_active_session(user_id: str) -> Optional[dict]:
         return None
     
     try:
-        sb = get_supabase()
+        sb = get_supabase_admin()
         resp = (
             sb.table("poker_sessions")
             .select("*")
@@ -252,7 +252,7 @@ def update_session(session_id: str, updates: dict) -> bool:
         return False
     
     try:
-        sb = get_supabase()
+        sb = get_supabase_admin()
         sb.table("poker_sessions").update(updates).eq("id", session_id).execute()
         return True
     except Exception as e:
@@ -385,7 +385,7 @@ def get_user_sessions(
         return []
     
     try:
-        sb = get_supabase()
+        sb = get_supabase_admin()
         query = (
             sb.table("poker_sessions")
             .select("*")
@@ -415,7 +415,7 @@ def get_sessions_in_date_range(
         return []
     
     try:
-        sb = get_supabase()
+        sb = get_supabase_admin()
         query = (
             sb.table("poker_sessions")
             .select("*")
@@ -459,7 +459,7 @@ def record_bankroll_change(
         return False
     
     try:
-        sb = get_supabase()
+        sb = get_supabase_admin()
         
         # Calculate buy-ins available (assuming $1/$2 = $200 buy-in as default)
         # This should be adjusted based on actual stakes
@@ -500,7 +500,7 @@ def get_bankroll_history(user_id: str, limit: int = 100) -> List[dict]:
         return []
     
     try:
-        sb = get_supabase()
+        sb = get_supabase_admin()
         resp = (
             sb.table("poker_bankroll_history")
             .select("*")
@@ -627,7 +627,7 @@ def get_today_stats(user_id: str) -> dict:
 def get_stakes_options() -> List[dict]:
     """Get all supported stakes from reference table."""
     try:
-        sb = get_supabase()
+        sb = get_supabase_admin()
         resp = (
             sb.table("poker_stakes_reference")
             .select("*")
@@ -651,7 +651,7 @@ def get_stakes_options() -> List[dict]:
 def get_stakes_info(stakes_label: str) -> Optional[dict]:
     """Get info for specific stakes level."""
     try:
-        sb = get_supabase()
+        sb = get_supabase_admin()
         resp = (
             sb.table("poker_stakes_reference")
             .select("*")
@@ -1288,7 +1288,7 @@ def get_session_outcomes_from_session(session_id: str) -> dict:
         return {"won": 0, "lost": 0, "folded": 0, "total": 0}
     
     try:
-        sb = get_supabase()
+        sb = get_supabase_admin()
         resp = (
             sb.table("poker_sessions")
             .select("outcomes_won, outcomes_lost, outcomes_folded")
@@ -1427,7 +1427,7 @@ def get_session_bluff_stats(session_id: str) -> dict:
     if not session_id:
         return _empty_bluff_stats()
     try:
-        sb = get_supabase()
+        sb = get_supabase_admin()
         resp = (
             sb.table("poker_sessions")
             .select("bluff_spots_total, bluff_spots_bet, bluff_spots_checked, bluff_folds_won, bluff_profit")
@@ -1467,7 +1467,7 @@ def get_user_bluff_stats(user_id: str) -> dict:
     if not user_id:
         return _empty_bluff_stats()
     try:
-        sb = get_supabase()
+        sb = get_supabase_admin()
         resp = (
             sb.table("poker_sessions")
             .select("bluff_spots_total, bluff_spots_bet, bluff_spots_checked, bluff_folds_won, bluff_profit")
