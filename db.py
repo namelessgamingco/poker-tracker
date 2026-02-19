@@ -266,7 +266,7 @@ def increment_session_stats(session_id: str, hands: int = 0, decisions: int = 0)
         return False
     
     try:
-        sb = get_supabase()
+        sb = get_supabase_admin()
         
         # Get current values
         resp = (
@@ -315,7 +315,7 @@ def end_session(
         return None
     
     try:
-        sb = get_supabase()
+        sb = get_supabase_admin()
         
         # Get session to calculate P/L
         resp = (
@@ -1021,7 +1021,7 @@ def admin_resend_payment_link(user_id: str) -> Optional[str]:
 def record_hand_outcome(
     session_id: str,
     user_id: str,
-    outcome: str,  # 'won', 'lost', 'folded', 'they_folded'
+    outcome: str,
     profit_loss: float,
     pot_size: float,
     our_position: str,
@@ -1031,18 +1031,13 @@ def record_hand_outcome(
     action_taken: str = None,
     recommendation_given: str = None,
     we_were_aggressor: bool = False,
-    bluff_context: dict = None,  # NEW: JSONB bluff metadata — None for non-bluff hands
+    bluff_context: dict = None,
 ) -> Optional[dict]:
-    """
-    Record a hand outcome to poker_hands table.
-    
-    Called after user clicks WIN/LOSS/FOLD/THEY FOLDED button.
-    """
     if not session_id or not user_id:
         return None
     
     try:
-        sb = get_supabase()
+        sb = get_supabase_admin()
         
         # Get current hand count for this session
         resp = (
@@ -1057,20 +1052,16 @@ def record_hand_outcome(
             "session_id": session_id,
             "user_id": user_id,
             "hand_number": hand_number,
-            "played_at": _now_iso(),
-            "result": outcome,
-            "profit_loss": profit_loss,
+            "outcome": outcome,
+            "action_taken": action_taken,
             "pot_size": pot_size,
             "our_position": our_position,
-            "street_reached": street_reached,
+            "street": street_reached,
             "our_hand": our_hand,
             "board": board,
-            "action_taken": action_taken,
-            "recommendation_given": recommendation_given,
-            "we_were_aggressor": we_were_aggressor,
-            "followed_recommendation": True,
-            "is_test": False,
-            "bluff_context": bluff_context,  # JSONB — None for non-bluff hands
+            "decision_display": action_taken,
+            "decision_explanation": recommendation_given,
+            "bluff_context": bluff_context,
         }
         
         resp = sb.table("poker_hands").insert(hand_data).execute()
@@ -1090,7 +1081,7 @@ def get_session_hands(session_id: str) -> List[dict]:
         return []
     
     try:
-        sb = get_supabase()
+        sb = get_supabase_admin()
         resp = (
             sb.table("poker_hands")
             .select("*")
@@ -1105,16 +1096,15 @@ def get_session_hands(session_id: str) -> List[dict]:
 
 
 def get_session_outcome_summary(session_id: str) -> dict:
-    """Get outcome breakdown for a session (wins/losses/folds)."""
     if not session_id:
         return {"wins": 0, "losses": 0, "folds": 0, "total": 0}
     
     try:
         hands = get_session_hands(session_id)
         
-        wins = sum(1 for h in hands if h.get("result") == "won")
-        losses = sum(1 for h in hands if h.get("result") == "lost")
-        folds = sum(1 for h in hands if h.get("result") == "folded")
+        wins = sum(1 for h in hands if h.get("outcome") == "won")
+        losses = sum(1 for h in hands if h.get("outcome") == "lost")
+        folds = sum(1 for h in hands if h.get("outcome") == "folded")
         
         return {
             "wins": wins,
@@ -1247,7 +1237,7 @@ def update_session_outcome(session_id: str, outcome: str) -> bool:
         return False
     
     try:
-        sb = get_supabase()
+        sb = get_supabase_admin()
         
         # Map outcome to column name
         column_map = {
@@ -1397,7 +1387,7 @@ def update_session_bluff_stats(session_id: str, user_bet: bool, opponent_folded:
     if not session_id:
         return False
     try:
-        sb = get_supabase()
+        sb = get_supabase_admin()
         resp = (
             sb.table("poker_sessions")
             .select("bluff_spots_total, bluff_spots_bet, bluff_spots_checked, bluff_folds_won, bluff_profit")

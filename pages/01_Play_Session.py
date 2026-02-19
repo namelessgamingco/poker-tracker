@@ -1259,7 +1259,7 @@ def render_setup_mode():
         return
 
     # ── Hero section ──
-    st.markdown('<div style="text-align:center;"><h1 style="text-align:center;">Start Session</h1><p style="text-align:center;color:rgba(255,255,255,0.4);font-size:14px;">Configure your game, then play.</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="setup-hero"><h1>Start Session</h1><p style="text-align:center;width:100%;">Configure your game, then play.</p></div>', unsafe_allow_html=True)
 
     # ── Stakes + Buy-in ──
     st.markdown('<div class="setup-section"><div class="setup-section-title">Game Setup</div>',
