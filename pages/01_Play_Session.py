@@ -1239,12 +1239,7 @@ def render_setup_mode():
     # Check for active session
     active_session = get_active_session(user_id) if user_id else None
     if active_session:
-        st.markdown("""
-        <div class="alert-banner warning">
-            <span class="alert-icon">⚠️</span>
-            <div><span class="alert-title">Active session found.</span> Continue or end it?</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown('<div class="alert-banner warning"><span class="alert-icon">⚠️</span><div><span class="alert-title">Active session found.</span> Your session stats are saved. Any in-progress hand will need to be re-entered.</div></div>', unsafe_allow_html=True)
 
         col1, col2 = st.columns(2)
         with col1:
