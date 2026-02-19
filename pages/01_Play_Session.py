@@ -474,6 +474,7 @@ def init_session_state():
         # Decision tracking (for React component bridge)
         "current_decision_dict": None,  # Dict sent to React as decision_result prop
         "decision_table_id": 1,
+        "two_table_restore": None,
         "current_decision_obj": None,   # Decision object (for modal/recording)
         "last_hand_context": {},
 
@@ -1432,6 +1433,7 @@ def render_play_mode():
     stakes = session.get("stakes", "$1/$2")
     bb_size = float(session.get("bb_size", 2.0))
 
+    restore = st.session_state.get("two_table_restore")
     component_value = poker_input(
         mode=st.session_state.input_mode,
         stakes=stakes,
@@ -1439,6 +1441,17 @@ def render_play_mode():
         stack_size=st.session_state.our_stack,
         decision_result=st.session_state.current_decision_dict,
         decision_table_id=st.session_state.get("decision_table_id", 1),
+        show_second_table=restore.get("show_second_table", False) if restore else False,
+        active_table=restore.get("active_table", 1) if restore else 1,
+        primary_holds_table=restore.get("primary_holds_table", 1) if restore else 1,
+        table1_game_state=restore.get("table1_game_state") if restore else None,
+        table1_step=restore.get("table1_step") if restore else None,
+        table1_decision=restore.get("table1_decision") if restore else None,
+        table1_board_entry_index=restore.get("table1_board_entry_index") if restore else None,
+        table2_game_state=restore.get("table2_game_state") if restore else None,
+        table2_step=restore.get("table2_step") if restore else None,
+        table2_decision=restore.get("table2_decision") if restore else None,
+        table2_board_entry_index=restore.get("table2_board_entry_index") if restore else None,
         session_active=True,
         key="poker_input_main",
     )
@@ -1526,6 +1539,22 @@ def handle_decision_request(game_state: dict, session: dict):
         session_id = session.get("id")
         if session_id:
             increment_session_stats(session_id, hands=0, decisions=1)
+
+        # Preserve two-table state through rerun
+        if game_state.get("show_second_table"):
+            st.session_state.two_table_restore = {
+                "show_second_table": True,
+                "active_table": game_state.get("active_table", 1),
+                "primary_holds_table": game_state.get("primary_holds_table", 1),
+                "table1_game_state": game_state.get("table1_game_state"),
+                "table1_step": game_state.get("table1_step"),
+                "table1_decision": game_state.get("table1_decision"),
+                "table1_board_entry_index": game_state.get("table1_board_entry_index"),
+                "table2_game_state": game_state.get("table2_game_state"),
+                "table2_step": game_state.get("table2_step"),
+                "table2_decision": game_state.get("table2_decision"),
+                "table2_board_entry_index": game_state.get("table2_board_entry_index"),
+            }
 
         st.rerun()  # Send decision back to component
 
@@ -1629,6 +1658,24 @@ def handle_hand_complete(component_value: dict, session: dict):
         "explanation": decision_explanation,     # Snapshot: survives clear
         "calculation": decision_calculation,     # Snapshot: survives clear
     })
+
+    # Save two-table state so the other table survives the rerun
+    if component_value.get("show_second_table"):
+        st.session_state.two_table_restore = {
+            "show_second_table": True,
+            "active_table": component_value.get("active_table", 1),
+            "primary_holds_table": component_value.get("primary_holds_table", 1),
+            "table1_game_state": component_value.get("table1_game_state"),
+            "table1_step": component_value.get("table1_step"),
+            "table1_decision": component_value.get("table1_decision"),
+            "table1_board_entry_index": component_value.get("table1_board_entry_index"),
+            "table2_game_state": component_value.get("table2_game_state"),
+            "table2_step": component_value.get("table2_step"),
+            "table2_decision": component_value.get("table2_decision"),
+            "table2_board_entry_index": component_value.get("table2_board_entry_index"),
+        }
+    else:
+        st.session_state.two_table_restore = None
 
     # Clear decision state so component resets
     clear_hand_state()
