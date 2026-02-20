@@ -5492,6 +5492,96 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           </div>
         )}
 
+      {/* P/L INPUT — only for won hands */}
+      {step === "outcome_pl_input" && pendingOutcome === "won" && (
+        <div>
+          <div style={{
+            ...S.sectionLabel,
+            color: theme.green,
+          }}>
+            💰 How Much Did You Profit?
+          </div>
+
+          <div style={{
+            padding: "10px 14px",
+            marginBottom: 12,
+            background: "rgba(255,255,255,0.03)",
+            borderRadius: 8,
+            border: `1px solid ${theme.border}`,
+            fontSize: 13,
+            color: theme.textMuted,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}>
+            <span>You were in for</span>
+            <span style={{ fontWeight: 700, color: theme.text, fontFamily: theme.mono }}>
+              ${currentInvestment.toFixed(0)}
+            </span>
+          </div>
+
+          <div style={{ position: "relative", marginBottom: 12 }}>
+            <span style={{
+              position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)",
+              fontSize: 20, fontWeight: 700, color: theme.textMuted, pointerEvents: "none",
+            }}>$</span>
+            <input
+              ref={plInputRef}
+              type="number"
+              inputMode="decimal"
+              value={plInputStr}
+              onChange={(e) => setPlInputStr(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); confirmPlInput() } }}
+              placeholder="Profit amount"
+              style={{
+                ...S.input,
+                paddingLeft: 32,
+                fontSize: 22,
+                fontWeight: 700,
+                textAlign: "left",
+                fontFamily: theme.mono,
+              }}
+            />
+          </div>
+
+          <div style={{ fontSize: 11, color: theme.textDim, marginBottom: 12, lineHeight: 1.4 }}>
+            Enter your net profit — what you collected minus what you put in.
+          </div>
+
+          <button
+            onClick={confirmPlInput}
+            disabled={!plInputStr || parseFloat(plInputStr) < 0 || isNaN(parseFloat(plInputStr))}
+            style={{
+              ...S.btn,
+              width: "100%",
+              padding: "14px",
+              fontSize: 15,
+              fontWeight: 700,
+              background: "rgba(0,200,83,0.15)",
+              borderColor: "rgba(0,200,83,0.4)",
+              color: theme.green,
+              opacity: (!plInputStr || parseFloat(plInputStr) < 0) ? 0.4 : 1,
+            }}
+          >
+            Confirm +${plInputStr || "0"} Profit
+          </button>
+
+          <button
+            onClick={() => { setPendingOutcome(null); setPlInputStr(""); setStep("outcome_select") }}
+            style={{
+              ...S.btn,
+              width: "100%",
+              marginTop: 8,
+              padding: "8px",
+              fontSize: 11,
+              color: theme.textDim,
+            }}
+          >
+            ← Back
+          </button>
+        </div>
+      )}
+
       {/* ALWAYS-VISIBLE SHORTCUT REFERENCE BAR */}
       {keyboardActive && step !== "showing_decision" && (
         <div
