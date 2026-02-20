@@ -1,9 +1,11 @@
 # supabase_client.py — Supabase Connection Client
 # Handles both regular (anon) and admin (service role) connections
+# Auto-refreshes clients every 10 minutes to prevent stale connections
 
 from __future__ import annotations
 
 import os
+import time as _time
 from typing import Optional
 
 import streamlit as st
@@ -58,9 +60,14 @@ def _get_supabase_service_role_key() -> str:
 
 # ---------- Client Instances ----------
 
-# Module-level cache for clients
+# Module-level cache for clients + creation timestamps
 _supabase_client: Optional[Client] = None
 _supabase_admin_client: Optional[Client] = None
+_supabase_client_created_at: float = 0
+_supabase_admin_client_created_at: float = 0
+
+# Recreate clients every 10 minutes to prevent stale connections
+_CLIENT_MAX_AGE_SECONDS = 600
 
 
 def get_supabase() -> Client:
@@ -69,21 +76,28 @@ def get_supabase() -> Client:
     
     This client respects Row Level Security (RLS).
     Use for normal user operations.
+    Auto-recreates every 10 minutes to prevent stale connections.
     """
-    global _supabase_client
+    global _supabase_client, _supabase_client_created_at
     
-    if _supabase_client is None:
-        url = _get_supabase_url()
-        key = _get_supabase_anon_key()
-        
-        if not url or not key:
-            raise RuntimeError(
-                "Supabase not configured. "
-                "Set SUPABASE_URL_PROD/DEV and SUPABASE_ANON_KEY_PROD/DEV in secrets."
-            )
-        
-        _supabase_client = create_client(url, key)
+    now = _time.time()
+    if _supabase_client is not None and (now - _supabase_client_created_at) < _CLIENT_MAX_AGE_SECONDS:
+        return _supabase_client
     
+    if _supabase_client is not None:
+        print("[supabase_client] anon client expired, recreating...")
+    
+    url = _get_supabase_url()
+    key = _get_supabase_anon_key()
+    
+    if not url or not key:
+        raise RuntimeError(
+            "Supabase not configured. "
+            "Set SUPABASE_URL_PROD/DEV and SUPABASE_ANON_KEY_PROD/DEV in secrets."
+        )
+    
+    _supabase_client = create_client(url, key)
+    _supabase_client_created_at = now
     return _supabase_client
 
 
@@ -96,28 +110,38 @@ def get_supabase_admin() -> Client:
     - Creating users
     - Managing profiles across all users
     - Webhook handlers
+    Auto-recreates every 10 minutes to prevent stale connections.
     """
-    global _supabase_admin_client
+    global _supabase_admin_client, _supabase_admin_client_created_at
     
-    if _supabase_admin_client is None:
-        url = _get_supabase_url()
-        key = _get_supabase_service_role_key()
-        
-        if not url or not key:
-            raise RuntimeError(
-                "Supabase admin not configured. "
-                "Set SUPABASE_SERVICE_ROLE_KEY_PROD/DEV in secrets."
-            )
-        
-        _supabase_admin_client = create_client(url, key)
+    now = _time.time()
+    if _supabase_admin_client is not None and (now - _supabase_admin_client_created_at) < _CLIENT_MAX_AGE_SECONDS:
+        return _supabase_admin_client
     
+    if _supabase_admin_client is not None:
+        print("[supabase_client] admin client expired, recreating...")
+    
+    url = _get_supabase_url()
+    key = _get_supabase_service_role_key()
+    
+    if not url or not key:
+        raise RuntimeError(
+            "Supabase admin not configured. "
+            "Set SUPABASE_SERVICE_ROLE_KEY_PROD/DEV in secrets."
+        )
+    
+    _supabase_admin_client = create_client(url, key)
+    _supabase_admin_client_created_at = now
     return _supabase_admin_client
+
 
 def get_supabase_admin_fresh() -> Client:
     """Force a fresh admin client — call this after connection errors."""
-    global _supabase_admin_client
+    global _supabase_admin_client, _supabase_admin_client_created_at
     _supabase_admin_client = None
+    _supabase_admin_client_created_at = 0
     return get_supabase_admin()
+
 
 def reset_supabase_client():
     """
@@ -128,14 +152,16 @@ def reset_supabase_client():
     - Switching environments
     - After auth errors
     """
-    global _supabase_client
+    global _supabase_client, _supabase_client_created_at
     _supabase_client = None
+    _supabase_client_created_at = 0
 
 
 def reset_supabase_admin_client():
     """Reset the cached admin client."""
-    global _supabase_admin_client
+    global _supabase_admin_client, _supabase_admin_client_created_at
     _supabase_admin_client = None
+    _supabase_admin_client_created_at = 0
 
 
 # ---------- Connection Test ----------

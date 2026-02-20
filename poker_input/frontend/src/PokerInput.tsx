@@ -29,6 +29,7 @@ type InputStep =
   | "ready"
   | "showing_decision"
   | "outcome_select"
+  | "outcome_pl_input"
 
 
 type Street = "preflop" | "flop" | "turn" | "river"
@@ -48,6 +49,7 @@ interface GameState {
   num_limpers: number
   board_cards: (CardData | null)[]
   pot_size: number
+  total_invested: number  // How much WE have put in this hand (blinds + bets)
   board_texture: string | null
   hand_strength: string | null
   villain_type: string
@@ -183,6 +185,7 @@ const FRESH_GAME_STATE: GameState = {
   num_limpers: 0,
   board_cards: [null, null, null, null, null],
   pot_size: 0,
+  total_invested: 0,
   board_texture: null,
   hand_strength: null,
   villain_type: "unknown",
@@ -259,12 +262,7 @@ const HAND_STRENGTH_DISPLAY: Record<string, string> = {
 function humanizeExplanation(text: string): string {
   if (!text) return ""
   let result = text
-  // Replace shorthand hand strengths followed by " hand" to avoid "Strong Hand hand"
-  for (const [key, val] of Object.entries(HAND_STRENGTH_DISPLAY)) {
-    const regexWithHand = new RegExp(`\\b${key}\\s+hand\\b`, "gi")
-    result = result.replace(regexWithHand, val)
-  }
-  // Second pass: replace standalone keys not followed by "hand"
+  // Replace shorthand hand strengths with readable names
   for (const [key, val] of Object.entries(HAND_STRENGTH_DISPLAY)) {
     const regex = new RegExp(`\\b${key}\\b`, "gi")
     result = result.replace(regex, val)
@@ -340,6 +338,7 @@ function getStepDescription(step: InputStep): string {
     case "ready": return "Calculating..."
     case "showing_decision": return ""
     case "outcome_select": return "Recording result..."
+    case "outcome_pl_input": return "Enter amount..."
     default: return ""
   }
 }
@@ -662,6 +661,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   const restoreState = args["restore_state"] as Record<string, any> | null
   // NEW: Track which table the decision is for (Python should send this back)
   const decisionTableId = (args["decision_table_id"] as number) || 1
+  const defaultVillain = (args["default_villain"] as string) || ""  // Session-level villain default
   const showSecondTableFromPython = args["show_second_table"] as boolean | undefined
   const activeTableFromPython = args["active_table"] as (1 | 2) | undefined
   const primaryHoldsTableFromPython = args["primary_holds_table"] as (1 | 2) | undefined
@@ -743,6 +743,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   const [amountContext, setAmountContext] = useState<string | null>(null) // Context for "they raised me" scenario
   const [potStr, setPotStr] = useState<string>("")
   const [limperCount, setLimperCount] = useState<number>(0)
+  const [plInputStr, setPlInputStr] = useState<string>("")  // P/L amount input
+  const [pendingOutcome, setPendingOutcome] = useState<"won" | "lost" | "folded" | null>(null)  // Pending outcome for P/L input
   const [boardEntryIndex, setBoardEntryIndex] = useState<number>(() => {
       // Try new explicit table args first
       if (primaryHoldsTableFromPython === 1 && table1BoardEntryIndexFromPython !== undefined) {
@@ -832,6 +834,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
 
   const containerRef = useRef<HTMLDivElement>(null)
   const amountRef = useRef<HTMLInputElement>(null)
+  const plInputRef = useRef<HTMLInputElement>(null)
   const potRef = useRef<HTMLInputElement>(null)
 
   // ---- Set frame height ----
@@ -1135,8 +1138,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     })
   }, [resetHand, primaryHoldsTable, showSecondTable, activeTable, t2GameState, t2Step, t2Decision, t2BoardEntryIndex])
 
-  // ---- Send hand complete with outcome to Streamlit ----
-  const sendHandComplete = useCallback((outcome: "won" | "lost" | "folded") => {
+  // ---- Actually send hand_complete to Streamlit with P/L ----
+  const _sendHandCompleteToStreamlit = useCallback((outcome: "won" | "lost" | "folded", profitLoss: number) => {
     const gs = gameState
     const handStr = cardToString(gs.card1) + cardToString(gs.card2)
 
@@ -1147,6 +1150,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       ? detectHandStrength(gs.card1, gs.card2, gs.board_cards)
       : null
 
+    const lastActionCost = decision?.amount || 0
     const handContext = {
       position: gs.position,
       cards: handStr,
@@ -1154,6 +1158,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       action_facing: gs.action_facing,
       facing_bet: gs.facing_bet,
       pot_size: gs.pot_size,
+      total_invested: gs.total_invested + lastActionCost,
       board: gs.board_cards.filter((c) => c !== null).map((c) => cardToString(c)).join(""),
       board_texture: gs.board_texture || autoTexture,
       hand_strength: gs.hand_strength || autoStrength,
@@ -1195,6 +1200,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       type: "hand_complete",
       table_id: primaryHoldsTable,
       outcome: outcome,
+      profit_loss: profitLoss,
       action_taken: decision?.display || "",
       hand_context: handContext,
       bluff_data: bluff_data,
@@ -1211,8 +1217,50 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       table2_board_entry_index: table2BoardEntryIndex,
     })
 
+    setPendingOutcome(null)
+    setPlInputStr("")
     resetHand()
   }, [gameState, decision, chosenBluffAction, primaryHoldsTable, showSecondTable, activeTable, t2GameState, t2Step, t2Decision, t2BoardEntryIndex, resetHand])
+
+  // ---- Send hand complete with outcome to Streamlit ----
+  const sendHandComplete = useCallback((outcome: "won" | "lost" | "folded") => {
+    const gs = gameState
+    const lastActionCost = decision?.amount || 0
+    
+    // For folds: auto-calculate P/L and send immediately
+    if (outcome === "folded") {
+      const foldLoss = gs.total_invested + (
+        decision?.display?.toUpperCase().includes("CALL") ? lastActionCost : 0
+      )
+      _sendHandCompleteToStreamlit(outcome, -foldLoss)
+      return
+    }
+    
+    // For losses: auto-calculate — we lost everything we put in
+    if (outcome === "lost") {
+      const totalLoss = gs.total_invested + lastActionCost
+      _sendHandCompleteToStreamlit(outcome, -totalLoss)
+      return
+    }
+    
+    // For wins: ask how much they profited (we can't know the final pot)
+    setPendingOutcome(outcome)
+    setPlInputStr("")
+    setStep("outcome_pl_input")
+    setTimeout(() => plInputRef.current?.focus(), 100)
+  }, [gameState, decision, _sendHandCompleteToStreamlit])
+
+  // ---- Confirm P/L input and send hand complete ----
+  const confirmPlInput = useCallback(() => {
+    const val = parseFloat(plInputStr)
+    if (isNaN(val) || val < 0) return
+    if (!pendingOutcome) return
+    const profitLoss = pendingOutcome === "won" ? val : -val
+    _sendHandCompleteToStreamlit(pendingOutcome, profitLoss)
+  }, [plInputStr, pendingOutcome, _sendHandCompleteToStreamlit])
+
+  // ---- Helper: "You're in" display for current hand ----
+  const currentInvestment = gameState.total_invested + (decision?.amount || 0)
 
   // ---- They raised me back — re-query same street with new action ----
   const theyRaisedMe = useCallback(() => {
@@ -1247,11 +1295,14 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         newAction = "check_raise"
       }
 
+      // Add what we bet before they raised to total_invested
+      const ourBet = decision?.amount || 0
       setGameState((s) => ({
         ...s,
         action_facing: newAction,
         facing_bet: 0,
         we_are_aggressor: true,
+        total_invested: s.total_invested + ourBet,
       }))
       // Don't clear decision yet — keep it visible if user goes back
       // Decision will be replaced when new one arrives
@@ -1440,9 +1491,11 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
 
   // ---- Handle position select ----
   const selectPosition = useCallback((pos: string) => {
-    setGameState((s) => ({ ...s, position: pos }))
+    // Track blind investment
+    const blindAmount = pos === "BB" ? bbSize : pos === "SB" ? bbSize / 2 : 0
+    setGameState((s) => ({ ...s, position: pos, total_invested: blindAmount }))
     setStep("card1_rank")
-  }, [])
+  }, [bbSize])
 
   // ---- Handle card rank select ----
   const selectRank = useCallback(
@@ -1488,6 +1541,11 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         const needed = requiredBoardCards(gameState.street)
         if (nextIdx >= needed) {
           setBoardEntryIndex(nextIdx)
+          // Auto-fill pot estimate for turn/river (previous pot + 2x our last bet)
+          if (gameState.pot_size > 0 && decision?.amount) {
+            const estimate = Math.round(gameState.pot_size + 2 * decision.amount)
+            setPotStr(estimate.toString())
+          }
           setStep("pot_size")
         } else {
           setBoardEntryIndex(nextIdx)
@@ -1580,12 +1638,15 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             (a) => d.includes(a)
           )
         }
+        // Add what we bet this street to total_invested
+        const streetInvestment = decision?.amount || 0
         return { 
           ...s, 
           street,
           action_facing: "none",
           facing_bet: 0,
           we_are_aggressor: wasAggressor,
+          total_invested: s.total_invested + streetInvestment,
         }
       })
       setBoardEntryIndex(newBoardEntryIndex)
@@ -1603,6 +1664,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         we_are_aggressor: decision ? ["RAISE", "BET", "RE-RAISE", "3-BET", "4-BET", "ALL-IN", "ALL IN", "ISO"].some(
           (a) => decision.display.toUpperCase().includes(a)
         ) : false,
+        total_invested: gameState.total_invested + (decision?.amount || 0),
       }
       
       const table1GameState = primaryHoldsTable === 1 ? newPrimaryGameState : t2GameState
@@ -1665,6 +1727,13 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     }
   }, [step, submitDecisionRequest])
 
+  // ---- Pre-select villain type from session default ----
+  useEffect(() => {
+    if (step === "villain_type" && defaultVillain) {
+      setGameState((s) => ({ ...s, villain_type: defaultVillain }))
+    }
+  }, [step, defaultVillain])
+
   // ---- Select board texture ----
   const selectBoardTexture = useCallback((bt: string) => {
     setGameState((s) => ({ ...s, board_texture: bt }))
@@ -1710,6 +1779,13 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         // From outcome select: go back to decision
         if (step === "outcome_select") {
           setStep("showing_decision")
+          return
+        }
+        // From P/L input: go back to outcome select
+        if (step === "outcome_pl_input") {
+          setPendingOutcome(null)
+          setPlInputStr("")
+          setStep("outcome_select")
           return
         }
         // From decision screen: Escape does nothing - use the action buttons
@@ -1764,6 +1840,13 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         return
       }
 
+      // P/L input: Enter to confirm
+      if (step === "outcome_pl_input" && key === "Enter") {
+        e.preventDefault()
+        confirmPlInput()
+        return
+      }
+
       // Position step
       if (step === "position" && "123456".includes(key)) {
         e.preventDefault()
@@ -1805,6 +1888,13 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         e.preventDefault()
         const vt = VILLAIN_TYPES[parseInt(key) - 1]
         if (vt) selectVillainType(vt.id)
+        return
+      }
+
+      // Enter confirms pre-selected villain type default
+      if (step === "villain_type" && key === "Enter") {
+        e.preventDefault()
+        selectVillainType(gameState.villain_type || "unknown")
         return
       }
 
@@ -1868,7 +1958,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   }, [
     keyboardActive, step, gameState.street, pendingRank, decision, mode, showSecondTable,
     selectPosition, selectRank, selectSuit, selectAction,
-    confirmAmount, confirmLimperCount, confirmPotSize, goBack, sendNewHand, sendHandComplete, continueToStreet, theyRaisedMe, theyBet,
+    confirmAmount, confirmLimperCount, confirmPotSize, goBack, sendNewHand, sendHandComplete, continueToStreet, theyRaisedMe, theyBet, confirmPlInput,
     switchTable, chosenBluffAction,
   ])
 
@@ -2413,6 +2503,26 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           )}
         </div>
 
+        {/* Investment tracker */}
+        {currentInvestment > 0 && (
+          <div style={{
+            marginTop: 8,
+            padding: "6px 14px",
+            background: "rgba(255,255,255,0.03)",
+            borderRadius: 8,
+            border: `1px solid ${theme.border}`,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            fontSize: 12,
+          }}>
+            <span style={{ color: theme.textMuted }}>You're in for</span>
+            <span style={{ fontWeight: 700, color: theme.amber, fontFamily: theme.mono }}>
+              ${currentInvestment.toFixed(0)}
+            </span>
+          </div>
+        )}
+
         {/* Post-decision actions */}
         {(() => {
           const d = decision?.display?.toUpperCase() || ""
@@ -2686,6 +2796,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       case "hand_strength":
         return "What's your hand strength?"
       case "villain_type":
+        if (defaultVillain && keyboardActive) {
+          return "Enter to confirm default · or 1/2/3 to change"
+        }
         return keyboardActive ? "Press 1 if unsure, 2 for weak player, 3 for good player..." : "What type of player are you against? Pick 'Not Sure' if unsure."
       case "ready":
         return "Calculating..."
@@ -2716,6 +2829,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             }
             case "outcome_select":
               return keyboardActive ? "Press 1 Won · 2 Lost · 3 Folded" : "How did this hand end?"
+            case "outcome_pl_input":
+              return "Enter your profit for this hand"
             default:
               return ""
           }
@@ -3660,6 +3775,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             )}
             {step === "villain_type" && (
               <>
+                {defaultVillain && <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Enter</span> confirm</span>}
                 <span><span style={{ color: "rgba(255,255,255,0.5)" }}>1</span> not sure</span>
                 <span><span style={{ color: "rgba(255,255,255,0.5)" }}>2</span> weak player</span>
                 <span><span style={{ color: "rgba(255,255,255,0.5)" }}>3</span> good player</span>
@@ -3674,6 +3790,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
                 <span><span style={{ color: theme.red }}>2</span> lost</span>
                 <span><span style={{ color: theme.textMuted }}>3</span> folded</span>
               </>
+            )}
+            {step === "outcome_pl_input" && (
+              <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Enter</span> confirm</span>
             )}
             <span style={{ marginLeft: "auto" }}>
               <span style={{ color: "rgba(255,255,255,0.5)" }}>Esc</span> back
@@ -4087,25 +4206,37 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           <div>
             <div style={S.sectionLabel}>Who Are You Playing Against?</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-              {VILLAIN_TYPES.map((vt) => (
-                <button
-                  key={vt.id}
-                  onClick={() => selectVillainType(vt.id)}
-                  style={{
-                    ...S.btn,
-                    flexDirection: "column" as const,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 2,
-                    padding: "12px 8px",
-                  }}
-                >
-                  {keyboardActive && <span style={S.hint}>{vt.key}</span>}
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>{vt.label}</span>
-                  <span style={{ fontSize: 10, color: theme.textDim, fontWeight: 400 }}>{vt.desc}</span>
-                </button>
-              ))}
+              {VILLAIN_TYPES.map((vt) => {
+                const isDefault = gameState.villain_type === vt.id
+                return (
+                  <button
+                    key={vt.id}
+                    onClick={() => selectVillainType(vt.id)}
+                    style={{
+                      ...S.btn,
+                      flexDirection: "column" as const,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 2,
+                      padding: "12px 8px",
+                      ...(isDefault ? {
+                        background: "rgba(75,163,255,0.1)",
+                        borderColor: "rgba(75,163,255,0.4)",
+                      } : {}),
+                    }}
+                  >
+                    {keyboardActive && <span style={S.hint}>{vt.key}</span>}
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>{vt.label}</span>
+                    <span style={{ fontSize: 10, color: theme.textDim, fontWeight: 400 }}>{vt.desc}</span>
+                  </button>
+                )
+              })}
             </div>
+            {defaultVillain && (
+              <div style={{ textAlign: "center", marginTop: 8, fontSize: 11, color: theme.textDim }}>
+                {keyboardActive ? "Press Enter to confirm default · or pick another" : "Tap to confirm or change"}
+              </div>
+            )}
           </div>
         )}
 
@@ -4136,62 +4267,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
 
                 <button
                   onClick={() => {
-                    const gs = gameState
-                    const handStr = cardToString(gs.card1) + cardToString(gs.card2)
-                    const autoTexture = gs.street !== "preflop" ? detectBoardTexture(gs.board_cards) : null
-                    const autoStrength = gs.street !== "preflop" ? detectHandStrength(gs.card1, gs.card2, gs.board_cards) : null
-
-                    const handContext = {
-                      position: gs.position, cards: handStr, street: gs.street,
-                      action_facing: gs.action_facing, facing_bet: gs.facing_bet,
-                      pot_size: gs.pot_size,
-                      board: gs.board_cards.filter(c => c !== null).map(c => cardToString(c)).join(""),
-                      board_texture: gs.board_texture || autoTexture,
-                      hand_strength: gs.hand_strength || autoStrength,
-                      villain_type: gs.villain_type, we_are_aggressor: gs.we_are_aggressor,
-                      num_limpers: gs.num_limpers,
-                    }
-
-                    const bluff_data = decision?.bluff_context ? {
-                      spot_type: decision.bluff_context.spot_type,
-                      delivery: decision.bluff_context.delivery,
-                      recommended: decision.bluff_context.recommended_action,
-                      user_action: chosenBluffAction || "BET",
-                      outcome: "fold",
-                      profit: decision.bluff_context.pot_size,
-                      bet_amount: decision.bluff_context.bet_amount,
-                      pot_size: decision.bluff_context.pot_size,
-                      ev_of_bet: decision.bluff_context.ev_of_bet,
-                      break_even_pct: decision.bluff_context.break_even_pct,
-                      estimated_fold_pct: decision.bluff_context.estimated_fold_pct,
-                    } : null
-
-                    const freshState = { ...FRESH_GAME_STATE }
-                    const table1GameState = primaryHoldsTable === 1 ? freshState : t2GameState
-                    const table1Step = primaryHoldsTable === 1 ? "position" as InputStep : t2Step
-                    const table1Decision = primaryHoldsTable === 1 ? null : t2Decision
-                    const table1BoardEntryIndex = primaryHoldsTable === 1 ? 0 : t2BoardEntryIndex
-                    const table2GameState = primaryHoldsTable === 2 ? freshState : t2GameState
-                    const table2Step = primaryHoldsTable === 2 ? "position" as InputStep : t2Step
-                    const table2Decision = primaryHoldsTable === 2 ? null : t2Decision
-                    const table2BoardEntryIndex = primaryHoldsTable === 2 ? 0 : t2BoardEntryIndex
-
-                    Streamlit.setComponentValue({
-                      type: "hand_complete",
-                      table_id: primaryHoldsTable,
-                      outcome: "won",
-                      action_taken: decision?.display || "",
-                      hand_context: handContext,
-                      bluff_data: bluff_data,
-                      show_second_table: showSecondTable,
-                      active_table: activeTable,
-                      primary_holds_table: primaryHoldsTable,
-                      table1_game_state: table1GameState, table1_step: table1Step,
-                      table1_decision: table1Decision, table1_board_entry_index: table1BoardEntryIndex,
-                      table2_game_state: table2GameState, table2_step: table2Step,
-                      table2_decision: table2Decision, table2_board_entry_index: table2BoardEntryIndex,
-                    })
-                    resetHand()
+                    // Bluff fold: profit = pot they folded to us  
+                    const bluffProfit = decision?.bluff_context?.pot_size || gameState.pot_size || 0
+                    _sendHandCompleteToStreamlit("won", bluffProfit)
                   }}
                   style={{
                     ...S.btn, padding: "18px 10px",
@@ -4318,6 +4396,99 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               }}
             >
             ← Back to Decision
+            </button>
+          </div>
+        )}
+
+        {/* P/L INPUT — only for won hands */}
+        {step === "outcome_pl_input" && pendingOutcome === "won" && (
+          <div>
+            <div style={{
+              ...S.sectionLabel,
+              color: theme.green,
+            }}>
+              💰 How Much Did You Profit?
+            </div>
+
+            {/* "You're in" reference */}
+            <div style={{
+              padding: "10px 14px",
+              marginBottom: 12,
+              background: "rgba(255,255,255,0.03)",
+              borderRadius: 8,
+              border: `1px solid ${theme.border}`,
+              fontSize: 13,
+              color: theme.textMuted,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}>
+              <span>You were in for</span>
+              <span style={{ fontWeight: 700, color: theme.text, fontFamily: theme.mono }}>
+                ${currentInvestment.toFixed(0)}
+              </span>
+            </div>
+
+            {/* Amount input */}
+            <div style={{ position: "relative", marginBottom: 12 }}>
+              <span style={{
+                position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)",
+                fontSize: 20, fontWeight: 700, color: theme.textMuted, pointerEvents: "none",
+              }}>$</span>
+              <input
+                ref={plInputRef}
+                type="number"
+                inputMode="decimal"
+                value={plInputStr}
+                onChange={(e) => setPlInputStr(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); confirmPlInput() } }}
+                placeholder="Profit amount"
+                style={{
+                  ...S.input,
+                  paddingLeft: 32,
+                  fontSize: 22,
+                  fontWeight: 700,
+                  textAlign: "left",
+                  fontFamily: theme.mono,
+                }}
+              />
+            </div>
+
+            {/* Helper text */}
+            <div style={{ fontSize: 11, color: theme.textDim, marginBottom: 12, lineHeight: 1.4 }}>
+              Enter your net profit — what you collected minus what you put in.
+            </div>
+
+            <button
+              onClick={confirmPlInput}
+              disabled={!plInputStr || parseFloat(plInputStr) < 0 || isNaN(parseFloat(plInputStr))}
+              style={{
+                ...S.btn,
+                width: "100%",
+                padding: "14px",
+                fontSize: 15,
+                fontWeight: 700,
+                background: "rgba(0,200,83,0.15)",
+                borderColor: "rgba(0,200,83,0.4)",
+                color: theme.green,
+                opacity: (!plInputStr || parseFloat(plInputStr) < 0) ? 0.4 : 1,
+              }}
+            >
+              Confirm +${plInputStr || "0"} Profit
+            </button>
+
+            <button
+              onClick={() => { setPendingOutcome(null); setPlInputStr(""); setStep("outcome_select") }}
+              style={{
+                ...S.btn,
+                width: "100%",
+                marginTop: 8,
+                padding: "8px",
+                fontSize: 11,
+                color: theme.textDim,
+              }}
+            >
+              ← Back
             </button>
           </div>
         )}
@@ -4922,25 +5093,37 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         <div>
           <div style={S.sectionLabel}>Who Are You Playing Against?</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-            {VILLAIN_TYPES.map((vt) => (
-              <button
-                key={vt.id}
-                onClick={() => selectVillainType(vt.id)}
-                style={{
-                  ...S.btn,
-                  flexDirection: "column" as const,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 2,
-                  padding: "12px 8px",
-                }}
-              >
-                {keyboardActive && <span style={S.hint}>{vt.key}</span>}
-                <span style={{ fontSize: 13, fontWeight: 600 }}>{vt.label}</span>
-                <span style={{ fontSize: 10, color: theme.textDim, fontWeight: 400 }}>{vt.desc}</span>
-              </button>
-            ))}
+            {VILLAIN_TYPES.map((vt) => {
+              const isDefault = gameState.villain_type === vt.id
+              return (
+                <button
+                  key={vt.id}
+                  onClick={() => selectVillainType(vt.id)}
+                  style={{
+                    ...S.btn,
+                    flexDirection: "column" as const,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 2,
+                    padding: "12px 8px",
+                    ...(isDefault ? {
+                      background: "rgba(75,163,255,0.1)",
+                      borderColor: "rgba(75,163,255,0.4)",
+                    } : {}),
+                  }}
+                >
+                  {keyboardActive && <span style={S.hint}>{vt.key}</span>}
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>{vt.label}</span>
+                  <span style={{ fontSize: 10, color: theme.textDim, fontWeight: 400 }}>{vt.desc}</span>
+                </button>
+              )
+            })}
           </div>
+          {defaultVillain && (
+            <div style={{ textAlign: "center", marginTop: 8, fontSize: 11, color: theme.textDim }}>
+              {keyboardActive ? "Press Enter to confirm default · or pick another" : "Tap to confirm or change"}
+            </div>
+          )}
         </div>
       )}
 
@@ -4971,62 +5154,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
 
                 <button
                   onClick={() => {
-                    const gs = gameState
-                    const handStr = cardToString(gs.card1) + cardToString(gs.card2)
-                    const autoTexture = gs.street !== "preflop" ? detectBoardTexture(gs.board_cards) : null
-                    const autoStrength = gs.street !== "preflop" ? detectHandStrength(gs.card1, gs.card2, gs.board_cards) : null
-
-                    const handContext = {
-                      position: gs.position, cards: handStr, street: gs.street,
-                      action_facing: gs.action_facing, facing_bet: gs.facing_bet,
-                      pot_size: gs.pot_size,
-                      board: gs.board_cards.filter(c => c !== null).map(c => cardToString(c)).join(""),
-                      board_texture: gs.board_texture || autoTexture,
-                      hand_strength: gs.hand_strength || autoStrength,
-                      villain_type: gs.villain_type, we_are_aggressor: gs.we_are_aggressor,
-                      num_limpers: gs.num_limpers,
-                    }
-
-                    const bluff_data = decision?.bluff_context ? {
-                      spot_type: decision.bluff_context.spot_type,
-                      delivery: decision.bluff_context.delivery,
-                      recommended: decision.bluff_context.recommended_action,
-                      user_action: chosenBluffAction || "BET",
-                      outcome: "fold",
-                      profit: decision.bluff_context.pot_size,
-                      bet_amount: decision.bluff_context.bet_amount,
-                      pot_size: decision.bluff_context.pot_size,
-                      ev_of_bet: decision.bluff_context.ev_of_bet,
-                      break_even_pct: decision.bluff_context.break_even_pct,
-                      estimated_fold_pct: decision.bluff_context.estimated_fold_pct,
-                    } : null
-
-                    const freshState = { ...FRESH_GAME_STATE }
-                    const table1GameState = primaryHoldsTable === 1 ? freshState : t2GameState
-                    const table1Step = primaryHoldsTable === 1 ? "position" as InputStep : t2Step
-                    const table1Decision = primaryHoldsTable === 1 ? null : t2Decision
-                    const table1BoardEntryIndex = primaryHoldsTable === 1 ? 0 : t2BoardEntryIndex
-                    const table2GameState = primaryHoldsTable === 2 ? freshState : t2GameState
-                    const table2Step = primaryHoldsTable === 2 ? "position" as InputStep : t2Step
-                    const table2Decision = primaryHoldsTable === 2 ? null : t2Decision
-                    const table2BoardEntryIndex = primaryHoldsTable === 2 ? 0 : t2BoardEntryIndex
-
-                    Streamlit.setComponentValue({
-                      type: "hand_complete",
-                      table_id: primaryHoldsTable,
-                      outcome: "won",
-                      action_taken: decision?.display || "",
-                      hand_context: handContext,
-                      bluff_data: bluff_data,
-                      show_second_table: showSecondTable,
-                      active_table: activeTable,
-                      primary_holds_table: primaryHoldsTable,
-                      table1_game_state: table1GameState, table1_step: table1Step,
-                      table1_decision: table1Decision, table1_board_entry_index: table1BoardEntryIndex,
-                      table2_game_state: table2GameState, table2_step: table2Step,
-                      table2_decision: table2Decision, table2_board_entry_index: table2BoardEntryIndex,
-                    })
-                    resetHand()
+                    // Bluff fold: profit = pot they folded to us  
+                    const bluffProfit = decision?.bluff_context?.pot_size || gameState.pot_size || 0
+                    _sendHandCompleteToStreamlit("won", bluffProfit)
                   }}
                   style={{
                     ...S.btn, padding: "18px 10px",
@@ -5206,6 +5336,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           )}
           {step === "villain_type" && (
             <>
+              {defaultVillain && <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Enter</span> confirm</span>}
               <span><span style={{ color: "rgba(255,255,255,0.5)" }}>1</span> not sure</span>
               <span><span style={{ color: "rgba(255,255,255,0.5)" }}>2</span> weak player</span>
               <span><span style={{ color: "rgba(255,255,255,0.5)" }}>3</span> good player</span>
@@ -5220,6 +5351,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               <span><span style={{ color: theme.red }}>2</span> lost</span>
               <span><span style={{ color: theme.textMuted }}>3</span> folded</span>
             </>
+          )}
+          {step === "outcome_pl_input" && (
+            <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Enter</span> confirm</span>
           )}
           <span style={{ marginLeft: "auto" }}>
             <span style={{ color: "rgba(255,255,255,0.5)" }}>Esc</span> back

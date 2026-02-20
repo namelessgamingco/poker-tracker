@@ -2339,4 +2339,21 @@ def get_decision(
     )
     
     engine = get_engine()
-    return engine.get_decision(state)
+    decision = engine.get_decision(state)
+    
+    # ── Cap bet/raise amounts to remaining stack ──
+    # If the recommended bet is ≥90% of stack, convert to ALL-IN
+    # (a weird-sized bet near stack size is worse than a clean shove)
+    if decision.amount is not None and decision.amount > 0 and state.our_stack > 0:
+        remaining = state.our_stack
+        if decision.amount >= remaining * 0.9:
+            decision = Decision(
+                action=Action.ALL_IN,
+                amount=round(remaining, 2),
+                display=f"ALL-IN ${remaining:.2f}",
+                explanation=decision.explanation,
+                calculation=f"Stack: ${remaining:.0f} — shove is cleaner than a near-stack bet",
+                confidence=decision.confidence,
+            )
+    
+    return decision

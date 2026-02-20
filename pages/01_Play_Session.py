@@ -480,6 +480,7 @@ def init_session_state():
 
         # Input mode
         "input_mode": "keyboard",  # "standard", "keyboard", "two_table"
+        "default_villain": "",  # Session-level villain default ("unknown", "fish", "reg")
 
         # Modal queue
         "modal_queue": [],
@@ -1372,6 +1373,28 @@ def render_setup_mode():
 
     st.markdown('</div>', unsafe_allow_html=True)
 
+    # ── Default Opponent ──
+    st.markdown('<div class="setup-section"><div class="setup-section-title">Default Opponent</div>',
+                unsafe_allow_html=True)
+
+    villain_default = st.radio("Default", ["Ask Every Hand", "Unknown", "Weak Player", "Good Player"],
+                                index=0, horizontal=True, label_visibility="collapsed")
+
+    if villain_default == "Ask Every Hand":
+        st.caption("You'll pick the opponent type each hand. Most accurate — takes one extra tap.")
+        st.session_state.default_villain = ""
+    elif villain_default == "Unknown":
+        st.caption("Balanced sizing that works against anyone. Safe default, but you'll miss opportunities to size up against weak players.")
+        st.session_state.default_villain = "unknown"
+    elif villain_default == "Weak Player":
+        st.caption("Larger value bets, exploitative sizing. Best when your table is mostly recreational players. You'll extract more from their mistakes.")
+        st.session_state.default_villain = "fish"
+    else:
+        st.caption("Tighter ranges, careful sizing. Use at reg-heavy or tough tables where opponents adjust to your bets.")
+        st.session_state.default_villain = "reg"
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
     # ── Bankroll check ──
     required_buy_ins = mode_config["buy_ins"]
     override = True
@@ -1503,6 +1526,7 @@ def render_play_mode():
         mode=st.session_state.input_mode,
         stakes=stakes,
         bb_size=bb_size,
+        default_villain=st.session_state.get("default_villain", ""),
         stack_size=st.session_state.our_stack,
         decision_result=st.session_state.current_decision_dict,
         decision_table_id=st.session_state.get("decision_table_id", 1),
@@ -1600,10 +1624,13 @@ def handle_decision_request(game_state: dict, session: dict):
         st.session_state.decision_table_id = game_state.get("table_id", 1)
         st.session_state.decisions_requested += 1
 
-        # Increment decisions counter in DB
+        # DB stats update — wrapped so it never blocks the decision
         session_id = session.get("id")
         if session_id:
-            increment_session_stats(session_id, hands=0, decisions=1)
+            try:
+                increment_session_stats(session_id, hands=0, decisions=1)
+            except Exception:
+                pass  # Non-critical — don't block gameplay for a counter
 
         # Preserve two-table state through rerun
         if game_state.get("show_second_table"):
@@ -1644,39 +1671,33 @@ def handle_hand_complete(component_value: dict, session: dict):
     decision_explanation = decision_obj.explanation if decision_obj else ""
     decision_calculation = decision_obj.calculation if decision_obj else ""
 
-    # Calculate profit/loss
-    # The React component doesn't calculate P/L — we do it here
+    # ── P/L: Use the value calculated by the React component ──
+    # React tracks total_invested (blinds + all bets) and asks user for
+    # the actual profit/loss amount on won/lost hands
+    profit_loss = float(component_value.get("profit_loss", 0))
     pot_size = float(hand_context.get("pot_size", 0))
-    facing_bet = float(hand_context.get("facing_bet", 0))
 
-    if outcome == "won":
-        profit_loss = pot_size + facing_bet if pot_size > 0 else (decision_obj.amount if decision_obj else 0) or 0
-    elif outcome == "lost":
-        loss_amt = (decision_obj.amount if decision_obj and decision_obj.amount else facing_bet) or 0
-        profit_loss = -loss_amt
-    else:  # folded
-        profit_loss = 0
-
-    # Record to database
-    record_hand_outcome(
-        session_id=session_id,
-        user_id=user_id,
-        outcome=outcome,
-        profit_loss=profit_loss,
-        pot_size=pot_size,
-        our_position=hand_context.get("position", ""),
-        street_reached=hand_context.get("street", "preflop"),
-        our_hand=hand_context.get("cards"),
-        board=hand_context.get("board"),
-        action_taken=action_taken,
-        recommendation_given=action_taken,
-        we_were_aggressor=hand_context.get("we_are_aggressor", False),
-        bluff_context=bluff_data,  # NEW: pass bluff data to DB
-    )
-
-    # Update session stats
-    increment_session_stats(session_id, hands=1, decisions=0)
-    update_session_outcome(session_id, outcome)
+    # Record to database (background — don't block the UI)
+    import threading
+    def _db_writes():
+        record_hand_outcome(
+            session_id=session_id,
+            user_id=user_id,
+            outcome=outcome,
+            profit_loss=profit_loss,
+            pot_size=pot_size,
+            our_position=hand_context.get("position", ""),
+            street_reached=hand_context.get("street", "preflop"),
+            our_hand=hand_context.get("cards"),
+            board=hand_context.get("board"),
+            action_taken=action_taken,
+            recommendation_given=action_taken,
+            we_were_aggressor=hand_context.get("we_are_aggressor", False),
+            bluff_context=bluff_data,
+        )
+        increment_session_stats(session_id, hands=1, decisions=0)
+        update_session_outcome(session_id, outcome)
+    threading.Thread(target=_db_writes, daemon=True).start()
 
     # Update local state
     st.session_state.hands_played += 1
@@ -1685,7 +1706,7 @@ def handle_hand_complete(component_value: dict, session: dict):
         "street": hand_context.get("street"), "position": hand_context.get("position"),
     })
 
-    if outcome in ("won", "lost"):
+    if profit_loss != 0:
         st.session_state.session_pl += profit_loss
         st.session_state.our_stack += profit_loss
 
@@ -1701,7 +1722,7 @@ def handle_hand_complete(component_value: dict, session: dict):
         opponent_folded = bluff_data.get("outcome") == "fold"
         bluff_profit = float(bluff_data.get("profit", 0))
 
-        update_session_bluff_stats(session_id, user_bet, opponent_folded, bluff_profit)
+        threading.Thread(target=lambda: update_session_bluff_stats(session_id, user_bet, opponent_folded, bluff_profit), daemon=True).start()
 
         st.session_state.session_bluff_spots += 1
         if user_bet:

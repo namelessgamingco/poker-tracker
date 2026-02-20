@@ -24,6 +24,7 @@ def poker_input(
     stack_size=200.0,
     decision_result=None,
     decision_table_id=1,
+    default_villain="",
     show_second_table=False,
     active_table=1,
     primary_holds_table=1,
@@ -54,6 +55,7 @@ def poker_input(
         stack_size: Our current stack
         decision_result: Dict with decision to display (from engine)
         decision_table_id: Which table (1 or 2) the decision is for
+        default_villain: Session-level default villain type ("unknown", "fish", "reg") — skips villain step
         show_second_table: Whether second table is visible
         active_table: Which table is currently active (1 or 2)
         primary_holds_table: Which table's data is in primary state variables
@@ -82,6 +84,7 @@ def poker_input(
         stack_size=stack_size,
         decision_result=decision_result,
         decision_table_id=decision_table_id,
+        default_villain=default_villain,
         show_second_table=show_second_table,
         active_table=active_table,
         primary_holds_table=primary_holds_table,
