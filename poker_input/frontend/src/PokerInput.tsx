@@ -4290,10 +4290,10 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             <div style={S.sectionLabel}>Players in the Pot</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
               {[
-                { count: 2, label: "Heads Up", desc: "Just you and them", key: "2" },
-                { count: 3, label: "3-Way", desc: "1 caller between", key: "3" },
-                { count: 4, label: "4-Way", desc: "2 callers", key: "4" },
-                { count: 5, label: "5+", desc: "3+ callers", key: "5" },
+                { count: 2, label: "Heads Up", desc: "Just us two", key: "2" },
+                { count: 3, label: "3-Way", desc: "3 players total", key: "3" },
+                { count: 4, label: "4-Way", desc: "4 players total", key: "4" },
+                { count: 5, label: "5+", desc: "Big multiway pot", key: "5" },
               ].map((p) => (
                 <button
                   key={p.count}
@@ -4321,9 +4321,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             <div style={S.sectionLabel}>Who Raised?</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
               {[
-                { pos: "HJ", label: "Early", desc: "UTG / HJ", key: "E" },
-                { pos: "CO", label: "Middle", desc: "Cutoff", key: "M" },
-                { pos: "BTN", label: "Late", desc: "BTN / SB", key: "L" },
+                { pos: "HJ", label: "Early Seat", desc: "UTG or HJ opened", key: "E" },
+                { pos: "CO", label: "Cutoff", desc: "CO opened", key: "M" },
+                { pos: "BTN", label: "Button / SB", desc: "BTN or SB opened", key: "L" },
               ].map((v) => (
                 <button
                   key={v.pos}
@@ -5238,10 +5238,10 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           <div style={S.sectionLabel}>Players in the Pot</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
             {[
-              { count: 2, label: "Heads Up", desc: "Just you and them", key: "2" },
-              { count: 3, label: "3-Way", desc: "1 caller between", key: "3" },
-              { count: 4, label: "4-Way", desc: "2 callers", key: "4" },
-              { count: 5, label: "5+", desc: "3+ callers", key: "5" },
+              { count: 2, label: "Heads Up", desc: "Just us two", key: "2" },
+              { count: 3, label: "3-Way", desc: "3 players total", key: "3" },
+              { count: 4, label: "4-Way", desc: "4 players total", key: "4" },
+              { count: 5, label: "5+", desc: "Big multiway pot", key: "5" },
             ].map((p) => (
               <button
                 key={p.count}
@@ -5269,9 +5269,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           <div style={S.sectionLabel}>Who Raised?</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
             {[
-              { pos: "HJ", label: "Early", desc: "UTG / HJ", key: "E" },
-              { pos: "CO", label: "Middle", desc: "Cutoff", key: "M" },
-              { pos: "BTN", label: "Late", desc: "BTN / SB", key: "L" },
+              { pos: "HJ", label: "Early Seat", desc: "UTG or HJ opened", key: "E" },
+              { pos: "CO", label: "Cutoff", desc: "CO opened", key: "M" },
+              { pos: "BTN", label: "Button / SB", desc: "BTN or SB opened", key: "L" },
             ].map((v) => (
               <button
                 key={v.pos}
@@ -5524,6 +5524,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             <span style={{
               position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)",
               fontSize: 20, fontWeight: 700, color: theme.textMuted, pointerEvents: "none",
+              zIndex: 1,
             }}>$</span>
             <input
               ref={plInputRef}
@@ -5532,10 +5533,11 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               value={plInputStr}
               onChange={(e) => setPlInputStr(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); confirmPlInput() } }}
-              placeholder="Profit amount"
+              placeholder="0"
               style={{
                 ...S.input,
-                paddingLeft: 32,
+                width: "100%",
+                paddingLeft: 36,
                 fontSize: 22,
                 fontWeight: 700,
                 textAlign: "left",

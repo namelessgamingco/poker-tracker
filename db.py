@@ -19,17 +19,26 @@ def _now_iso() -> str:
     """Get current UTC timestamp in ISO format."""
     return datetime.now(timezone.utc).isoformat()
 
-def _db_retry(fn):
+def _db_retry(fn, label="db"):
     """Run a DB function with one retry on stale connection."""
     try:
         return fn(get_supabase_admin())
     except Exception as e:
         err = str(e)
-        if "Server disconnected" in err or "'NoneType'" in err or "connection" in err.lower():
+        retryable = (
+            "Server disconnected" in err
+            or "'NoneType'" in err
+            or "connection" in err.lower()
+            or "closed" in err.lower()
+            or "broken pipe" in err.lower()
+            or "timed out" in err.lower()
+        )
+        if retryable:
             try:
+                print(f"[db] {label}: retrying with fresh client...")
                 return fn(get_supabase_admin_fresh())
             except Exception as retry_err:
-                print(f"[db] retry also failed: {retry_err}")
+                print(f"[db] {label}: retry also failed: {retry_err}")
                 return None
         raise
 
@@ -63,8 +72,7 @@ def get_profile_by_auth_id(auth_id: str) -> Optional[dict]:
     if not auth_id:
         return None
     
-    try:
-        sb = get_supabase_admin()
+    def query(sb):
         resp = (
             sb.table("poker_profiles")
             .select("*")
@@ -73,6 +81,9 @@ def get_profile_by_auth_id(auth_id: str) -> Optional[dict]:
             .execute()
         )
         return resp.data if resp.data else None
+    
+    try:
+        return _db_retry(query, "get_profile_by_auth_id")
     except Exception as e:
         print(f"[db] get_profile_by_auth_id error: {e}")
         return None
@@ -1044,10 +1055,7 @@ def record_hand_outcome(
     if not session_id or not user_id:
         return None
     
-    try:
-        sb = get_supabase_admin()
-        
-        # Get current hand count for this session
+    def query(sb):
         resp = (
             sb.table("poker_hands")
             .select("id")
@@ -1077,7 +1085,9 @@ def record_hand_outcome(
         if resp.data and len(resp.data) > 0:
             return resp.data[0]
         return None
-        
+    
+    try:
+        return _db_retry(query, "record_hand_outcome")
     except Exception as e:
         print(f"[db] record_hand_outcome error: {e}")
         return None
