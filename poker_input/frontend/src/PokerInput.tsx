@@ -1769,6 +1769,17 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     }
   }, [step, submitDecisionRequest])
 
+  // ---- Safety: reset if stuck in calculating for 12 seconds ----
+  useEffect(() => {
+    if (step !== "showing_decision" || decision) return
+    const timeout = setTimeout(() => {
+      if (!decision) {
+        setStep("villain_type")
+      }
+    }, 12000)
+    return () => clearTimeout(timeout)
+  }, [step, decision])
+
   // ---- Pre-select villain type from session default ----
   useEffect(() => {
     if (step === "villain_type" && defaultVillain) {

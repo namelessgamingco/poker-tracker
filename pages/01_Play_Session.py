@@ -1561,36 +1561,36 @@ def render_play_mode():
 def handle_decision_request(game_state: dict, session: dict):
     """Component sent a game_state — run engine, send decision back."""
 
-    stakes = session.get("stakes", "$1/$2")
-    bb_size = float(session.get("bb_size", 2.0))
-    our_stack = st.session_state.our_stack
-
-    # Extract fields from component's game_state
-    card1 = game_state.get("card1", "")
-    card2 = game_state.get("card2", "")
-    our_hand = card1 + card2
-    position = game_state.get("position", "BTN")
-    street = game_state.get("street", "preflop")
-    action_facing = game_state.get("action_facing", "none")
-    facing_bet = float(game_state.get("facing_bet", 0))
-    pot_size = float(game_state.get("pot_size", 0))
-    board = game_state.get("board", None)
-    board_texture = game_state.get("board_texture", None)
-    hand_strength = game_state.get("hand_strength", None)
-    villain_type = game_state.get("villain_type", "unknown")
-    we_are_aggressor = game_state.get("we_are_aggressor", False)
-    num_limpers = int(game_state.get("num_limpers", 0))
-
-    # Pre-flop hand classification
-    if street == "preflop" and not hand_strength:
-        hand = normalize_hand(our_hand) if our_hand and len(our_hand) >= 4 else ""
-        if hand:
-            hs = classify_preflop_hand(hand)
-            hand_strength = hs.value
-        else:
-            hand_strength = "playable"  # Safe fallback
-
     try:
+        stakes = session.get("stakes", "$1/$2")
+        bb_size = float(session.get("bb_size", 2.0))
+        our_stack = st.session_state.our_stack
+
+        # Extract fields from component's game_state
+        card1 = game_state.get("card1", "")
+        card2 = game_state.get("card2", "")
+        our_hand = card1 + card2
+        position = game_state.get("position", "BTN")
+        street = game_state.get("street", "preflop")
+        action_facing = game_state.get("action_facing", "none")
+        facing_bet = float(game_state.get("facing_bet", 0))
+        pot_size = float(game_state.get("pot_size", 0))
+        board = game_state.get("board", None)
+        board_texture = game_state.get("board_texture", None)
+        hand_strength = game_state.get("hand_strength", None)
+        villain_type = game_state.get("villain_type", "unknown")
+        we_are_aggressor = game_state.get("we_are_aggressor", False)
+        num_limpers = int(game_state.get("num_limpers", 0))
+
+        # Pre-flop hand classification (with guard)
+        if street == "preflop" and not hand_strength:
+            hand = normalize_hand(our_hand) if our_hand and len(our_hand) >= 4 else ""
+            if hand:
+                hs = classify_preflop_hand(hand)
+                hand_strength = hs.value
+            else:
+                hand_strength = "playable"
+
         decision = get_decision(
             stakes=stakes,
             our_stack=our_stack,
@@ -1644,10 +1644,20 @@ def handle_decision_request(game_state: dict, session: dict):
                 "table2_board_entry_index": game_state.get("table2_board_entry_index"),
             }
 
-        st.rerun()  # Send decision back to component
-
     except Exception as e:
-        st.error(f"Engine error: {e}")
+        print(f"[engine] Decision request failed: {e}")
+        import traceback
+        traceback.print_exc()
+        st.session_state.current_decision_dict = {
+            "action": "CHECK",
+            "amount": 0,
+            "display": "CHECK",
+            "explanation": f"Engine error — please try again. ({e})",
+            "calculation": "",
+        }
+        st.session_state.decision_table_id = game_state.get("table_id", 1)
+
+    st.rerun()
 
 
 def handle_hand_complete(component_value: dict, session: dict):
