@@ -784,13 +784,13 @@ def render_inline_table_check():
             tips.append("Some 3-betting activity. Pay attention to who is doing it — if it's one player, adjust your opens when they're behind you.")
         
         if score >= 70:
-            headline = f"**Score: {score}/100 — Stay and play.** This is a profitable table."
+            headline = f"✅ **{score}/100 — Great table, stay and play.**"
         elif score >= 50:
-            headline = f"**Score: {score}/100 — Good spot.** Keep playing, stay focused."
+            headline = f"👍 **{score}/100 — Good spot, keep playing.**"
         elif score >= 35:
-            headline = f"⚠️ **Score: {score}/100 — Borderline table.** If you're up, lock in profit and consider moving."
+            headline = f"⚠️ **{score}/100 — Borderline. Consider a table change.**"
         else:
-            headline = f"🚨 **Score: {score}/100 — Leave this table.** Request a table change or find a better game."
+            headline = f"🚨 **{score}/100 — Bad table. Move now.**"
         
         st.markdown(headline)
         for tip in tips:
@@ -804,19 +804,12 @@ def render_inline_table_check():
             elif diff < -10:
                 st.error(f"↓ Table got tougher since last check ({diff} points)")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("✅ Done", type="primary", use_container_width=True, key="tc_done"):
-                st.session_state.last_table_check = datetime.now(timezone.utc)
-                st.session_state.last_table_score = score
-                st.session_state.table_check_due = False
-                st.session_state.table_check_active = False
-                st.rerun()
-        with col2:
-            if st.button("Dismiss", use_container_width=True, key="tc_skip"):
-                st.session_state.table_check_due = False
-                st.session_state.table_check_active = False
-                st.rerun()
+        if st.button("✅ Done", type="primary", use_container_width=True, key="tc_done"):
+            st.session_state.last_table_check = datetime.now(timezone.utc)
+            st.session_state.last_table_score = score
+            st.session_state.table_check_due = False
+            st.session_state.table_check_active = False
+            st.rerun()
 
 def check_session_alerts():
     """Check and display session alerts (time, stop-loss, stop-win, table check)."""
