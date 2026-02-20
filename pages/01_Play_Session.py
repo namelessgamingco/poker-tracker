@@ -1583,9 +1583,12 @@ def handle_decision_request(game_state: dict, session: dict):
 
     # Pre-flop hand classification
     if street == "preflop" and not hand_strength:
-        hand = normalize_hand(our_hand)
-        hs = classify_preflop_hand(hand)
-        hand_strength = hs.value
+        hand = normalize_hand(our_hand) if our_hand and len(our_hand) >= 4 else ""
+        if hand:
+            hs = classify_preflop_hand(hand)
+            hand_strength = hs.value
+        else:
+            hand_strength = "playable"  # Safe fallback
 
     try:
         decision = get_decision(

@@ -1961,9 +1961,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
 
       // FIX 1.3: Villain position quick select (E/M/L)
       if (step === "villain_position") {
-        if (key === "e") { e.preventDefault(); confirmVillainPosition("HJ"); return }
-        if (key === "m") { e.preventDefault(); confirmVillainPosition("CO"); return }
-        if (key === "l") { e.preventDefault(); confirmVillainPosition("BTN"); return }
+        if (key === "1") { e.preventDefault(); confirmVillainPosition("HJ"); return }
+        if (key === "2") { e.preventDefault(); confirmVillainPosition("CO"); return }
+        if (key === "3") { e.preventDefault(); confirmVillainPosition("BTN"); return }
         if (key === "enter") { e.preventDefault(); confirmVillainPosition("CO"); return }
       }
 
@@ -2577,11 +2577,12 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             border: `1px solid ${theme.border}`,
             display: "flex",
             alignItems: "center",
-            justifyContent: "space-between",
+            justifyContent: "center",
+            gap: 8,
             fontSize: 12,
           }}>
-            <span style={{ color: theme.textMuted }}>You're in for</span>
-            <span style={{ fontWeight: 700, color: theme.amber, fontFamily: theme.mono }}>
+            <span style={{ color: theme.textMuted }}>In for</span>
+            <span style={{ fontWeight: 700, color: theme.amber, fontFamily: theme.mono, fontSize: 14 }}>
               ${currentInvestment.toFixed(0)}
             </span>
           </div>
@@ -3861,9 +3862,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             )}
             {step === "villain_position" && (
               <>
-                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>E</span> early (UTG/HJ)</span>
-                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>M</span> middle (CO)</span>
-                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>L</span> late (BTN/SB)</span>
+                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>1</span> early</span>
+                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>2</span> middle</span>
+                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>3</span> late</span>
                 <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Enter</span> = middle</span>
               </>
             )}
@@ -4321,9 +4322,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             <div style={S.sectionLabel}>Who Raised?</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
               {[
-                { pos: "HJ", label: "Early Seat", desc: "UTG or HJ opened", key: "E" },
-                { pos: "CO", label: "Cutoff", desc: "CO opened", key: "M" },
-                { pos: "BTN", label: "Button / SB", desc: "BTN or SB opened", key: "L" },
+                { pos: "HJ", label: "Early", desc: "UTG / HJ", key: "1" },
+                { pos: "CO", label: "Middle", desc: "Cutoff / Lojack", key: "2" },
+                { pos: "BTN", label: "Late", desc: "Button / SB", key: "3" },
               ].map((v) => (
                 <button
                   key={v.pos}
@@ -5269,9 +5270,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           <div style={S.sectionLabel}>Who Raised?</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
             {[
-              { pos: "HJ", label: "Early Seat", desc: "UTG or HJ opened", key: "E" },
-              { pos: "CO", label: "Cutoff", desc: "CO opened", key: "M" },
-              { pos: "BTN", label: "Button / SB", desc: "BTN or SB opened", key: "L" },
+              { pos: "HJ", label: "Early", desc: "UTG / HJ", key: "1" },
+              { pos: "CO", label: "Middle", desc: "Cutoff / Lojack", key: "2" },
+              { pos: "BTN", label: "Late", desc: "Button / SB", key: "3" },
             ].map((v) => (
               <button
                 key={v.pos}

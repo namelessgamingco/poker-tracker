@@ -358,7 +358,11 @@ def normalize_hand(hand: str) -> str:
 
 def classify_preflop_hand(hand: str) -> HandStrength:
     """Classify a pre-flop hand into strength categories."""
+    if not hand or len(hand) < 2:
+        return HandStrength.PLAYABLE
     h = normalize_hand(hand)
+    if not h or len(h) < 2:
+        return HandStrength.PLAYABLE
     
     if h in PREMIUM_HANDS:
         return HandStrength.PREMIUM
