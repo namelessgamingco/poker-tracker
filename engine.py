@@ -286,6 +286,28 @@ BB_DEFENSE_3BET = {
     Position.SB: {"AA", "KK", "QQ", "JJ", "TT", "99", "AKs", "AKo", "AQs", "AQo", "AJs", "A5s", "A4s", "A3s"},
 }
 
+# FIX 1.1: BB DEFENSE FLOOR — hands that ALWAYS defend from BB vs standard opens (≤5BB raise)
+# These hands have too much equity and/or implied odds to ever fold from BB at these pot odds.
+# Covers gaps where classify_preflop_hand returns MARGINAL or TRASH for hands that should defend.
+BB_ALWAYS_DEFEND = {
+    # All pairs (set-mining value alone justifies call)
+    "AA","KK","QQ","JJ","TT","99","88","77","66","55","44","33","22",
+    # All suited aces (nut flush potential)
+    "AKs","AQs","AJs","ATs","A9s","A8s","A7s","A6s","A5s","A4s","A3s","A2s",
+    # Strong offsuit aces
+    "AKo","AQo","AJo","ATo","A9o","A8o",
+    # Broadway combos
+    "KQs","KJs","KTs","KQo","KJo",
+    "QJs","QTs","QJo",
+    "JTs",
+    # Suited connectors and 1-gappers (playability + implied odds)
+    "T9s","98s","87s","76s","65s","54s",
+    "J9s","T8s","97s","86s","75s",
+    # Suited kings/queens that play well postflop
+    "K9s","K8s","K7s","K6s","K5s",
+    "Q9s","Q8s",
+}
+
 
 def normalize_hand(hand: str) -> str:
     """
@@ -617,6 +639,145 @@ def decision_to_dict(decision: Decision) -> dict:
     
     if decision.alternative:
         result["alternative"] = decision_to_dict(decision.alternative)
+    
+    return result
+
+
+# =============================================================================
+# FIX 1.5: BOARD-RELATIVE HAND STRENGTH ADJUSTMENT
+# =============================================================================
+
+RANK_VALUES = {"A":14,"K":13,"Q":12,"J":11,"T":10,"9":9,"8":8,"7":7,"6":6,"5":5,"4":4,"3":3,"2":2}
+
+def _parse_board_cards(board: str) -> list:
+    """Parse board string into list of (rank, suit) tuples.
+    Handles formats: '7cJcQdKdTd', '7c Jc Qd Kd Td', 'Kh7c2d'
+    """
+    if not board:
+        return []
+    board = board.strip().replace(" ", "")
+    cards = []
+    i = 0
+    while i < len(board) - 1:
+        rank = board[i].upper()
+        suit = board[i+1].lower()
+        if rank in RANK_VALUES and suit in "hdcs":
+            cards.append((rank, suit))
+            i += 2
+        else:
+            i += 1
+    return cards
+
+def _has_four_to_straight(board_cards: list) -> bool:
+    """Check if 4+ board cards form a near-straight (within 4-rank span)."""
+    if len(board_cards) < 4:
+        return False
+    ranks = sorted(set(RANK_VALUES[c[0]] for c in board_cards), reverse=True)
+    # Check every 4-card window
+    for i in range(len(ranks) - 3):
+        window = ranks[i:i+4]
+        if window[0] - window[3] <= 4:  # 4 cards within a 5-rank span = straight possible
+            return True
+    return False
+
+def _count_flush_suits(board_cards: list) -> int:
+    """Return the count of the most common suit on board."""
+    if not board_cards:
+        return 0
+    from collections import Counter
+    suit_counts = Counter(c[1] for c in board_cards)
+    return suit_counts.most_common(1)[0][1]
+
+def _hand_has_suit(our_hand: str, suit: str) -> bool:
+    """Check if our hand contains the given suit."""
+    if not our_hand or len(our_hand) < 4:
+        return False
+    hand = our_hand.strip().replace(" ", "")
+    return (len(hand) >= 2 and hand[1].lower() == suit) or (len(hand) >= 4 and hand[3].lower() == suit)
+
+def _get_board_flush_suit(board_cards: list) -> Optional[str]:
+    """Return the suit with 3+ cards on board, or None."""
+    if not board_cards:
+        return None
+    from collections import Counter
+    suit_counts = Counter(c[1] for c in board_cards)
+    for suit, count in suit_counts.most_common():
+        if count >= 3:
+            return suit
+    return None
+
+# Hand strength downgrade map: current → downgraded
+STRENGTH_DOWNGRADE = {
+    HandStrength.NUTS: HandStrength.MONSTER,
+    HandStrength.MONSTER: HandStrength.TWO_PAIR,
+    HandStrength.TWO_PAIR: HandStrength.OVERPAIR,
+    HandStrength.OVERPAIR: HandStrength.TOP_PAIR_TOP_KICKER,
+    HandStrength.TOP_PAIR_TOP_KICKER: HandStrength.TOP_PAIR,
+    HandStrength.TOP_PAIR: HandStrength.MIDDLE_PAIR,
+    HandStrength.MIDDLE_PAIR: HandStrength.BOTTOM_PAIR,
+}
+
+def adjust_hand_strength_for_board(
+    hand_strength: HandStrength,
+    board: Optional[str],
+    our_hand: Optional[str],
+) -> HandStrength:
+    """
+    FIX 1.5: Downgrade hand strength when board is dangerous.
+    
+    A set on K-7-2 rainbow is a monster.
+    A set on T-J-Q-K with flush draw is barely strong.
+    
+    Danger signals:
+    1. Four-to-a-straight on board → downgrade 1 tier
+    2. Four-to-a-flush on board (we don't have it) → downgrade 1 tier
+    3. Both dangers → downgrade 2 tiers
+    4. Monotone board (3+ same suit, we don't have flush card) → downgrade 1 tier
+    
+    Only applies to strong made hands (NUTS through TWO_PAIR).
+    Draws and weak hands are not affected.
+    """
+    # Only adjust strong made hands
+    if hand_strength not in STRENGTH_DOWNGRADE:
+        return hand_strength
+    
+    if not board:
+        return hand_strength
+    
+    board_cards = _parse_board_cards(board)
+    if len(board_cards) < 3:
+        return hand_strength
+    
+    downgrades = 0
+    
+    # Check for four-to-a-straight
+    if _has_four_to_straight(board_cards):
+        downgrades += 1
+    
+    # Check for flush danger
+    flush_suit = _get_board_flush_suit(board_cards)
+    flush_count = _count_flush_suits(board_cards)
+    
+    if flush_count >= 4:
+        # Four-to-a-flush or completed flush on board
+        we_have_flush = our_hand and flush_suit and _hand_has_suit(our_hand, flush_suit)
+        if not we_have_flush:
+            downgrades += 1
+    elif flush_count >= 3:
+        # Monotone board — mild danger
+        we_have_suit = our_hand and flush_suit and _hand_has_suit(our_hand, flush_suit)
+        if not we_have_suit:
+            # Only downgrade monster+ on 3-flush (not as severe)
+            if hand_strength in [HandStrength.NUTS, HandStrength.MONSTER]:
+                downgrades += 1
+    
+    # Apply downgrades
+    result = hand_strength
+    for _ in range(downgrades):
+        if result in STRENGTH_DOWNGRADE:
+            result = STRENGTH_DOWNGRADE[result]
+        else:
+            break
     
     return result
 
@@ -966,6 +1127,19 @@ class PokerDecisionEngine:
                 confidence=0.88
             )
         
+        # FIX 1.1: BB DEFENSE FLOOR — never fold hands with clear equity/implied odds
+        # This catches hands classified as MARGINAL or TRASH that should always defend
+        # Only applies vs standard opens (≤5BB / ≤2.5x the big blind)
+        if hand in BB_ALWAYS_DEFEND and state.facing_bet <= state.bb_size * 5:
+            return Decision(
+                action=Action.CALL,
+                amount=state.facing_bet,
+                display=f"CALL ${state.facing_bet:.2f}",
+                explanation=f"Defend your big blind. {hand} has too much equity to fold at this price.",
+                calculation=f"BB defense — always defend {hand} vs standard open",
+                confidence=0.82
+            )
+        
         # Call with playable hands
         if hand_strength in [HandStrength.PREMIUM, HandStrength.STRONG, HandStrength.PLAYABLE]:
             # Check pot odds
@@ -1245,6 +1419,15 @@ class PokerDecisionEngine:
     
     def _postflop_decision(self, state: GameState) -> Decision:
         """Handle all post-flop decisions."""
+        
+        # FIX 1.5: Adjust hand strength based on board danger
+        # This prevents overbetting vulnerable hands on scary boards
+        adjusted_strength = adjust_hand_strength_for_board(
+            state.hand_strength, state.board, state.our_hand
+        )
+        if adjusted_strength != state.hand_strength:
+            from dataclasses import replace
+            state = replace(state, hand_strength=adjusted_strength)
         
         # Facing check-raise
         if state.action_facing == ActionFacing.CHECK_RAISE:

@@ -30,6 +30,8 @@ type InputStep =
   | "showing_decision"
   | "outcome_select"
   | "outcome_pl_input"
+  | "player_count"
+  | "villain_position"
 
 
 type Street = "preflop" | "flop" | "turn" | "river"
@@ -47,6 +49,8 @@ interface GameState {
   action_facing: string
   facing_bet: number
   num_limpers: number
+  num_players: number
+  villain_position: string | null
   board_cards: (CardData | null)[]
   pot_size: number
   total_invested: number  // How much WE have put in this hand (blinds + bets)
@@ -183,6 +187,8 @@ const FRESH_GAME_STATE: GameState = {
   action_facing: "none",
   facing_bet: 0,
   num_limpers: 0,
+  num_players: 2,
+  villain_position: null,
   board_cards: [null, null, null, null, null],
   pot_size: 0,
   total_invested: 0,
@@ -1079,6 +1085,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       action_facing: gs.action_facing,
       facing_bet: gs.facing_bet,
       num_limpers: gs.num_limpers,
+      num_players: gs.num_players,
+      villain_position: gs.villain_position,
       board: gs.board_cards
         .filter((c) => c !== null)
         .map((c) => cardToString(c))
@@ -1165,6 +1173,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       villain_type: gs.villain_type,
       we_are_aggressor: gs.we_are_aggressor,
       num_limpers: gs.num_limpers,
+      num_players: gs.num_players,
+      villain_position: gs.villain_position,
     }
 
     const freshState = { ...FRESH_GAME_STATE }
@@ -1399,8 +1409,24 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             setStep("showing_decision")
           } else {
             setGameState((s) => ({ ...s, facing_bet: 0 }))
-            setStep("action")
+            if (gameState.villain_position !== null) {
+              setStep("villain_position")
+            } else if (gameState.num_players > 0) {
+              setStep("player_count")
+            } else {
+              setStep("action")
+            }
           }
+          break
+          
+        case "player_count":
+          setGameState((s) => ({ ...s, num_players: 2 }))
+          setStep("action")
+          break
+          
+        case "villain_position":
+          setGameState((s) => ({ ...s, villain_position: null }))
+          setStep("player_count")
           break
           
         case "limper_count":
@@ -1587,13 +1613,12 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         setAmountLabel("How many limpers?")
         setStep("limper_count")
       } else if (needsAmount) {
-      // Set contextual label for the amount input
         const actions = gameState.street === "preflop" ? PREFLOP_ACTIONS_ALL : POSTFLOP_ACTIONS_ALL
         const action = actions.find((a) => a.id === actionId)
         setAmountLabel(action?.amountLabel || "Their raise to $")
-        setAmountContext(null) // Clear context for normal action selection
+        setAmountContext(null)
         setAmountStr("")
-        setStep("amount")
+        setStep("player_count")
       } else {
         setStep("villain_type")
       }
@@ -1616,6 +1641,23 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     setGameState((s) => ({ ...s, num_limpers: Math.min(count, 5) }))
     setStep("villain_type")
   }, [amountStr])
+
+  // ---- FIX 1.2: Handle player count selection ----
+  const confirmPlayerCount = useCallback((count: number) => {
+    setGameState((s) => ({ ...s, num_players: count }))
+    const af = gameState.action_facing
+    if (af === "raise" || af === "bet") {
+      setStep("villain_position")
+    } else {
+      setStep("amount")
+    }
+  }, [gameState.action_facing])
+
+  // ---- FIX 1.3: Handle villain position selection ----
+  const confirmVillainPosition = useCallback((pos: string) => {
+    setGameState((s) => ({ ...s, villain_position: pos }))
+    setStep("amount")
+  }, [])
 
   // ---- Handle pot size confirm ----
   const confirmPotSize = useCallback(() => {
@@ -1905,6 +1947,26 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         return
       }
 
+      // FIX 1.2: Player count quick select (2-5)
+      if (step === "player_count" && "2345".includes(key)) {
+        e.preventDefault()
+        confirmPlayerCount(parseInt(key))
+        return
+      }
+      if (step === "player_count" && key === "enter") {
+        e.preventDefault()
+        confirmPlayerCount(2)
+        return
+      }
+
+      // FIX 1.3: Villain position quick select (E/M/L)
+      if (step === "villain_position") {
+        if (key === "e") { e.preventDefault(); confirmVillainPosition("HJ"); return }
+        if (key === "m") { e.preventDefault(); confirmVillainPosition("CO"); return }
+        if (key === "l") { e.preventDefault(); confirmVillainPosition("BTN"); return }
+        if (key === "enter") { e.preventDefault(); confirmVillainPosition("CO"); return }
+      }
+
       // Enter to confirm amount/pot/limper count
       if (key === "enter") {
         e.preventDefault()
@@ -1923,9 +1985,11 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         )
         const isCheck = d.includes("CHECK")
         const isFold = d.includes("FOLD")
+        const isCall = d.includes("CALL")
         const handOver = isFold || isAllIn
+        const canBeRaised = !handOver
 
-        if (key === "r" && isAggressive) {
+        if (key === "r" && canBeRaised) {
           e.preventDefault()
           theyRaisedMe()
           return
@@ -1958,7 +2022,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   }, [
     keyboardActive, step, gameState.street, pendingRank, decision, mode, showSecondTable,
     selectPosition, selectRank, selectSuit, selectAction,
-    confirmAmount, confirmLimperCount, confirmPotSize, goBack, sendNewHand, sendHandComplete, continueToStreet, theyRaisedMe, theyBet, confirmPlInput,
+    confirmAmount, confirmLimperCount, confirmPlayerCount, confirmVillainPosition, confirmPotSize, goBack, sendNewHand, sendHandComplete, continueToStreet, theyRaisedMe, theyBet, confirmPlInput,
     switchTable, chosenBluffAction,
   ])
 
@@ -2167,7 +2231,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     })
 
     // Action
-    const actionActive = step === "action" || step === "amount" || step === "limper_count"
+    const actionActive = step === "action" || step === "amount" || step === "limper_count" || step === "player_count" || step === "villain_position"
     const actionDone = !posActive && !handActive && !actionActive &&
       (step === "villain_type" || step === "ready" || step === "showing_decision" ||
        step === "board_rank" || step === "board_suit" || step === "pot_size" ||
@@ -2532,7 +2596,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           )
           const isCheck = d.includes("CHECK")
           const isFold = d.includes("FOLD")
+          const isCall = d.includes("CALL")
           const handOver = isFold || isAllIn
+          const canBeRaised = !handOver
           const accentRgb = mode === "two_table" && activeTable === 2 ? "255,179,0" : "75,163,255"
           const streetBtnStyle = {
             ...S.btn,
@@ -2572,7 +2638,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
                   {isFold ? "Next Hand →" : "🏁 Hand Over — Record Result"}
                 </button>
 
-                {isAggressive && (
+                {canBeRaised && (
                   <button
                     onClick={theyRaisedMe}
                     style={{
@@ -3784,6 +3850,23 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             {(step === "amount" || step === "pot_size" || step === "limper_count") && (
               <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Enter</span> confirm</span>
             )}
+            {step === "player_count" && (
+              <>
+                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>2</span> heads up</span>
+                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>3</span> 3-way</span>
+                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>4</span> 4-way</span>
+                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>5</span> 5+</span>
+                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Enter</span> = heads up</span>
+              </>
+            )}
+            {step === "villain_position" && (
+              <>
+                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>E</span> early (UTG/HJ)</span>
+                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>M</span> middle (CO)</span>
+                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>L</span> late (BTN/SB)</span>
+                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Enter</span> = middle</span>
+              </>
+            )}
             {step === "outcome_select" && (
               <>
                 <span><span style={{ color: theme.green }}>1</span> won</span>
@@ -4197,6 +4280,67 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
                   </button>
                 )
               })}
+            </div>
+          </div>
+        )}
+
+        {/* PLAYER COUNT - FIX 1.2 */}
+        {step === "player_count" && (
+          <div>
+            <div style={S.sectionLabel}>Players in the Pot</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+              {[
+                { count: 2, label: "Heads Up", desc: "Just you and them", key: "2" },
+                { count: 3, label: "3-Way", desc: "1 caller between", key: "3" },
+                { count: 4, label: "4-Way", desc: "2 callers", key: "4" },
+                { count: 5, label: "5+", desc: "3+ callers", key: "5" },
+              ].map((p) => (
+                <button
+                  key={p.count}
+                  onClick={() => confirmPlayerCount(p.count)}
+                  style={{
+                    ...S.btn,
+                    padding: "14px 8px",
+                    textAlign: "center" as const,
+                    background: "rgba(255,255,255,0.03)",
+                    borderColor: theme.border,
+                  }}
+                >
+                  {keyboardActive && <span style={S.hint}>{p.key}</span>}
+                  <div style={{ fontSize: 16, fontWeight: 700, color: theme.text }}>{p.label}</div>
+                  <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>{p.desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* VILLAIN POSITION - FIX 1.3 */}
+        {step === "villain_position" && (
+          <div>
+            <div style={S.sectionLabel}>Who Raised?</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+              {[
+                { pos: "HJ", label: "Early", desc: "UTG / HJ", key: "E" },
+                { pos: "CO", label: "Middle", desc: "Cutoff", key: "M" },
+                { pos: "BTN", label: "Late", desc: "BTN / SB", key: "L" },
+              ].map((v) => (
+                <button
+                  key={v.pos}
+                  onClick={() => confirmVillainPosition(v.pos)}
+                  style={{
+                    ...S.btn,
+                    padding: "14px 8px",
+                    textAlign: "center" as const,
+                    background: "rgba(255,255,255,0.03)",
+                    borderColor: theme.border,
+                  }}
+                >
+                  {keyboardActive && <span style={S.hint}>{v.key}</span>}
+                  <div style={{ fontSize: 16, fontWeight: 700, color: theme.text }}>{v.label}</div>
+                  <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>{v.desc}</div>
+                </button>
+              ))}
             </div>
           </div>
         )}
