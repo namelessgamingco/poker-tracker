@@ -5232,6 +5232,67 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         </div>
       )}
 
+      {/* PLAYER COUNT - FIX 1.2 */}
+      {step === "player_count" && (
+        <div>
+          <div style={S.sectionLabel}>Players in the Pot</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+            {[
+              { count: 2, label: "Heads Up", desc: "Just you and them", key: "2" },
+              { count: 3, label: "3-Way", desc: "1 caller between", key: "3" },
+              { count: 4, label: "4-Way", desc: "2 callers", key: "4" },
+              { count: 5, label: "5+", desc: "3+ callers", key: "5" },
+            ].map((p) => (
+              <button
+                key={p.count}
+                onClick={() => confirmPlayerCount(p.count)}
+                style={{
+                  ...S.btn,
+                  padding: "14px 8px",
+                  textAlign: "center" as const,
+                  background: "rgba(255,255,255,0.03)",
+                  borderColor: theme.border,
+                }}
+              >
+                {keyboardActive && <span style={S.hint}>{p.key}</span>}
+                <div style={{ fontSize: 16, fontWeight: 700, color: theme.text }}>{p.label}</div>
+                <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>{p.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* VILLAIN POSITION - FIX 1.3 */}
+      {step === "villain_position" && (
+        <div>
+          <div style={S.sectionLabel}>Who Raised?</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+            {[
+              { pos: "HJ", label: "Early", desc: "UTG / HJ", key: "E" },
+              { pos: "CO", label: "Middle", desc: "Cutoff", key: "M" },
+              { pos: "BTN", label: "Late", desc: "BTN / SB", key: "L" },
+            ].map((v) => (
+              <button
+                key={v.pos}
+                onClick={() => confirmVillainPosition(v.pos)}
+                style={{
+                  ...S.btn,
+                  padding: "14px 8px",
+                  textAlign: "center" as const,
+                  background: "rgba(255,255,255,0.03)",
+                  borderColor: theme.border,
+                }}
+              >
+                {keyboardActive && <span style={S.hint}>{v.key}</span>}
+                <div style={{ fontSize: 16, fontWeight: 700, color: theme.text }}>{v.label}</div>
+                <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>{v.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* VILLAIN TYPE */}
       {step === "villain_type" && (
         <div>
