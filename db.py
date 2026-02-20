@@ -10,7 +10,7 @@ from decimal import Decimal
 
 import streamlit as st
 
-from supabase_client import get_supabase, get_supabase_admin
+from supabase_client import get_supabase, get_supabase_admin, get_supabase_admin_fresh
 
 
 # ---------- Helpers ----------
@@ -19,6 +19,19 @@ def _now_iso() -> str:
     """Get current UTC timestamp in ISO format."""
     return datetime.now(timezone.utc).isoformat()
 
+def _db_retry(fn):
+    """Run a DB function with one retry on stale connection."""
+    try:
+        return fn(get_supabase_admin())
+    except Exception as e:
+        err = str(e)
+        if "Server disconnected" in err or "'NoneType'" in err or "connection" in err.lower():
+            try:
+                return fn(get_supabase_admin_fresh())
+            except Exception as retry_err:
+                print(f"[db] retry also failed: {retry_err}")
+                return None
+        raise
 
 def _get_secret(name: str, default=None):
     """Read from env var or Streamlit secrets."""
@@ -229,18 +242,19 @@ def get_active_session(user_id: str) -> Optional[dict]:
         return None
     
     try:
-        sb = get_supabase_admin()
-        resp = (
-            sb.table("poker_sessions")
-            .select("*")
-            .eq("user_id", user_id)
-            .eq("status", "active")
-            .order("started_at", desc=True)
-            .limit(1)
-            .maybe_single()
-            .execute()
-        )
-        return resp.data if resp.data else None
+        def query(sb):
+            resp = (
+                sb.table("poker_sessions")
+                .select("*")
+                .eq("user_id", user_id)
+                .eq("status", "active")
+                .order("started_at", desc=True)
+                .limit(1)
+                .maybe_single()
+                .execute()
+            )
+            return resp.data if resp.data else None
+        return _db_retry(query)
     except Exception as e:
         print(f"[db] get_active_session error: {e}")
         return None
@@ -266,30 +280,24 @@ def increment_session_stats(session_id: str, hands: int = 0, decisions: int = 0)
         return False
     
     try:
-        sb = get_supabase_admin()
-        
-        # Get current values
-        resp = (
-            sb.table("poker_sessions")
-            .select("hands_played, decisions_requested")
-            .eq("id", session_id)
-            .single()
-            .execute()
-        )
-        
-        if not resp.data:
-            return False
-        
-        current_hands = resp.data.get("hands_played", 0) or 0
-        current_decisions = resp.data.get("decisions_requested", 0) or 0
-        
-        # Update with new values
-        sb.table("poker_sessions").update({
-            "hands_played": current_hands + hands,
-            "decisions_requested": current_decisions + decisions,
-        }).eq("id", session_id).execute()
-        
-        return True
+        def query(sb):
+            resp = (
+                sb.table("poker_sessions")
+                .select("hands_played, decisions_requested")
+                .eq("id", session_id)
+                .single()
+                .execute()
+            )
+            if not resp.data:
+                return False
+            current_hands = resp.data.get("hands_played", 0) or 0
+            current_decisions = resp.data.get("decisions_requested", 0) or 0
+            sb.table("poker_sessions").update({
+                "hands_played": current_hands + hands,
+                "decisions_requested": current_decisions + decisions,
+            }).eq("id", session_id).execute()
+            return True
+        return _db_retry(query)
     except Exception as e:
         print(f"[db] increment_session_stats error: {e}")
         return False

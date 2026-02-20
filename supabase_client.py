@@ -113,6 +113,11 @@ def get_supabase_admin() -> Client:
     
     return _supabase_admin_client
 
+def get_supabase_admin_fresh() -> Client:
+    """Force a fresh admin client — call this after connection errors."""
+    global _supabase_admin_client
+    _supabase_admin_client = None
+    return get_supabase_admin()
 
 def reset_supabase_client():
     """

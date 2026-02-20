@@ -486,7 +486,9 @@ def init_session_state():
 
         # Table check
         "table_check_due": False,
+        "table_check_active": False,
         "last_table_check": None,
+        "last_table_score": None,
 
         # Bluff tracking (session-level)
         "session_bluff_spots": 0,
@@ -740,6 +742,80 @@ def render_session_header():
 # =============================================================================
 # SESSION ALERTS
 # =============================================================================
+def render_inline_table_check():
+    """Render table check inline — does NOT interrupt the hand."""
+    if not st.session_state.table_check_due:
+        return
+    if not st.session_state.get("table_check_active", False):
+        if st.button("🎯 Quick Table Check — Is your table still good?", use_container_width=True, key="table_check_trigger"):
+            st.session_state.table_check_active = True
+            st.rerun()
+        return
+    st.markdown('<div class="outcome-card"><div class="outcome-title">🎯 Quick Table Check</div><div class="outcome-message">3 questions about the last 10 hands — your current hand is preserved below</div></div>', unsafe_allow_html=True)
+    players_to_flop = st.radio("How many players typically see the flop?", ["2-3 (Tight)", "3-4 (Average)", "4-5 (Loose)", "5-6 (Very Loose)"], key="tc_q1", horizontal=True)
+    has_limpers = st.radio("Are there limpers?", ["Yes", "No"], key="tc_q2", horizontal=True)
+    three_bet_freq = st.radio("Is anyone 3-betting a lot?", ["No (Good)", "Sometimes", "Yes (Reg-heavy)"], key="tc_q3", horizontal=True)
+    score = 50
+    if "5-6" in players_to_flop: score += 30
+    elif "4-5" in players_to_flop: score += 20
+    elif "3-4" in players_to_flop: score += 10
+    else: score -= 10
+    score += 15 if has_limpers == "Yes" else -5
+    if "No" in three_bet_freq: score += 15
+    elif "Yes" in three_bet_freq: score -= 15
+    score = max(0, min(100, score))
+    st.markdown("---")
+    tips = []
+    if "5-6" in players_to_flop:
+        tips.append("Lots of multiway pots — your big hands get paid off more. Raise larger preflop (4-5x) to thin the field when you want to.")
+    elif "4-5" in players_to_flop:
+        tips.append("Good action. Size up your value bets — these players are calling too much postflop.")
+    elif "3-4" in players_to_flop:
+        tips.append("Standard table. Play your normal ranges and focus on position.")
+    else:
+        tips.append("Tight table — fewer profitable spots. Open wider from late position to steal blinds, but be ready to fold to 3-bets.")
+    if has_limpers == "Yes":
+        tips.append("Limpers are profit. Iso-raise to 4-5x + 1x per limper from position. You'll often take it down preflop or play heads-up with a range advantage.")
+    else:
+        tips.append("No limpers means tighter, more aware opponents. Respect their opens and tighten your calling ranges.")
+    if "Yes" in three_bet_freq:
+        tips.append("Active 3-bettors at the table. Tighten your opening range from early positions. Consider 4-betting light from the button if the same player keeps 3-betting you.")
+    elif "Sometimes" in three_bet_freq:
+        tips.append("Some 3-betting activity. Pay attention to who is doing it — if it's one player, adjust your opens when they're behind you.")
+    if score >= 70:
+        banner_type = "success"
+        headline = f"Score: {score}/100 — Stay and play. This is a profitable table."
+    elif score >= 50:
+        banner_type = "success"
+        headline = f"Score: {score}/100 — Good spot. Keep playing, stay focused."
+    elif score >= 35:
+        banner_type = "warning"
+        headline = f"Score: {score}/100 — Borderline table. If you're up, lock in profit and consider moving. If you're even or down, tighten up."
+    else:
+        banner_type = "danger"
+        headline = f"Score: {score}/100 — Leave this table. Request a table change or find a better game."
+    coaching_html = "".join(f'<div style="margin:6px 0;font-size:13px;color:rgba(255,255,255,0.65);line-height:1.5;">• {tip}</div>' for tip in tips)
+    st.markdown(f'<div class="alert-banner {banner_type}"><span class="alert-icon">🎯</span><div><span class="alert-title">{headline}</span>{coaching_html}</div></div>', unsafe_allow_html=True)
+    last_score = st.session_state.get("last_table_score")
+    if last_score is not None:
+        diff = score - last_score
+        if diff > 10:
+            st.markdown(f'<div style="text-align:center;font-size:12px;color:#69F0AE;margin:4px 0;">↑ Table improved since last check (+{diff} points)</div>', unsafe_allow_html=True)
+        elif diff < -10:
+            st.markdown(f'<div style="text-align:center;font-size:12px;color:#FF8A80;margin:4px 0;">↓ Table got tougher since last check ({diff} points)</div>', unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("✅ Done", type="primary", use_container_width=True, key="tc_done"):
+            st.session_state.last_table_check = datetime.now(timezone.utc)
+            st.session_state.last_table_score = score
+            st.session_state.table_check_due = False
+            st.session_state.table_check_active = False
+            st.rerun()
+    with col2:
+        if st.button("Dismiss", use_container_width=True, key="tc_skip"):
+            st.session_state.table_check_due = False
+            st.session_state.table_check_active = False
+            st.rerun()
 
 def check_session_alerts():
     """Check and display session alerts (time, stop-loss, stop-win, table check)."""
@@ -827,12 +903,8 @@ def check_session_alerts():
         </div>
         """, unsafe_allow_html=True)
 
-    # Table check prompt
-    if st.session_state.table_check_due:
-        if st.button("🎯 Quick Table Check — Is your table still good?", use_container_width=True,
-                      key="table_check_trigger"):
-            queue_modal("table_check", {})
-            st.rerun()
+    # Table check (inline — doesn't interrupt current hand)
+    render_inline_table_check()
 
 
 # =============================================================================
@@ -852,8 +924,6 @@ def render_modals() -> bool:
         return render_outcome_modal(data)
     elif modal_type == "session_end":
         return render_session_end_modal(data)
-    elif modal_type == "table_check":
-        return render_table_check_modal(data)
 
     return False
 

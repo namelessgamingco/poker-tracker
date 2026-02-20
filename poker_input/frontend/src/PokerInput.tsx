@@ -259,7 +259,12 @@ const HAND_STRENGTH_DISPLAY: Record<string, string> = {
 function humanizeExplanation(text: string): string {
   if (!text) return ""
   let result = text
-  // Replace shorthand hand strengths with readable names
+  // Replace shorthand hand strengths followed by " hand" to avoid "Strong Hand hand"
+  for (const [key, val] of Object.entries(HAND_STRENGTH_DISPLAY)) {
+    const regexWithHand = new RegExp(`\\b${key}\\s+hand\\b`, "gi")
+    result = result.replace(regexWithHand, val)
+  }
+  // Second pass: replace standalone keys not followed by "hand"
   for (const [key, val] of Object.entries(HAND_STRENGTH_DISPLAY)) {
     const regex = new RegExp(`\\b${key}\\b`, "gi")
     result = result.replace(regex, val)
