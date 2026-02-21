@@ -66,8 +66,7 @@ _supabase_admin_client: Optional[Client] = None
 _supabase_client_created_at: float = 0
 _supabase_admin_client_created_at: float = 0
 
-# Recreate clients every 10 minutes to prevent stale connections
-_CLIENT_MAX_AGE_SECONDS = 600
+_CLIENT_MAX_AGE_SECONDS = 180  # 3 minutes — Railway/Supabase connections go stale fast
 
 
 def get_supabase() -> Client:
@@ -140,6 +139,8 @@ def get_supabase_admin_fresh() -> Client:
     global _supabase_admin_client, _supabase_admin_client_created_at
     _supabase_admin_client = None
     _supabase_admin_client_created_at = 0
+    import time
+    time.sleep(0.5)  # Brief pause to let connection fully establish
     return get_supabase_admin()
 
 
