@@ -22,7 +22,10 @@ def _now_iso() -> str:
 def _db_retry(fn, label="db"):
     """Run a DB function with one retry on stale connection."""
     try:
-        return fn(get_supabase_admin())
+        result = fn(get_supabase_admin())
+        if result is None:
+            raise Exception("Query returned None")
+        return result
     except Exception as e:
         err = str(e)
         retryable = (
@@ -32,14 +35,18 @@ def _db_retry(fn, label="db"):
             or "closed" in err.lower()
             or "broken pipe" in err.lower()
             or "timed out" in err.lower()
+            or "Query returned None" in err
         )
         if retryable:
+            import time
+            time.sleep(1)  # Wait before retry
             try:
                 print(f"[db] {label}: retrying with fresh client...")
                 return fn(get_supabase_admin_fresh())
             except Exception as retry_err:
                 print(f"[db] {label}: retry also failed: {retry_err}")
                 return None
+        print(f"[db] {label}: non-retryable error: {e}")
         raise
 
 def _get_secret(name: str, default=None):
