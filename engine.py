@@ -879,6 +879,43 @@ class PokerDecisionEngine:
                 confidence=0.95
             )
         
+        # ── FIX 2.5: BLIND VS BLIND — SB opens much wider vs BB only ──
+        # When folded to SB, it's essentially heads-up. Open very wide.
+        if position == Position.SB and state.num_players == 2:
+            # SB vs BB — open almost any two cards with value
+            bvb_open = OPEN_RANGES.get(Position.SB, set())
+            # Add extra hands for BvB (any suited, any Ax, connected)
+            bvb_extras = {
+                "K9o", "K8o", "K7o", "K6o", "K5o",
+                "Q9o", "Q8o", "J9o", "J8o", "T9o", "T8o",
+                "97o", "87o", "76o", "65o",
+                "K5s", "K4s", "K3s", "K2s",
+                "Q7s", "Q6s", "Q5s", "Q4s",
+                "J7s", "J6s", "T7s", "T6s",
+                "96s", "85s", "74s", "63s", "53s", "43s",
+                "A8o", "A7o", "A6o", "A5o", "A4o", "A3o", "A2o",
+            }
+            if hand in bvb_open or hand in bvb_extras:
+                fish = _is_fish(state)
+                amount = calculate_open_size(position, state.bb_size, 0, fish)
+                return Decision(
+                    action=Action.RAISE,
+                    amount=amount,
+                    display=f"RAISE TO ${amount:.2f}",
+                    explanation=f"Raise. Blind vs blind — open wide and put pressure on the big blind.",
+                    calculation="BvB — wider open range",
+                    confidence=0.85
+                )
+            # Even trash can complete from SB in BvB
+            return Decision(
+                action=Action.CALL,
+                amount=state.bb_size * 0.5,
+                display=f"CALL ${state.bb_size * 0.5:.2f}",
+                explanation=f"Complete the small blind. Cheap look at a flop heads-up.",
+                calculation="BvB — complete for half a BB",
+                confidence=0.65
+            )
+        
         # Check if hand is in our open range for this position
         open_range = OPEN_RANGES.get(position, set())
         
@@ -1575,10 +1612,18 @@ class PokerDecisionEngine:
         )
     
     def _continue_aggression(self, state: GameState) -> Decision:
-        """Continue betting on turn/river after c-betting."""
+        """Continue betting on turn/river after c-betting (or delayed c-bet)."""
         
         hand_strength = state.hand_strength
-        fish = _is_fish(state)  # TIER1-FIX
+        fish = _is_fish(state)
+        
+        # ── FIX 2.4: DELAYED C-BET ──
+        # If we checked the flop as aggressor and it's now the turn,
+        # many hands benefit from a delayed c-bet (especially on turns
+        # that improve our perceived range like A, K, Q)
+        # This is handled automatically since _continue_aggression fires
+        # on turn when we_are_aggressor is True, even if we checked flop.
+        # The logic below already covers value hands and bluffs.
         
         # Value hands - keep betting (size up vs fish)
         if hand_strength in [HandStrength.NUTS, HandStrength.MONSTER, HandStrength.TWO_PAIR,
@@ -1651,7 +1696,22 @@ class PokerDecisionEngine:
                         confidence=0.75
                     )
         
+        # FIX 2.4: Delayed c-bet with overcards on turn
+        # We raised pre, checked flop, now stab the turn with overcards
+        if hand_strength == HandStrength.OVERCARDS and state.street == Street.TURN:
+            if state.num_players == 2 and not fish:
+                amount = round(state.pot_size * 0.50, 2)
+                return Decision(
+                    action=Action.BET,
+                    amount=amount,
+                    display=f"BET ${amount:.2f}",
+                    explanation="Delayed c-bet. You checked the flop — now bet the turn to take it down.",
+                    calculation="Delayed c-bet — representing the turn card",
+                    confidence=0.70
+                )
+        
         # BLUFF SPOT 1: Missed draw on river — BLUFF CHOICE SPOT
+        # Also handles delayed c-bet scenario (checked flop, now betting turn)
         if hand_strength == HandStrength.AIR and state.street == Street.RIVER:
             fish = _is_fish(state)
             
@@ -1732,12 +1792,41 @@ class PokerDecisionEngine:
         """We were not the aggressor, it's checked to us."""
         
         hand_strength = state.hand_strength
-        fish = _is_fish(state)  # TIER1-FIX
+        fish = _is_fish(state)
+        board_texture = state.board_texture or BoardTexture.SEMI_WET
         
-        # Can check-raise with monsters (size up vs fish)
+        # ── FIX 2.1: CHECK-RAISE INITIATION ──
+        # HU only, not vs fish (fish don't bet enough to check-raise profitably)
+        if state.num_players == 2 and not fish:
+            # Monsters on any board: check to trap, plan to raise
+            if hand_strength in [HandStrength.NUTS, HandStrength.MONSTER]:
+                cr_size = calculate_check_raise_size(state.pot_size * 0.5, False)
+                return Decision(
+                    action=Action.CHECK,
+                    amount=None,
+                    display="CHECK",
+                    explanation=f"Check and trap. If they bet, raise to ~${cr_size:.0f}. "
+                               f"Your {_hs(hand_strength)} is disguised — let them bluff into you.",
+                    calculation=f"Plan: check-raise to ~${cr_size:.0f}",
+                    confidence=0.88
+                )
+            
+            # Two pair on wet boards: check-raise for value + protection
+            if hand_strength == HandStrength.TWO_PAIR and board_texture in [BoardTexture.WET, BoardTexture.SEMI_WET]:
+                cr_size = calculate_check_raise_size(state.pot_size * 0.5, False)
+                return Decision(
+                    action=Action.CHECK,
+                    amount=None,
+                    display="CHECK",
+                    explanation=f"Check. If they bet, raise — two pair needs protection on this board.",
+                    calculation=f"Plan: check-raise for value + protection",
+                    confidence=0.82
+                )
+        
+        # ── FIX 2.3: DEFENDER VALUE BETTING ──
+        # Monsters vs fish — just bet, they'll call with worse
         if hand_strength in [HandStrength.NUTS, HandStrength.MONSTER]:
-            # But usually just bet for value
-            amount, pct = calculate_value_bet_size(state.pot_size, state.street, hand_strength, fish)  # TIER1-FIX: pass fish
+            amount, pct = calculate_value_bet_size(state.pot_size, state.street, hand_strength, fish)
             return Decision(
                 action=Action.BET,
                 amount=amount,
@@ -1746,6 +1835,90 @@ class PokerDecisionEngine:
                 calculation=None,
                 confidence=0.88
             )
+        
+        # Two pair on dry boards or vs fish — bet for value
+        if hand_strength == HandStrength.TWO_PAIR:
+            amount, pct = calculate_value_bet_size(state.pot_size, state.street, hand_strength, fish)
+            return Decision(
+                action=Action.BET,
+                amount=amount,
+                display=f"BET ${amount:.2f}",
+                explanation=f"Bet with two pair. You're ahead — build the pot.",
+                calculation=None,
+                confidence=0.85
+            )
+        
+        # Overpair / TPTK on flop/turn — bet for value and protection
+        if hand_strength in [HandStrength.OVERPAIR, HandStrength.TOP_PAIR_TOP_KICKER]:
+            if state.street in [Street.FLOP, Street.TURN]:
+                amount, pct = calculate_value_bet_size(state.pot_size, state.street, hand_strength, fish)
+                return Decision(
+                    action=Action.BET,
+                    amount=amount,
+                    display=f"BET ${amount:.2f}",
+                    explanation=f"Bet with {_hs(hand_strength)}. Charge draws and get value from worse hands.",
+                    calculation=None,
+                    confidence=0.80
+                )
+            # River — check to control pot
+            return Decision(
+                action=Action.CHECK,
+                amount=None,
+                display="CHECK",
+                explanation=f"Check. {_hs(hand_strength).capitalize()} is likely best — get to showdown safely.",
+                calculation=None,
+                confidence=0.78
+            )
+        
+        # ── FIX 2.6: TURN PROBE BLUFF ──
+        # Villain bet flop, then checked turn — they gave up. Stab with air.
+        if state.street == Street.TURN and state.num_players == 2 and not fish:
+            if hand_strength in [HandStrength.AIR, HandStrength.OVERCARDS]:
+                bet_amount = round(state.pot_size * 0.50, 2)
+                break_even_pct = round(bet_amount / (state.pot_size + bet_amount), 2)
+                estimated_fold_pct = 0.55
+                ev_of_bet = round(
+                    (estimated_fold_pct * state.pot_size) - ((1 - estimated_fold_pct) * bet_amount), 2
+                )
+                
+                bluff_ctx = BluffContext(
+                    spot_type='turn_probe',
+                    delivery='choice',
+                    recommended_action='BET',
+                    bet_amount=bet_amount,
+                    pot_size=state.pot_size,
+                    ev_of_bet=ev_of_bet,
+                    ev_of_check=0.0,
+                    break_even_pct=break_even_pct,
+                    estimated_fold_pct=estimated_fold_pct,
+                    explanation_bet=(
+                        f"They checked the turn — they're giving up. "
+                        f"${bet_amount:.0f} to win ${state.pot_size:.0f}, "
+                        f"works more than half the time."
+                    ),
+                    explanation_check="Check and give up. Save your chips for a better spot.",
+                )
+                
+                bet_decision = Decision(
+                    action=Action.BET,
+                    amount=bet_amount,
+                    display=f"BET ${bet_amount:.2f}",
+                    explanation=bluff_ctx.explanation_bet,
+                    calculation=f"${bet_amount:.0f} to win ${state.pot_size:.0f}",
+                    confidence=0.68,
+                    bluff_context=bluff_ctx,
+                )
+                check_decision = Decision(
+                    action=Action.CHECK,
+                    amount=None,
+                    display="CHECK",
+                    explanation=bluff_ctx.explanation_check,
+                    calculation="Checking wins $0",
+                    confidence=0.68,
+                    bluff_context=bluff_ctx,
+                )
+                bet_decision.alternative = check_decision
+                return bet_decision
         
         # BLUFF SPOT 2: River probe bluff — villain showed weakness by checking twice
         if state.street == Street.RIVER and state.num_players == 2:
@@ -1796,18 +1969,29 @@ class PokerDecisionEngine:
                 bet_decision.alternative = check_decision
                 return bet_decision
         
-        # Check medium strength hands to pot control
-        if hand_strength in [HandStrength.TOP_PAIR, HandStrength.MIDDLE_PAIR, HandStrength.OVERPAIR]:
+        # Top pair — check to pot control
+        if hand_strength == HandStrength.TOP_PAIR:
             return Decision(
                 action=Action.CHECK,
                 amount=None,
                 display="CHECK",
-                explanation="Check. Your hand is good but vulnerable — control the pot size.",
+                explanation="Check. Top pair is decent but vulnerable — control the pot.",
+                calculation=None,
+                confidence=0.78
+            )
+        
+        # Middle pair — always check
+        if hand_strength == HandStrength.MIDDLE_PAIR:
+            return Decision(
+                action=Action.CHECK,
+                amount=None,
+                display="CHECK",
+                explanation="Check. Middle pair isn't strong enough to bet — see a free card.",
                 calculation=None,
                 confidence=0.80
             )
         
-        # Check draws (unless good semi-bluff spot)
+        # Draws — check for free card
         if hand_strength in [HandStrength.FLUSH_DRAW, HandStrength.OESD, HandStrength.COMBO_DRAW]:
             return Decision(
                 action=Action.CHECK,
@@ -1837,6 +2021,43 @@ class PokerDecisionEngine:
         
         # Calculate bet size relative to pot
         bet_ratio = state.facing_bet / state.pot_size if state.pot_size > 0 else 1.0
+        
+        # ── FIX 2.7: OVERBET HANDLING (>100% pot) ──
+        # Overbets are extremely polarized — fold everything except monsters
+        if bet_ratio > 1.2:
+            if hand_strength in [HandStrength.NUTS, HandStrength.MONSTER]:
+                amount = calculate_check_raise_size(state.facing_bet, _is_fish(state))
+                return Decision(
+                    action=Action.RAISE,
+                    amount=amount,
+                    display=f"RAISE TO ${amount:.2f}",
+                    explanation=f"Raise. Their overbet is polarized — you have {_hs(hand_strength)}, punish them.",
+                    calculation=f"Overbet {bet_ratio*100:.0f}% pot — they're polarized",
+                    confidence=0.90
+                )
+            if hand_strength in [HandStrength.TWO_PAIR]:
+                return Decision(
+                    action=Action.CALL,
+                    amount=state.facing_bet,
+                    display=f"CALL ${state.facing_bet:.2f}",
+                    explanation=f"Call. Overbet is scary but {_hs(hand_strength)} beats enough of their range.",
+                    calculation=f"Overbet {bet_ratio*100:.0f}% pot",
+                    confidence=0.70
+                )
+            # Fold everything else vs overbets
+            return Decision(
+                action=Action.FOLD,
+                amount=None,
+                display="FOLD",
+                explanation=f"Fold. An overbet this size is almost always the nuts or a big bluff — {_hs(hand_strength)} can't call.",
+                calculation=f"Facing {bet_ratio*100:.0f}% pot overbet",
+                confidence=0.85
+            )
+        
+        # ── FIX 2.2: POSTFLOP RAISE vs BET ──
+        # If action_facing is RAISE (they raised our bet), their range is MUCH stronger
+        # Tighten calling ranges significantly
+        is_raise = state.action_facing == ActionFacing.RAISE
         
         # TIER1-FIX: SPR commitment — in low SPR pots, commit with top pair+
         if state.spr is not None and state.spr < 4:
@@ -1875,11 +2096,67 @@ class PokerDecisionEngine:
         if state.num_players > 2:
             return self._facing_bet_multiway(state, hand_strength, pot_odds, bet_ratio)
         
-        # RIVER RAISES ARE 85-95% VALUE - KEY INSIGHT FROM SPEC 10
-        if street == Street.RIVER and state.action_facing == ActionFacing.BET and bet_ratio > 0.5:
+        # ── FACING A RAISE (they raised our bet) — much tighter ──
+        if is_raise:
+            # Nuts — re-raise
+            if hand_strength == HandStrength.NUTS:
+                amount = calculate_check_raise_size(state.facing_bet, _is_fish(state))
+                return Decision(
+                    action=Action.RAISE,
+                    amount=amount,
+                    display=f"RAISE TO ${amount:.2f}",
+                    explanation=f"Re-raise. You have {_hs(hand_strength)} — build the pot.",
+                    calculation="Re-raise for max value",
+                    confidence=0.92
+                )
+            # Monsters, two pair — call
+            if hand_strength in [HandStrength.MONSTER, HandStrength.TWO_PAIR]:
+                return Decision(
+                    action=Action.CALL,
+                    amount=state.facing_bet,
+                    display=f"CALL ${state.facing_bet:.2f}",
+                    explanation=f"Call. A raise is strong but {_hs(hand_strength)} is ahead enough.",
+                    calculation="Facing raise — their range is strong",
+                    confidence=0.80
+                )
+            # Overpair, TPTK on flop — call one street
+            if hand_strength in [HandStrength.OVERPAIR, HandStrength.TOP_PAIR_TOP_KICKER] and street == Street.FLOP:
+                return Decision(
+                    action=Action.CALL,
+                    amount=state.facing_bet,
+                    display=f"CALL ${state.facing_bet:.2f}",
+                    explanation=f"Call. Their raise is concerning, but {_hs(hand_strength)} is too strong to fold on the flop.",
+                    calculation="Raises are strong — reassess on later streets",
+                    confidence=0.72
+                )
+            # Strong draws — call with equity
+            if hand_strength in [HandStrength.COMBO_DRAW, HandStrength.FLUSH_DRAW]:
+                equity = get_draw_equity(hand_strength, state.street)
+                if equity >= pot_odds:
+                    return Decision(
+                        action=Action.CALL,
+                        amount=state.facing_bet,
+                        display=f"CALL ${state.facing_bet:.2f}",
+                        explanation=f"Call with {_hs(hand_strength)}. You have the odds to draw.",
+                        calculation=f"Equity {equity*100:.0f}% >= {pot_odds*100:.0f}% pot odds",
+                        confidence=0.75
+                    )
+            # Fold everything else vs a raise
+            return Decision(
+                action=Action.FOLD,
+                amount=None,
+                display="FOLD",
+                explanation=f"Fold. A raise means real strength — {_hs(hand_strength)} isn't enough to continue.",
+                calculation="Facing raise — tighten up",
+                confidence=0.85
+            )
+        
+        # ── FACING A BET (standard) — normal ranges ──
+        # RIVER BETS ARE 85-95% VALUE - KEY INSIGHT FROM SPEC 10
+        if street == Street.RIVER and bet_ratio > 0.5:
             return self._facing_river_bet(state, hand_strength, pot_odds, bet_ratio)
         
-        # TURN RAISES ARE 75-85% VALUE
+        # TURN BETS ARE 75-85% VALUE
         if street == Street.TURN and bet_ratio > 0.5:
             return self._facing_turn_bet(state, hand_strength, pot_odds, bet_ratio)
         
