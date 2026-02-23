@@ -2700,16 +2700,52 @@ def create_game_state(
     
     effective_stack = min(our_stack, villain_stack)
     
-    # Parse enums
-    pos = Position[our_position.upper()]
-    villain_pos = Position[villain_position.upper()] if villain_position else None
-    st = Street[street.upper()]
-    hs_key = hand_strength.upper().replace(" ", "_")
-    hs_key = {"TPTK": "TOP_PAIR_TOP_KICKER"}.get(hs_key, hs_key)
-    hs = HandStrength[hs_key]
-    bt = BoardTexture[board_texture.upper()] if board_texture else None
-    af = ActionFacing[action_facing.upper().replace("-", "_").replace("3", "THREE_").replace("4", "FOUR_")]
-    vt = VillainType[villain_type.upper()]
+    # Parse enums — defensive, never crash on bad input
+    try:
+        pos = Position[our_position.upper()]
+    except (KeyError, AttributeError):
+        pos = Position.BTN
+    
+    villain_pos = None
+    if villain_position and villain_position not in ('', 'none', 'None', 'null', 'unknown'):
+        try:
+            villain_pos = Position[villain_position.upper()]
+        except (KeyError, AttributeError):
+            villain_pos = None
+    
+    try:
+        st = Street[street.upper()]
+    except (KeyError, AttributeError):
+        st = Street.PREFLOP
+    
+    hs_key = (hand_strength or "playable").upper().replace(" ", "_")
+    hs_key = {"TPTK": "TOP_PAIR_TOP_KICKER", "SET": "MONSTER", "TRIPS": "TWO_PAIR",
+              "BOTTOM_PAIR": "MIDDLE_PAIR", "NOTHING": "AIR", "HIGH_CARD": "AIR"}.get(hs_key, hs_key)
+    try:
+        hs = HandStrength[hs_key]
+    except (KeyError, AttributeError):
+        hs = HandStrength.PLAYABLE
+    
+    try:
+        bt = BoardTexture[board_texture.upper()] if board_texture else None
+    except (KeyError, AttributeError):
+        bt = None
+    
+    af_raw = (action_facing or "none").upper().replace("-", "_")
+    af_raw = af_raw.replace("3", "THREE_").replace("4", "FOUR_")
+    # Map common variants
+    af_map = {"CHECKED": "NONE", "CHECK": "NONE", "NONE": "NONE", "CALL": "NONE",
+              "OPEN": "RAISE", "LIMP": "LIMP"}
+    af_raw = af_map.get(af_raw, af_raw)
+    try:
+        af = ActionFacing[af_raw]
+    except (KeyError, AttributeError):
+        af = ActionFacing.NONE
+    
+    try:
+        vt = VillainType[villain_type.upper()] if villain_type else VillainType.UNKNOWN
+    except (KeyError, AttributeError):
+        vt = VillainType.UNKNOWN
     
     # Calculate SPR
     spr = None
