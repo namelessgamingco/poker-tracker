@@ -1491,6 +1491,14 @@ def render_setup_mode():
 def render_play_mode():
     """Main play loop: header → alerts → React component → process events."""
 
+    # ── Deferred DB stats update (runs AFTER the decision has been sent to the UI) ──
+    pending_stats = st.session_state.pop("_pending_stats_update", None)
+    if pending_stats:
+        try:
+            increment_session_stats(pending_stats, hands=0, decisions=1)
+        except Exception:
+            pass  # Non-critical
+
     # Modals take priority
     if render_modals():
         return
@@ -1628,7 +1636,7 @@ def handle_decision_request(game_state: dict, session: dict):
             except Exception:
                 pass  # Non-critical — don't block gameplay for a counter
 
-        # Preserve two-table state through rerun
+# Preserve two-table state through rerun
         if game_state.get("show_second_table"):
             st.session_state.two_table_restore = {
                 "show_second_table": True,
@@ -1643,6 +1651,9 @@ def handle_decision_request(game_state: dict, session: dict):
                 "table2_decision": game_state.get("table2_decision"),
                 "table2_board_entry_index": game_state.get("table2_board_entry_index"),
             }
+
+        # Defer stats update to next render cycle — never block the decision
+        st.session_state._pending_stats_update = session.get("id")
 
     except Exception as e:
         print(f"[engine] Decision request failed: {e}")
