@@ -875,7 +875,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     }
     
     // Create a unique key for this decision to detect if it's new
-    const decisionKey = `${decisionTableId}-${decisionFromPython.display}-${decisionFromPython.action}`
+    const decisionKey = `${decisionTableId}-${decisionFromPython.display}-${decisionFromPython.action}-${decisionFromPython.explanation || ""}-${decisionFromPython.calculation || ""}`
     
     // Only process if this is a NEW decision we haven't seen
     if (lastProcessedDecisionRef.current === decisionKey) {
