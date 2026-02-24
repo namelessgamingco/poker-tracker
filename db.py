@@ -27,19 +27,15 @@ def _db_retry(fn, label="db"):
             raise Exception("Query returned None")
         return result
     except Exception as e:
-        err = str(e)
-        retryable = (
-            "Server disconnected" in err
-            or "'NoneType'" in err
-            or "connection" in err.lower()
-            or "closed" in err.lower()
-            or "broken pipe" in err.lower()
-            or "timed out" in err.lower()
-            or "Query returned None" in err
-        )
+        err = str(e).lower()
+        retryable = any(k in err for k in [
+            "server disconnected", "'nonetype'", "connection",
+            "closed", "broken pipe", "timed out", "reset by peer",
+            "query returned none",
+        ])
         if retryable:
             import time
-            time.sleep(1)  # Wait before retry
+            time.sleep(0.5)
             try:
                 print(f"[db] {label}: retrying with fresh client...")
                 return fn(get_supabase_admin_fresh())
@@ -75,9 +71,15 @@ def _admin_required():
 # =============================================================================
 
 def get_profile_by_auth_id(auth_id: str) -> Optional[dict]:
-    """Get profile by auth user ID."""
+    """Get profile by auth user ID. Cached in session_state to avoid repeated DB hits."""
     if not auth_id:
         return None
+    
+    # Check session cache first — avoids DB call on every Streamlit rerun
+    cache_key = f"_profile_cache_{auth_id}"
+    cached = st.session_state.get(cache_key)
+    if cached and (datetime.now(timezone.utc) - cached["ts"]).total_seconds() < 60:
+        return cached["data"]
     
     def query(sb):
         resp = (
@@ -90,9 +92,15 @@ def get_profile_by_auth_id(auth_id: str) -> Optional[dict]:
         return resp.data if resp.data else None
     
     try:
-        return _db_retry(query, "get_profile_by_auth_id")
+        result = _db_retry(query, "get_profile_by_auth_id")
+        # Cache the result for 60 seconds
+        st.session_state[cache_key] = {"data": result, "ts": datetime.now(timezone.utc)}
+        return result
     except Exception as e:
         print(f"[db] get_profile_by_auth_id error: {e}")
+        # Return stale cache if available
+        if cached:
+            return cached["data"]
         return None
 
 
@@ -1063,6 +1071,7 @@ def record_hand_outcome(
         return None
     
     def query(sb):
+        # Get current hand count for this session
         resp = (
             sb.table("poker_hands")
             .select("id")

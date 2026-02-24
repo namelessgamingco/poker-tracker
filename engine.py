@@ -1806,7 +1806,7 @@ class PokerDecisionEngine:
                     amount=None,
                     display="CHECK",
                     explanation=f"Check and trap. If they bet, raise to ~${cr_size:.0f}. "
-                               f"Your {_hs(hand_strength)} is disguised — let them bluff into you.",
+                               f"Your hand is disguised — let them bluff into you.",
                     calculation=f"Plan: check-raise to ~${cr_size:.0f}",
                     confidence=0.88
                 )
