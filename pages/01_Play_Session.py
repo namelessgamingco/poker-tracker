@@ -1572,9 +1572,11 @@ def render_play_mode():
     # Clear stale hand state on fresh page entry (after sidebar/back navigation)
     if "restore_rerun_id" not in st.session_state:
         st.session_state.restore_rerun_id = None
-    if st.session_state.get("two_table_restore") and st.session_state.get("_pending_rerun_id") != st.session_state.restore_rerun_id:
-        st.session_state.two_table_restore = None
-        clear_hand_state()
+    if st.session_state.get("_pending_rerun_id") != st.session_state.restore_rerun_id:
+        # Not an intentional rerun — clear any stale hand/decision state
+        if st.session_state.get("two_table_restore") or st.session_state.get("current_decision_dict"):
+            st.session_state.two_table_restore = None
+            clear_hand_state()
     st.session_state.restore_rerun_id = None
 
     restore = st.session_state.get("two_table_restore")
