@@ -4578,7 +4578,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             <div style={{ position: "relative", marginBottom: 12 }}>
               <span style={{
                 position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)",
-                fontSize: 16, fontWeight: 700, color: theme.textMuted, pointerEvents: "none",
+                fontSize: 15, fontWeight: 700, color: theme.textMuted, pointerEvents: "none",
               }}>$</span>
               <input
                 ref={plInputRef}
@@ -4587,7 +4587,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
                 value={plInputStr}
                 onChange={(e) => setPlInputStr(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); confirmPlInput() } }}
-                placeholder="Total pot"
+                placeholder="Total Pot"
                 style={{
                   ...S.input,
                   paddingLeft: 32,
@@ -5527,7 +5527,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           <div style={{ position: "relative", marginBottom: 12 }}>
             <span style={{
               position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)",
-              fontSize: 16, fontWeight: 700, color: theme.textMuted, pointerEvents: "none",
+              fontSize: 15, fontWeight: 700, color: theme.textMuted, pointerEvents: "none",
               zIndex: 1,
             }}>$</span>
             <input
@@ -5537,7 +5537,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               value={plInputStr}
               onChange={(e) => setPlInputStr(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); confirmPlInput() } }}
-              placeholder="Total pot"
+              placeholder="Total Pot"
               style={{
                 ...S.input,
                 width: "100%",
