@@ -604,6 +604,69 @@ def _is_fish(state: GameState) -> bool:
     return state.villain_type == VillainType.FISH
 
 
+# ── FIX 3.1: BET ROUNDING ──
+def round_bet(amount: float, stakes: str) -> float:
+    """Round bet to clean amount appropriate for the stakes."""
+    round_to = {
+        '$0.50/$1': 0.50, '$1/$2': 1.00, '$2/$5': 1.00,
+        '$5/$10': 5.00, '$10/$20': 5.00, '$25/$50': 10.00,
+    }.get(stakes, 1.00)
+    rounded = round(amount / round_to) * round_to
+    return max(round_to, rounded)  # Never round to 0
+
+
+# ── FIX 3.2: BLUFF FREQUENCY ESTIMATION ──
+def estimate_fold_frequency(spot_type: str, bet_pct_of_pot: float, villain_type: VillainType) -> float:
+    """Estimate villain fold frequency based on spot type, sizing, and villain."""
+    base_folds = {
+        'river_barrel': 0.48,
+        'river_probe': 0.58,
+        'dry_board_cbet': 0.53,
+        'turn_probe': 0.53,
+    }.get(spot_type, 0.50)
+    
+    # Larger bets get more folds (0.5 pot → base, 1.0 pot → +10%)
+    sizing_adjustment = (bet_pct_of_pot - 0.50) * 0.20
+    
+    # Fish fold much less — should never bluff them (handled elsewhere)
+    if villain_type == VillainType.FISH:
+        return 0.25
+    
+    # Regs fold slightly more
+    if villain_type == VillainType.REG:
+        base_folds += 0.03
+    
+    return min(0.80, max(0.20, base_folds + sizing_adjustment))
+
+
+# ── FIX 3.5: MADE HAND EQUITY ESTIMATES ──
+MADE_HAND_EQUITY = {
+    (HandStrength.NUTS, 'small'): 0.95,
+    (HandStrength.NUTS, 'large'): 0.90,
+    (HandStrength.MONSTER, 'small'): 0.85,
+    (HandStrength.MONSTER, 'large'): 0.78,
+    (HandStrength.TWO_PAIR, 'small'): 0.72,
+    (HandStrength.TWO_PAIR, 'large'): 0.60,
+    (HandStrength.OVERPAIR, 'small'): 0.70,
+    (HandStrength.OVERPAIR, 'large'): 0.55,
+    (HandStrength.TOP_PAIR_TOP_KICKER, 'small'): 0.65,
+    (HandStrength.TOP_PAIR_TOP_KICKER, 'large'): 0.50,
+    (HandStrength.TOP_PAIR, 'small'): 0.60,
+    (HandStrength.TOP_PAIR, 'large'): 0.42,
+    (HandStrength.MIDDLE_PAIR, 'small'): 0.45,
+    (HandStrength.MIDDLE_PAIR, 'large'): 0.30,
+}
+
+def get_made_hand_ev(hand_strength: HandStrength, pot_size: float, facing_bet: float, pot_odds: float) -> str:
+    """Get EV calculation string for made hand decisions."""
+    bet_ratio = facing_bet / pot_size if pot_size > 0 else 0.5
+    size_cat = 'small' if bet_ratio <= 0.50 else 'large'
+    equity = MADE_HAND_EQUITY.get((hand_strength, size_cat), 0.50)
+    ev_call = round((equity * (pot_size + facing_bet)) - ((1 - equity) * facing_bet), 2)
+    action = "call" if equity >= pot_odds else "fold"
+    return f"~{equity*100:.0f}% equity vs their range, need {pot_odds*100:.0f}% → {action} (EV: ${ev_call:+.0f})"
+
+
 # =============================================================================
 # SERIALIZATION — Decision to Dict for React Component
 # =============================================================================
@@ -858,9 +921,9 @@ class PokerDecisionEngine:
             action=Action.FOLD,
             amount=None,
             display="FOLD",
-            explanation="Check if possible, otherwise fold. No clear edge here.",
-            calculation=None,
-            confidence=0.8
+            explanation="Check if you can, otherwise fold. Not a profitable spot.",
+            calculation="No standard action — check or fold",
+            confidence=0.70
         )
     
     def _open_decision(self, state: GameState, hand: str) -> Decision:
@@ -874,8 +937,8 @@ class PokerDecisionEngine:
                 action=Action.CHECK,
                 amount=None,
                 display="CHECK",
-                explanation="Check. Free flop from the big blind — see what comes.",
-                calculation=None,
+                explanation="Check. Free flop from the big blind — no reason to raise this hand.",
+                calculation="BB check — see a free flop",
                 confidence=0.95
             )
         
@@ -942,17 +1005,17 @@ class PokerDecisionEngine:
                 action=Action.FOLD,
                 amount=None,
                 display="FOLD",
-                explanation=f"Fold — {hand} doesn't play well from the small blind.",
-                calculation=None,
-                confidence=0.85
+                explanation=f"Fold. {hand} is too weak to open from the small blind.",
+                calculation="SB fold — outside open range",
+                confidence=0.88
             )
         
         return Decision(
             action=Action.FOLD,
             amount=None,
             display="FOLD",
-            explanation=f"Fold from {position.value}. {hand} isn't profitable here — be patient.",
-            calculation=None,
+            explanation=f"Fold. {hand} from {position.value} doesn't make money long-term. Wait for a better spot.",
+            calculation=f"Outside open range for {position.value}",
             confidence=0.90
         )
     
@@ -984,9 +1047,9 @@ class PokerDecisionEngine:
                     action=Action.CHECK,
                     amount=None,
                     display="CHECK",
-                    explanation=f"Check your option. See a free flop and re-evaluate.",
-                    calculation=None,
-                    confidence=0.85
+                    explanation="Check your option. Not strong enough to raise — take the free flop.",
+                    calculation="BB check vs limpers",
+                    confidence=0.88
                 )
             elif normalized in open_range:
                 # In our open range for this position — iso-raise
@@ -1006,9 +1069,9 @@ class PokerDecisionEngine:
                 action=Action.CALL,
                 amount=state.bb_size,
                 display=f"CALL ${state.bb_size:.2f}",
-                explanation=f"Limp behind. See a cheap flop and try to connect.",
-                calculation=None,
-                confidence=0.70
+                explanation=f"Limp behind with {hand}. Cheap flop — try to hit something big.",
+                calculation="Limp behind — implied odds play",
+                confidence=0.68
             )
         
         # BB with limpers
@@ -1028,8 +1091,8 @@ class PokerDecisionEngine:
                     action=Action.CHECK,
                     amount=None,
                     display="CHECK",
-                    explanation="Check. Nothing worth raising — take a free flop.",
-                    calculation=None,
+                    explanation="Check. Not strong enough to iso-raise — see a free flop.",
+                    calculation="BB check — free flop vs limpers",
                     confidence=0.90
                 )
         
@@ -1037,9 +1100,9 @@ class PokerDecisionEngine:
             action=Action.FOLD,
             amount=None,
             display="FOLD",
-            explanation=f"Fold. {hand} isn't profitable here, even against limpers.",
-            calculation=None,
-            confidence=0.85
+            explanation=f"Fold. {hand} isn't strong enough to play, even with limpers in the pot.",
+            calculation="Outside playable range vs limpers",
+            confidence=0.87
         )
     
     def _facing_open(self, state: GameState, hand: str) -> Decision:
@@ -1070,8 +1133,8 @@ class PokerDecisionEngine:
                     action=Action.ALL_IN,
                     amount=state.our_stack,
                     display=f"ALL-IN ${state.our_stack:.2f}",
-                    explanation=f"All-in with {hand}. Too short to 3-bet/fold — shove and put maximum pressure on.",
-                    calculation=None,
+                    explanation=f"All-in with {hand}. Your stack is too short for a normal 3-bet — shove for maximum pressure.",
+                    calculation=f"Stack ${state.our_stack:.0f} — shove-or-fold territory",
                     confidence=0.90
                 )
             
@@ -1094,9 +1157,9 @@ class PokerDecisionEngine:
                         action=Action.FOLD,
                         amount=None,
                         display="FOLD",
-                        explanation=f"Fold {hand}. This player calls too much — don't bluff-raise them.",
-                        calculation=None,
-                        confidence=0.80
+                        explanation=f"Fold {hand}. They call too wide — bluff 3-betting won't work here.",
+                        calculation="Villain calls too much — no fold equity",
+                        confidence=0.82
                     )
                 amount = calculate_3bet_size(state.facing_bet, we_have_position, is_fish)
                 # TIER2-FIX: Squeeze sizing for bluffs too
@@ -1119,9 +1182,9 @@ class PokerDecisionEngine:
                     action=Action.CALL,
                     amount=state.facing_bet,
                     display=f"CALL ${state.facing_bet:.2f}",
-                    explanation=f"Call with {hand} in position. You'll have a postflop edge.",
-                    calculation=None,
-                    confidence=0.85
+                    explanation=f"Call with {hand}. You have position — outplay them after the flop.",
+                    calculation="In position — postflop advantage",
+                    confidence=0.83
                 )
             # Suited connectors, small pairs - need good odds
             if state.facing_bet <= state.bb_size * 3:
@@ -1129,18 +1192,18 @@ class PokerDecisionEngine:
                     action=Action.CALL,
                     amount=state.facing_bet,
                     display=f"CALL ${state.facing_bet:.2f}",
-                    explanation=f"Call with {hand}. Good implied odds — if you connect, you'll win a big pot.",
-                    calculation=None,
-                    confidence=0.75
+                    explanation=f"Call with {hand}. If you hit, you'll win a big pot — good implied odds.",
+                    calculation="Speculative call — set/straight/flush potential",
+                    confidence=0.73
                 )
         
         return Decision(
             action=Action.FOLD,
             amount=None,
             display="FOLD",
-            explanation=f"Fold. {hand} can't continue profitably against this raise.",
-            calculation=None,
-            confidence=0.85
+            explanation=f"Fold. {hand} isn't strong enough to play against this raise.",
+            calculation="Outside calling/3-bet range",
+            confidence=0.88
         )
     
     def _bb_defense(
@@ -1176,7 +1239,7 @@ class PokerDecisionEngine:
                 action=Action.CALL,
                 amount=state.facing_bet,
                 display=f"CALL ${state.facing_bet:.2f}",
-                explanation=f"Defend your big blind. {hand} has too much equity to fold at this price.",
+                explanation=f"Defend your big blind. {hand} is too strong to fold at this price.",
                 calculation=f"BB defense — always defend {hand} vs standard open",
                 confidence=0.82
             )
@@ -1202,8 +1265,8 @@ class PokerDecisionEngine:
             action=Action.FOLD,
             amount=None,
             display="FOLD",
-            explanation=f"Fold. {hand} isn't worth defending against this sizing.",
-            calculation=None,
+            explanation=f"Fold. {hand} can't make money defending here — the price isn't right.",
+            calculation="Outside BB defense range at this sizing",
             confidence=0.85
         )
     
@@ -1242,7 +1305,7 @@ class PokerDecisionEngine:
                     amount=state.facing_bet,
                     display=f"CALL ${state.facing_bet:.2f}",
                     explanation=f"Call the 3-bet with {hand}. Play the flop in position.",
-                    calculation=None,
+                    calculation="Calling the 3-bet in position",
                     confidence=0.80
                 )
         
@@ -1252,7 +1315,7 @@ class PokerDecisionEngine:
             amount=None,
             display="FOLD",
             explanation=f"Fold {hand}. Their 3-bet is too strong — don't chase.",
-            calculation=None,
+            calculation="Outside continue range vs 3-bet",
             confidence=0.88
         )
     
@@ -1278,7 +1341,7 @@ class PokerDecisionEngine:
                     amount=state.facing_bet,
                     display=f"CALL ${state.facing_bet:.2f}",
                     explanation=f"Call the 4-bet with {hand}. You have the hand to see a flop here.",
-                    calculation=None,
+                    calculation="Calling is the best option",
                     confidence=0.78
                 )
             else:
@@ -1299,7 +1362,7 @@ class PokerDecisionEngine:
                 amount=state.facing_bet,
                 display=f"CALL ${state.facing_bet:.2f}",
                 explanation=f"Call with {hand}. Deep stacks give you great implied odds postflop.",
-                calculation=None,
+                calculation="Calling is the best option",
                 confidence=0.70
             )
         
@@ -1309,7 +1372,7 @@ class PokerDecisionEngine:
             amount=None,
             display="FOLD",
             explanation=f"Fold {hand}. A 4-bet means they have it — save your chips.",
-            calculation=None,
+            calculation="Only premiums continue vs 4-bet",
             confidence=0.90
         )
     
@@ -1357,7 +1420,7 @@ class PokerDecisionEngine:
             amount=None,
             display="FOLD",
             explanation=f"Fold. {hand} isn't strong enough to shove — wait for a better spot.",
-            calculation=None,
+            calculation="Hand too weak to continue",
             confidence=0.85
         )
     
@@ -1387,7 +1450,7 @@ class PokerDecisionEngine:
             return Decision(
                 action=Action.FOLD, amount=None, display="FOLD",
                 explanation=f"Fold {hand}. Their 4-bet is too strong.",
-                calculation=None, confidence=0.90)
+                calculation="Outside continue range vs 3-bet", confidence=0.90)
         
         # Facing 3-bet: all-in or fold (no calling — SPR too low)
         if state.action_facing == ActionFacing.THREE_BET:
@@ -1404,7 +1467,7 @@ class PokerDecisionEngine:
             return Decision(
                 action=Action.FOLD, amount=None, display="FOLD",
                 explanation=f"Fold. Too short-stacked to call a 3-bet with {hand}.",
-                calculation=None, confidence=0.88)
+                calculation="Outside continue range vs 3-bet", confidence=0.88)
         
         # Facing open raise: 3-bet/fold, minimal flatting
         if state.action_facing == ActionFacing.RAISE:
@@ -1423,12 +1486,12 @@ class PokerDecisionEngine:
                         action=Action.ALL_IN, amount=state.our_stack,
                         display=f"ALL-IN ${state.our_stack:.2f}",
                         explanation=f"All-in with {hand}. Cleaner than a small 3-bet at this depth.",
-                        calculation=None, confidence=0.90)
+                        calculation=f"${state.our_stack:.0f} — shove vs 3-bet", confidence=0.90)
                 return Decision(
                     action=Action.RAISE, amount=amount,
                     display=f"RAISE TO ${amount:.2f}",
                     explanation=f"3-bet with {hand}. You have enough chips to put real pressure on.",
-                    calculation=None, confidence=0.88)
+                    calculation=f"${state.our_stack:.0f} — shove vs 3-bet", confidence=0.88)
             
             # JJ/TT can flat at 30-50BB in position only
             if not is_very_short and hand in ["JJ", "TT"]:
@@ -1437,13 +1500,13 @@ class PokerDecisionEngine:
                         action=Action.CALL, amount=state.facing_bet,
                         display=f"CALL ${state.facing_bet:.2f}",
                         explanation=f"Call with {hand} in position. Good depth for set-mining.",
-                        calculation=None, confidence=0.75)
+                        calculation="Outside continue range vs 3-bet", confidence=0.75)
             
             # Everything else: fold (not enough implied odds)
             return Decision(
                 action=Action.FOLD, amount=None, display="FOLD",
                 explanation=f"Fold. Not deep enough to call profitably with {hand}.",
-                calculation=None, confidence=0.85)
+                calculation="Outside continue range vs 3-bet", confidence=0.85)
         
         # Open / limp: use standard logic
         if state.action_facing == ActionFacing.NONE:
@@ -1473,6 +1536,13 @@ class PokerDecisionEngine:
         # Facing check-raise
         if state.action_facing == ActionFacing.CHECK_RAISE:
             return self._facing_check_raise(state)
+        
+        # FIX 3.4: Donk bet — villain leads into us when we were the preflop aggressor
+        if (state.we_are_aggressor 
+            and state.action_facing == ActionFacing.BET 
+            and state.street == Street.FLOP
+            and state.facing_bet > 0):
+            return self._facing_donk_bet(state)
         
         # Facing bet/raise
         if state.action_facing == ActionFacing.BET or state.facing_bet > 0:
@@ -1510,7 +1580,7 @@ class PokerDecisionEngine:
                 amount=amount,
                 display=f"BET ${amount:.2f}",
                 explanation=f"Bet for value with {_hs(hand_strength)}. They'll call with worse.",
-                calculation=None,
+                calculation="Value bet — charge draws and weaker hands",
                 confidence=0.90
             )
         
@@ -1522,9 +1592,9 @@ class PokerDecisionEngine:
                     action=Action.CHECK,
                     amount=None,
                     display="CHECK",
-                    explanation="Check. Too many opponents on a dangerous board — proceed carefully.",
-                    calculation=None,
-                    confidence=0.75
+                    explanation="Check. Multiple opponents on a wet board — c-betting here is too risky.",
+                    calculation="Multiway + wet board = check",
+                    confidence=0.78
                 )
             
             amount, pct = calculate_cbet_size(state.pot_size, board_texture, fish)  # TIER1-FIX: pass fish
@@ -1533,7 +1603,7 @@ class PokerDecisionEngine:
                 amount=amount,
                 display=f"BET ${amount:.2f}",
                 explanation="Bet with top pair. Charge draws and get value from worse hands.",
-                calculation=None,
+                calculation="Value bet — charge draws and weaker hands",
                 confidence=0.85
             )
         
@@ -1549,7 +1619,7 @@ class PokerDecisionEngine:
                     amount=amount,
                     display=f"BET ${amount:.2f}",
                     explanation=f"Semi-bluff with {_hs(hand_strength)}. Win the pot now or improve on later streets.",
-                    calculation=None,
+                    calculation="C-bet — take the lead",
                     confidence=0.80
                 )
         
@@ -1565,12 +1635,26 @@ class PokerDecisionEngine:
                         amount=None,
                         display="CHECK",
                         explanation="Check. This player calls too much to bluff — wait for a real hand.",
-                        calculation=None,
+                        calculation="Not enough value or fold equity to c-bet",
                         confidence=0.80
                     )
                 amount, pct = calculate_cbet_size(state.pot_size, board_texture)
                 break_even_pct = round(amount / (state.pot_size + amount), 2)
-                estimated_fold_pct = 0.55
+                bet_pct_of_pot = amount / state.pot_size if state.pot_size > 0 else 0.5
+                estimated_fold_pct = estimate_fold_frequency('dry_board_cbet', bet_pct_of_pot, state.villain_type)
+                margin = estimated_fold_pct - break_even_pct
+                
+                # FIX 3.2: Only bluff with sufficient margin
+                if margin < 0.15:
+                    return Decision(
+                        action=Action.CHECK,
+                        amount=None,
+                        display="CHECK",
+                        explanation=f"Check. Bluff margin too thin ({margin*100:.0f}%) — not profitable enough.",
+                        calculation=f"Fold est. {estimated_fold_pct*100:.0f}%, need {break_even_pct*100:.0f}%, margin only {margin*100:.0f}%",
+                        confidence=0.72
+                    )
+                
                 ev_of_bet = round(
                     (estimated_fold_pct * state.pot_size) - ((1 - estimated_fold_pct) * amount), 2
                 )
@@ -1607,7 +1691,7 @@ class PokerDecisionEngine:
             amount=None,
             display="CHECK",
             explanation=f"Check with {_hs(hand_strength)}. Re-evaluate on the next street.",
-            calculation=None,
+            calculation="Check is the safest play",
             confidence=0.80
         )
     
@@ -1634,7 +1718,7 @@ class PokerDecisionEngine:
                 amount=amount,
                 display=f"BET ${amount:.2f}",
                 explanation=f"Keep betting. You still have {_hs(hand_strength)} — stay aggressive.",
-                calculation=None,
+                calculation="Bet/raise for value",
                 confidence=0.88
             )
         
@@ -1646,7 +1730,7 @@ class PokerDecisionEngine:
                 amount=amount,
                 display=f"BET ${amount:.2f}",
                 explanation="Bet with top pair. Keep charging draws and extracting value.",
-                calculation=None,
+                calculation="Bet/raise for value",
                 confidence=0.80
             )
         
@@ -1659,7 +1743,7 @@ class PokerDecisionEngine:
                     amount=amount,
                     display=f"BET ${amount:.2f}",
                     explanation="Bet for thin value. This player pays off with worse — exploit that.",
-                    calculation=None,
+                    calculation="Bet/raise for value",
                     confidence=0.72
                 )
             return Decision(
@@ -1667,7 +1751,7 @@ class PokerDecisionEngine:
                 amount=None,
                 display="CHECK",
                 explanation="Check. Top pair is likely best — control the pot and get to showdown.",
-                calculation=None,
+                calculation="Check is the safest play",
                 confidence=0.75
             )
         
@@ -1683,7 +1767,7 @@ class PokerDecisionEngine:
                             amount=None,
                             display="CHECK",
                             explanation=f"Check. This player won't fold — save your bluffs for better opponents.",
-                            calculation=None,
+                            calculation="Checking back to control the pot",
                             confidence=0.75
                         )
                     amount = round(state.pot_size * 0.50, 2)
@@ -1719,7 +1803,21 @@ class PokerDecisionEngine:
             if state.num_players == 2 and state.we_are_aggressor and not fish:
                 bet_amount = round(state.pot_size * 0.66, 2)
                 break_even_pct = round(bet_amount / (state.pot_size + bet_amount), 2)
-                estimated_fold_pct = 0.50  # Population average for river folds vs triple barrel
+                bet_pct_of_pot = bet_amount / state.pot_size if state.pot_size > 0 else 0.66
+                estimated_fold_pct = estimate_fold_frequency('river_barrel', bet_pct_of_pot, state.villain_type)
+                margin = estimated_fold_pct - break_even_pct
+                
+                # FIX 3.2: Thin margin — don't recommend river barrel
+                if margin < 0.15:
+                    return Decision(
+                        action=Action.CHECK,
+                        amount=None,
+                        display="CHECK",
+                        explanation="Give up. River barrel is too thin here — margin doesn't justify the risk.",
+                        calculation=f"Fold est. {estimated_fold_pct*100:.0f}%, need {break_even_pct*100:.0f}%, margin {margin*100:.0f}%",
+                        confidence=0.72
+                    )
+                
                 ev_of_bet = round(
                     (estimated_fold_pct * state.pot_size) - ((1 - estimated_fold_pct) * bet_amount), 2
                 )
@@ -1774,7 +1872,7 @@ class PokerDecisionEngine:
                 display="CHECK",
                 explanation="Check. This player calls too much — save your bluffs." if _is_fish(state)
                     else "Your draw missed. Give up — chasing would be throwing money away.",
-                calculation=None,
+                calculation="Multiway pot — tighter range required",
                 confidence=0.85
             )
         
@@ -1784,7 +1882,7 @@ class PokerDecisionEngine:
             amount=None,
             display="CHECK",
             explanation=f"Check. Nothing worth betting with {_hs(hand_strength)}.",
-            calculation=None,
+            calculation="Multiway pot — tighter range required",
             confidence=0.80
         )
     
@@ -1832,7 +1930,7 @@ class PokerDecisionEngine:
                 amount=amount,
                 display=f"BET ${amount:.2f}",
                 explanation=f"Value bet with {_hs(hand_strength)}. You're ahead — get paid.",
-                calculation=None,
+                calculation="Bet/raise for value",
                 confidence=0.88
             )
         
@@ -1844,7 +1942,7 @@ class PokerDecisionEngine:
                 amount=amount,
                 display=f"BET ${amount:.2f}",
                 explanation=f"Bet with two pair. You're ahead — build the pot.",
-                calculation=None,
+                calculation="Bet/raise for value",
                 confidence=0.85
             )
         
@@ -1857,7 +1955,7 @@ class PokerDecisionEngine:
                     amount=amount,
                     display=f"BET ${amount:.2f}",
                     explanation=f"Bet with {_hs(hand_strength)}. Charge draws and get value from worse hands.",
-                    calculation=None,
+                    calculation="Bet/raise for value",
                     confidence=0.80
                 )
             # River — check to control pot
@@ -1866,7 +1964,7 @@ class PokerDecisionEngine:
                 amount=None,
                 display="CHECK",
                 explanation=f"Check. {_hs(hand_strength).capitalize()} is likely best — get to showdown safely.",
-                calculation=None,
+                calculation="Check is the safest play",
                 confidence=0.78
             )
         
@@ -1876,7 +1974,21 @@ class PokerDecisionEngine:
             if hand_strength in [HandStrength.AIR, HandStrength.OVERCARDS]:
                 bet_amount = round(state.pot_size * 0.50, 2)
                 break_even_pct = round(bet_amount / (state.pot_size + bet_amount), 2)
-                estimated_fold_pct = 0.55
+                bet_pct_of_pot = 0.50
+                estimated_fold_pct = estimate_fold_frequency('turn_probe', bet_pct_of_pot, state.villain_type)
+                margin = estimated_fold_pct - break_even_pct
+                
+                # FIX 3.2: Margin check
+                if margin < 0.15:
+                    return Decision(
+                        action=Action.CHECK,
+                        amount=None,
+                        display="CHECK",
+                        explanation="Check. Probe bluff margin too thin here.",
+                        calculation=f"Fold est. {estimated_fold_pct*100:.0f}%, need {break_even_pct*100:.0f}%",
+                        confidence=0.70
+                    )
+                
                 ev_of_bet = round(
                     (estimated_fold_pct * state.pot_size) - ((1 - estimated_fold_pct) * bet_amount), 2
                 )
@@ -1925,7 +2037,21 @@ class PokerDecisionEngine:
             if not fish and hand_strength in [HandStrength.AIR, HandStrength.OVERCARDS]:
                 bet_amount = round(state.pot_size * 0.50, 2)
                 break_even_pct = round(bet_amount / (state.pot_size + bet_amount), 2)
-                estimated_fold_pct = 0.60
+                bet_pct_of_pot = 0.50
+                estimated_fold_pct = estimate_fold_frequency('river_probe', bet_pct_of_pot, state.villain_type)
+                margin = estimated_fold_pct - break_even_pct
+                
+                # FIX 3.2: Margin check
+                if margin < 0.15:
+                    return Decision(
+                        action=Action.CHECK,
+                        amount=None,
+                        display="CHECK",
+                        explanation="Check. River probe margin too thin to risk it.",
+                        calculation=f"Fold est. {estimated_fold_pct*100:.0f}%, need {break_even_pct*100:.0f}%",
+                        confidence=0.70
+                    )
+                
                 ev_of_bet = round(
                     (estimated_fold_pct * state.pot_size) - ((1 - estimated_fold_pct) * bet_amount), 2
                 )
@@ -1976,7 +2102,7 @@ class PokerDecisionEngine:
                 amount=None,
                 display="CHECK",
                 explanation="Check. Top pair is decent but vulnerable — control the pot.",
-                calculation=None,
+                calculation="Check is the safest play",
                 confidence=0.78
             )
         
@@ -1987,7 +2113,7 @@ class PokerDecisionEngine:
                 amount=None,
                 display="CHECK",
                 explanation="Check. Middle pair isn't strong enough to bet — see a free card.",
-                calculation=None,
+                calculation="Check is the safest play",
                 confidence=0.80
             )
         
@@ -1998,7 +2124,7 @@ class PokerDecisionEngine:
                 amount=None,
                 display="CHECK",
                 explanation=f"Check. Take a free card with {_hs(hand_strength)}.",
-                calculation=None,
+                calculation="Check is the safest play",
                 confidence=0.75
             )
         
@@ -2008,7 +2134,7 @@ class PokerDecisionEngine:
             amount=None,
             display="CHECK",
             explanation="Check. Nothing to gain by betting here.",
-            calculation=None,
+            calculation="Check is the safest play",
             confidence=0.85
         )
     
@@ -2194,7 +2320,7 @@ class PokerDecisionEngine:
                 amount=state.facing_bet,
                 display=f"CALL ${state.facing_bet:.2f}",
                 explanation="Call with two pair. Strong but not invincible multiway — proceed carefully.",
-                calculation=None,
+                calculation="Multiway pot — tighter range required",
                 confidence=0.85
             )
         
@@ -2206,7 +2332,7 @@ class PokerDecisionEngine:
                     amount=None,
                     display="FOLD",
                     explanation=f"Fold. Big river bet multiway — someone has you beat.",
-                    calculation=None,
+                    calculation="Multiway pot — tighter range required",
                     confidence=0.85
                 )
             return Decision(
@@ -2214,7 +2340,7 @@ class PokerDecisionEngine:
                 amount=state.facing_bet,
                 display=f"CALL ${state.facing_bet:.2f}",
                 explanation=f"Call with {_hs(hand_strength)}. Probably ahead, but stay cautious.",
-                calculation=None,
+                calculation="Multiway pot — tighter range required",
                 confidence=0.80
             )
         
@@ -2226,7 +2352,7 @@ class PokerDecisionEngine:
                     amount=state.facing_bet,
                     display=f"CALL ${state.facing_bet:.2f}",
                     explanation="Call. Top pair is good on the flop — see what the turn brings.",
-                    calculation=None,
+                    calculation="Multiway pot — tighter range required",
                     confidence=0.70
                 )
             return Decision(
@@ -2234,7 +2360,7 @@ class PokerDecisionEngine:
                 amount=None,
                 display="FOLD",
                 explanation=f"Fold. Top pair isn't enough on the {state.street.value} against this many opponents.",
-                calculation=None,
+                calculation="Multiway pot — tighter range required",
                 confidence=0.80
             )
         
@@ -2245,7 +2371,7 @@ class PokerDecisionEngine:
                 amount=None,
                 display="FOLD",
                 explanation=f"Fold. Too many opponents for {_hs(hand_strength)} — you're likely behind.",
-                calculation=None,
+                calculation="Multiway pot — tighter range required",
                 confidence=0.85
             )
         
@@ -2266,8 +2392,8 @@ class PokerDecisionEngine:
                 action=Action.FOLD,
                 amount=None,
                 display="FOLD",
-                explanation=f"Fold. Not enough equity to chase {_hs(hand_strength)} here.",
-                calculation=None,
+                explanation=f"Fold. The price isn't right to chase your {_hs(hand_strength)} here.",
+                calculation="Multiway pot — tighter range required",
                 confidence=0.80
             )
         
@@ -2277,7 +2403,7 @@ class PokerDecisionEngine:
             amount=None,
             display="FOLD",
             explanation=f"Fold. {_hs(hand_strength).capitalize()} can't handle the pressure multiway.",
-            calculation=None,
+            calculation="Multiway pot — tighter range required",
             confidence=0.85
         )
     
@@ -2314,7 +2440,7 @@ class PokerDecisionEngine:
                 amount=state.facing_bet,
                 display=f"CALL ${state.facing_bet:.2f}",
                 explanation=f"Call with {_hs(hand_strength)}. You're in good shape.",
-                calculation=None,
+                calculation=get_made_hand_ev(hand_strength, state.pot_size, state.facing_bet, pot_odds),
                 confidence=0.85
             )
         
@@ -2328,7 +2454,7 @@ class PokerDecisionEngine:
                         amount=state.facing_bet,
                         display=f"CALL ${state.facing_bet:.2f}",
                         explanation=f"Call. This player overvalues their hand — {_hs(hand_strength)} is ahead.",
-                        calculation=None,
+                        calculation=get_made_hand_ev(hand_strength, state.pot_size, state.facing_bet, pot_odds),
                         confidence=0.72
                     )
                 return Decision(
@@ -2336,7 +2462,7 @@ class PokerDecisionEngine:
                     amount=None,
                     display="FOLD",
                     explanation=f"Fold. Big river bets mean business — don't be a hero with {_hs(hand_strength)}.",
-                    calculation=None,
+                    calculation=get_made_hand_ev(hand_strength, state.pot_size, state.facing_bet, pot_odds),
                     confidence=0.88
                 )
             else:
@@ -2346,7 +2472,7 @@ class PokerDecisionEngine:
                     amount=state.facing_bet,
                     display=f"CALL ${state.facing_bet:.2f}",
                     explanation=f"Call. Small bet gives you the right price with {_hs(hand_strength)}.",
-                    calculation=None,
+                    calculation=get_made_hand_ev(hand_strength, state.pot_size, state.facing_bet, pot_odds),
                     confidence=0.70
                 )
         
@@ -2356,7 +2482,7 @@ class PokerDecisionEngine:
             amount=None,
             display="FOLD",
             explanation=f"Fold. You're not beating their betting range with {_hs(hand_strength)}.",
-            calculation=None,
+            calculation="Hand too weak to continue",
             confidence=0.90
         )
     
@@ -2390,7 +2516,7 @@ class PokerDecisionEngine:
                 amount=state.facing_bet,
                 display=f"CALL ${state.facing_bet:.2f}",
                 explanation=f"Call. {_hs(hand_strength).capitalize()} is ahead of most of their range.",
-                calculation=None,
+                calculation=get_made_hand_ev(hand_strength, state.pot_size, state.facing_bet, pot_odds),
                 confidence=0.85
             )
         
@@ -2402,7 +2528,7 @@ class PokerDecisionEngine:
                     amount=state.facing_bet,
                     display=f"CALL ${state.facing_bet:.2f}",
                     explanation="Call. Top pair beats most of their betting range.",
-                    calculation=None,
+                    calculation=get_made_hand_ev(hand_strength, state.pot_size, state.facing_bet, pot_odds),
                     confidence=0.75
                 )
             else:
@@ -2411,7 +2537,7 @@ class PokerDecisionEngine:
                     amount=None,
                     display="FOLD",
                     explanation="Fold. An overbet this size means they have it. One pair isn't enough.",
-                    calculation=None,
+                    calculation=get_made_hand_ev(hand_strength, state.pot_size, state.facing_bet, pot_odds),
                     confidence=0.75
                 )
         
@@ -2445,10 +2571,18 @@ class PokerDecisionEngine:
                     action=Action.CALL,
                     amount=state.facing_bet,
                     display=f"CALL ${state.facing_bet:.2f}",
-                    explanation="Call. Small bet gives you the odds to draw.",
-                    calculation=None,
+                    explanation="Call. Small bet gives you the odds to chase the gutshot.",
+                    calculation=f"Equity {equity*100:.0f}% >= {pot_odds*100:.0f}% pot odds",
                     confidence=0.65
                 )
+            return Decision(
+                action=Action.FOLD,
+                amount=None,
+                display="FOLD",
+                explanation="Fold. Not getting the right price for a gutshot.",
+                calculation=f"Need {pot_odds*100:.0f}% odds, only have ~{equity*100:.0f}%",
+                confidence=0.80
+            )
         
         # Fold weak hands
         return Decision(
@@ -2456,7 +2590,7 @@ class PokerDecisionEngine:
             amount=None,
             display="FOLD",
             explanation=f"Fold. Not the right spot to continue with {_hs(hand_strength)}.",
-            calculation=None,
+            calculation="Hand too weak to continue",
             confidence=0.85
         )
     
@@ -2490,7 +2624,7 @@ class PokerDecisionEngine:
                 amount=state.facing_bet,
                 display=f"CALL ${state.facing_bet:.2f}",
                 explanation=f"Call. You're ahead with {_hs(hand_strength)} — keep going.",
-                calculation=None,
+                calculation=get_made_hand_ev(hand_strength, state.pot_size, state.facing_bet, pot_odds),
                 confidence=0.85
             )
         
@@ -2502,7 +2636,7 @@ class PokerDecisionEngine:
                     amount=state.facing_bet,
                     display=f"CALL ${state.facing_bet:.2f}",
                     explanation="Call. Middle pair can peel one more card here.",
-                    calculation=None,
+                    calculation=get_made_hand_ev(hand_strength, state.pot_size, state.facing_bet, pot_odds),
                     confidence=0.70
                 )
             else:
@@ -2511,7 +2645,7 @@ class PokerDecisionEngine:
                     amount=None,
                     display="FOLD",
                     explanation="Fold. The bet is too large for middle pair — you're probably behind.",
-                    calculation=None,
+                    calculation=get_made_hand_ev(hand_strength, state.pot_size, state.facing_bet, pot_odds),
                     confidence=0.75
                 )
         
@@ -2544,10 +2678,42 @@ class PokerDecisionEngine:
                     action=Action.CALL,
                     amount=state.facing_bet,
                     display=f"CALL ${state.facing_bet:.2f}",
-                    explanation=f"Call. Good equity with {_hs(hand_strength)} — see the next card.",
+                    explanation=f"Call. Your {_hs(hand_strength)} gives you a good chance to improve — see the next card.",
                     calculation=f"Equity {equity*100:.0f}% >= {pot_odds*100:.0f}% pot odds",
                     confidence=0.80
                 )
+        
+        # FIX 3.3: Gutshot — call small bets on flop (implied odds), fold otherwise
+        if hand_strength == HandStrength.GUTSHOT:
+            equity = get_draw_equity(hand_strength, state.street)
+            # On flop, implied odds boost effective equity by ~50% (hitting pays off big)
+            implied_equity = equity * 1.5 if state.street == Street.FLOP else equity
+            if state.street == Street.FLOP and implied_equity >= pot_odds and bet_ratio <= 0.40:
+                return Decision(
+                    action=Action.CALL,
+                    amount=state.facing_bet,
+                    display=f"CALL ${state.facing_bet:.2f}",
+                    explanation="Call. Small bet gives you the odds to chase the gutshot with implied odds.",
+                    calculation=f"~{equity*100:.0f}% equity + implied odds vs {pot_odds*100:.0f}% pot odds",
+                    confidence=0.62
+                )
+            elif state.street == Street.TURN and equity >= pot_odds and bet_ratio <= 0.25:
+                return Decision(
+                    action=Action.CALL,
+                    amount=state.facing_bet,
+                    display=f"CALL ${state.facing_bet:.2f}",
+                    explanation="Call. Tiny bet on the turn — one more card to hit.",
+                    calculation=f"Equity {equity*100:.0f}% vs {pot_odds*100:.0f}% pot odds",
+                    confidence=0.60
+                )
+            return Decision(
+                action=Action.FOLD,
+                amount=None,
+                display="FOLD",
+                explanation="Fold. Not getting the right price for a gutshot.",
+                calculation=f"Need {pot_odds*100:.0f}% odds, only have ~{equity*100:.0f}%",
+                confidence=0.80
+            )
         
         # Fold air and weak hands
         return Decision(
@@ -2555,8 +2721,90 @@ class PokerDecisionEngine:
             amount=None,
             display="FOLD",
             explanation=f"Fold. {_hs(hand_strength).capitalize()} can't continue here.",
-            calculation=None,
+            calculation="Hand too weak to continue",
             confidence=0.85
+        )
+    
+    # ── FIX 3.4: FACING DONK BET ──
+    def _facing_donk_bet(self, state: GameState) -> Decision:
+        """
+        Facing a donk bet (villain leads into preflop aggressor on flop).
+        At low stakes, donk bets are heavily value-weighted — fish love to
+        lead out with top pair. Adjust accordingly.
+        """
+        hand_strength = state.hand_strength
+        fish = _is_fish(state)
+        pot_odds = calculate_pot_odds(state.pot_size, state.facing_bet)
+        bet_ratio = state.facing_bet / state.pot_size if state.pot_size > 0 else 0.5
+        
+        # Monsters: raise for value — they're telling us they have a hand
+        if hand_strength in [HandStrength.NUTS, HandStrength.MONSTER, HandStrength.TWO_PAIR]:
+            amount = calculate_check_raise_size(state.facing_bet, fish)
+            return Decision(
+                action=Action.RAISE,
+                amount=amount,
+                display=f"RAISE TO ${amount:.2f}",
+                explanation=f"Raise. Their donk bet usually means a hand — your {_hs(hand_strength)} is stronger. Punish the weak sizing.",
+                calculation=get_made_hand_ev(hand_strength, state.pot_size, state.facing_bet, pot_odds),
+                confidence=0.90
+            )
+        
+        # Overpair / TPTK / TP: call — they probably have a piece but we're ahead
+        if hand_strength in [HandStrength.OVERPAIR, HandStrength.TOP_PAIR_TOP_KICKER, HandStrength.TOP_PAIR]:
+            return Decision(
+                action=Action.CALL,
+                amount=state.facing_bet,
+                display=f"CALL ${state.facing_bet:.2f}",
+                explanation=f"Call. Donk bets at this level usually mean a piece of the board. Your {_hs(hand_strength)} is likely ahead.",
+                calculation=get_made_hand_ev(hand_strength, state.pot_size, state.facing_bet, pot_odds),
+                confidence=0.82
+            )
+        
+        # Draws: call if getting odds
+        if hand_strength in [HandStrength.COMBO_DRAW, HandStrength.FLUSH_DRAW, HandStrength.OESD]:
+            equity = get_draw_equity(hand_strength, state.street)
+            if equity >= pot_odds:
+                return Decision(
+                    action=Action.CALL,
+                    amount=state.facing_bet,
+                    display=f"CALL ${state.facing_bet:.2f}",
+                    explanation=f"Call. Your {_hs(hand_strength)} has a good shot at improving against their likely made hand.",
+                    calculation=f"Equity {equity*100:.0f}% >= {pot_odds*100:.0f}% pot odds",
+                    confidence=0.78
+                )
+        
+        # Gutshot: call small donk bets
+        if hand_strength == HandStrength.GUTSHOT:
+            equity = get_draw_equity(hand_strength, state.street)
+            if equity >= pot_odds and bet_ratio <= 0.33:
+                return Decision(
+                    action=Action.CALL,
+                    amount=state.facing_bet,
+                    display=f"CALL ${state.facing_bet:.2f}",
+                    explanation="Call. Small donk bet gives you the odds for your gutshot.",
+                    calculation=f"Equity {equity*100:.0f}% >= {pot_odds*100:.0f}% pot odds",
+                    confidence=0.62
+                )
+        
+        # Middle pair: call small bets only
+        if hand_strength == HandStrength.MIDDLE_PAIR and bet_ratio <= 0.40:
+            return Decision(
+                action=Action.CALL,
+                amount=state.facing_bet,
+                display=f"CALL ${state.facing_bet:.2f}",
+                explanation=f"Call. Small donk bet — worth peeling with {_hs(hand_strength)} to see a turn.",
+                calculation="Donk bet — adjust for value-heavy range",
+                confidence=0.60
+            )
+        
+        # Everything else: fold
+        return Decision(
+            action=Action.FOLD,
+            amount=None,
+            display="FOLD",
+            explanation=f"Fold. Their donk bet likely means a made hand, and your {_hs(hand_strength)} isn't strong enough.",
+            calculation="Donk bet — adjust for value-heavy range",
+            confidence=0.82
         )
     
     def _facing_check_raise(self, state: GameState) -> Decision:
@@ -2601,7 +2849,7 @@ class PokerDecisionEngine:
                 amount=state.facing_bet,
                 display=f"CALL ${state.facing_bet:.2f}",
                 explanation=f"Call. Respect the check-raise — proceed carefully with {_hs(hand_strength)}.",
-                calculation=None,
+                calculation="Strong enough to call the check-raise",
                 confidence=0.75
             )
         
@@ -2613,7 +2861,7 @@ class PokerDecisionEngine:
                     amount=state.facing_bet,
                     display=f"CALL ${state.facing_bet:.2f}",
                     explanation="Call. This player overplays their hands — your top pair is likely good.",
-                    calculation=None,
+                    calculation="Check-raises are heavily value-weighted — fold",
                     confidence=0.68
                 )
             return Decision(
@@ -2621,7 +2869,7 @@ class PokerDecisionEngine:
                 amount=None,
                 display="FOLD",
                 explanation="Fold. Check-raises mean real strength — top pair isn't enough.",
-                calculation=None,
+                calculation="Check-raises are heavily value-weighted — fold",
                 confidence=0.80
             )
         
@@ -2645,7 +2893,7 @@ class PokerDecisionEngine:
             amount=None,
             display="FOLD",
             explanation="Fold. The check-raise shows real strength — let this one go.",
-            calculation=None,
+            calculation="Checking back to control the pot",
             confidence=0.85
         )
     
@@ -2841,16 +3089,34 @@ def get_decision(
     engine = get_engine()
     decision = engine.get_decision(state)
     
+    # ── FIX 3.1: ROUND BETS TO CLEAN AMOUNTS ──
+    if decision.amount is not None and decision.amount > 0:
+        rounded_amt = round_bet(decision.amount, stakes)
+        if rounded_amt != decision.amount:
+            action_word = "BET" if decision.action == Action.BET else \
+                         "RAISE TO" if decision.action == Action.RAISE else \
+                         "CALL" if decision.action == Action.CALL else \
+                         "ALL-IN" if decision.action == Action.ALL_IN else ""
+            decision = Decision(
+                action=decision.action,
+                amount=rounded_amt,
+                display=f"{action_word} ${rounded_amt:.0f}" if action_word else decision.display,
+                explanation=decision.explanation,
+                calculation=decision.calculation,
+                confidence=decision.confidence,
+                bluff_context=decision.bluff_context,
+                alternative=decision.alternative,
+            )
+    
     # ── Cap bet/raise amounts to remaining stack ──
     # If the recommended bet is ≥90% of stack, convert to ALL-IN
-    # (a weird-sized bet near stack size is worse than a clean shove)
     if decision.amount is not None and decision.amount > 0 and state.our_stack > 0:
         remaining = state.our_stack
         if decision.amount >= remaining * 0.9:
             decision = Decision(
                 action=Action.ALL_IN,
                 amount=round(remaining, 2),
-                display=f"ALL-IN ${remaining:.2f}",
+                display=f"ALL-IN ${remaining:.0f}",
                 explanation=decision.explanation,
                 calculation=f"Stack: ${remaining:.0f} — shove is cleaner than a near-stack bet",
                 confidence=decision.confidence,
