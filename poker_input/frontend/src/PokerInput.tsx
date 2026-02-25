@@ -1864,8 +1864,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         if (key === "2") {
           e.preventDefault()
           setChosenBluffAction("CHECK")
-          setDecision({ ...decision, alternative: undefined })
-          setStep("outcome_select")
+          // Switch to the CHECK decision — normal post-CHECK flow
+          setDecision({ ...decision.alternative })
           return
         }
       }
@@ -2450,8 +2450,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           <button
             onClick={() => {
               setChosenBluffAction("CHECK")
-              setDecision({ ...decision, alternative: undefined })
-              setStep("outcome_select")
+              // Switch to the CHECK decision and stay on showing_decision
+              // This gives the user normal post-CHECK flow (They Bet, → River, etc.)
+              setDecision({ ...alt })
             }}
             style={{
               flex: 1,
