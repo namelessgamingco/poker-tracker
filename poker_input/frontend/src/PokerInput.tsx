@@ -1858,7 +1858,6 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           e.preventDefault()
           setChosenBluffAction("BET")
           setDecision({ ...decision, alternative: undefined })
-          setStep("outcome_select")
           return
         }
         if (key === "2") {
@@ -2417,7 +2416,6 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             onClick={() => {
               setChosenBluffAction("BET")
               setDecision({ ...decision, alternative: undefined })
-              setStep("outcome_select")
             }}
             style={{
               flex: 1,
