@@ -856,6 +856,18 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     return () => clearInterval(keepAlive)
   }, [])
 
+  // Warn on page leave if hand is in progress
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (step !== "position" && step !== "showing_decision") {
+        e.preventDefault()
+        e.returnValue = ""
+      }
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload)
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload)
+  }, [step])
+
   // ---- Focus amount input when step changes ----
   useEffect(() => {
     if ((step === "amount" || step === "limper_count") && amountRef.current) {
@@ -1430,7 +1442,12 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           
         case "player_count":
           setGameState((s) => ({ ...s, num_players: 2 }))
-          setStep("action")
+          if (gameState.action_facing === "none" || gameState.action_facing === "") {
+            setPotStr(gameState.pot_size > 0 ? gameState.pot_size.toString() : "")
+            setStep("pot_size")
+          } else {
+            setStep("action")
+          }
           break
           
         case "villain_position":
@@ -1655,7 +1672,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   const confirmPlayerCount = useCallback((count: number) => {
     setGameState((s) => ({ ...s, num_players: count }))
     const af = gameState.action_facing
-    if (af === "raise" || af === "bet") {
+    if (af === "none" || af === "") {
+      setStep("action")
+    } else if (af === "raise" || af === "bet") {
       setStep("villain_position")
     } else {
       setStep("amount")
@@ -1673,7 +1692,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     const pot = parseFloat(potStr)
     if (isNaN(pot) || pot <= 0) return
     setGameState((s) => ({ ...s, pot_size: pot }))
-    setStep("action")  // Post-flop: ask what action faces us
+    setStep("player_count")
   }, [potStr])
 
   // ---- Handle street change to post-flop ----
@@ -1791,7 +1810,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
 
   // ---- Pre-select villain type from session default ----
   useEffect(() => {
-    if (step === "villain_type" && defaultVillain) {
+    if (step === "villain_type" && defaultVillain && gameState.villain_type === "unknown") {
       setGameState((s) => ({ ...s, villain_type: defaultVillain }))
     }
   }, [step, defaultVillain])
@@ -3809,6 +3828,19 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           </div>
         )}
 
+        {/* Hand in progress reminder */}
+        {step !== "position" && step !== "card1_rank" && step !== "card1_suit" && step !== "card2_rank" && step !== "card2_suit" && (
+          <div style={{
+            marginBottom: 10,
+            textAlign: "center",
+            fontSize: 11,
+            color: "rgba(255,255,255,0.2)",
+            letterSpacing: "0.02em",
+          }}>
+            Hand in progress — navigating away will reset
+          </div>
+        )}
+
         {/* Step-specific UI */}
         {renderStepUI()}
 
@@ -4862,6 +4894,19 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           </span>
         </div>
       )}
+
+        {/* Hand in progress reminder */}
+        {step !== "position" && step !== "card1_rank" && step !== "card1_suit" && step !== "card2_rank" && step !== "card2_suit" && (
+          <div style={{
+            marginBottom: 10,
+            textAlign: "center",
+            fontSize: 11,
+            color: "rgba(255,255,255,0.2)",
+            letterSpacing: "0.02em",
+          }}>
+            Hand in progress — navigating away will reset
+          </div>
+        )}
 
       {/* POSITION BAR */}
       {step === "position" && (

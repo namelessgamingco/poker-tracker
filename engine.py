@@ -1570,7 +1570,89 @@ class PokerDecisionEngine:
         hand_strength = state.hand_strength
         board_texture = state.board_texture or BoardTexture.SEMI_WET
         fish = _is_fish(state)  # TIER1-FIX
-        
+
+        # Multiway c-bet adjustment: tighten range, size up for protection
+        if state.num_players > 2:
+            if hand_strength in [HandStrength.NUTS, HandStrength.MONSTER]:
+                amount = round(state.pot_size * 0.75, 2)
+                if fish:
+                    amount = round(amount * 1.2, 2)
+                return Decision(
+                    action=Action.BET,
+                    amount=amount,
+                    display=f"BET ${amount:.2f}",
+                    explanation=f"Bet bigger for value and protection. Multiple opponents — charge them all.",
+                    calculation=f"Multiway value bet — 75% pot",
+                    confidence=0.92
+                )
+            if hand_strength == HandStrength.TWO_PAIR:
+                amount = round(state.pot_size * 0.66, 2)
+                if fish:
+                    amount = round(amount * 1.2, 2)
+                return Decision(
+                    action=Action.BET,
+                    amount=amount,
+                    display=f"BET ${amount:.2f}",
+                    explanation=f"Bet with two pair. Protect against draws with this many opponents.",
+                    calculation=f"Multiway value bet — 66% pot",
+                    confidence=0.88
+                )
+            if hand_strength in [HandStrength.OVERPAIR, HandStrength.TOP_PAIR_TOP_KICKER]:
+                if board_texture in [BoardTexture.WET, BoardTexture.SEMI_WET]:
+                    return Decision(
+                        action=Action.CHECK,
+                        amount=None,
+                        display="CHECK",
+                        explanation=f"Check. {_hs(hand_strength).capitalize()} isn't strong enough to bet into this many opponents on a draw-heavy board.",
+                        calculation="Multiway + draws = pot control",
+                        confidence=0.80
+                    )
+                amount = round(state.pot_size * 0.50, 2)
+                return Decision(
+                    action=Action.BET,
+                    amount=amount,
+                    display=f"BET ${amount:.2f}",
+                    explanation=f"Bet with {_hs(hand_strength)}. Dry board — charge worse hands, but keep the sizing controlled.",
+                    calculation=f"Multiway value bet — 50% pot",
+                    confidence=0.78
+                )
+            if hand_strength == HandStrength.TOP_PAIR:
+                if board_texture == BoardTexture.DRY:
+                    amount = round(state.pot_size * 0.40, 2)
+                    return Decision(
+                        action=Action.BET,
+                        amount=amount,
+                        display=f"BET ${amount:.2f}",
+                        explanation=f"Small bet with top pair. Dry board helps but multiple opponents means caution.",
+                        calculation=f"Multiway thin value — 40% pot",
+                        confidence=0.70
+                    )
+                return Decision(
+                    action=Action.CHECK,
+                    amount=None,
+                    display="CHECK",
+                    explanation=f"Check. Top pair isn't strong enough to bet into this many opponents.",
+                    calculation="Multiway + top pair = check",
+                    confidence=0.78
+                )
+            if hand_strength in [HandStrength.COMBO_DRAW, HandStrength.FLUSH_DRAW, HandStrength.OESD]:
+                return Decision(
+                    action=Action.CHECK,
+                    amount=None,
+                    display="CHECK",
+                    explanation=f"Check. Too many opponents to semi-bluff — you need fold equity to bet draws.",
+                    calculation="Multiway = no bluffing",
+                    confidence=0.80
+                )
+            return Decision(
+                action=Action.CHECK,
+                amount=None,
+                display="CHECK",
+                explanation=f"Check. Not strong enough to bet into multiple opponents.",
+                calculation="Multiway = check weak hands",
+                confidence=0.82
+            )
+
         # Strong hands - always c-bet (size up vs fish)
         if hand_strength in [HandStrength.NUTS, HandStrength.MONSTER, HandStrength.TWO_PAIR, 
                             HandStrength.OVERPAIR, HandStrength.TOP_PAIR_TOP_KICKER]:
@@ -1701,6 +1783,58 @@ class PokerDecisionEngine:
         hand_strength = state.hand_strength
         fish = _is_fish(state)
         
+        # Multiway: only bet strong value hands, no bluffs or thin value
+        if state.num_players > 2:
+            if hand_strength in [HandStrength.NUTS, HandStrength.MONSTER]:
+                amount = round(state.pot_size * 0.75, 2)
+                if fish:
+                    amount = round(amount * 1.2, 2)
+                return Decision(
+                    action=Action.BET,
+                    amount=amount,
+                    display=f"BET ${amount:.2f}",
+                    explanation=f"Keep betting for value. {_hs(hand_strength).capitalize()} is strong enough multiway.",
+                    calculation="Multiway value bet — 75% pot",
+                    confidence=0.90
+                )
+            if hand_strength == HandStrength.TWO_PAIR:
+                amount = round(state.pot_size * 0.66, 2)
+                return Decision(
+                    action=Action.BET,
+                    amount=amount,
+                    display=f"BET ${amount:.2f}",
+                    explanation=f"Bet with two pair for value and protection against multiple opponents.",
+                    calculation="Multiway value bet — 66% pot",
+                    confidence=0.85
+                )
+            if hand_strength in [HandStrength.OVERPAIR, HandStrength.TOP_PAIR_TOP_KICKER]:
+                if state.street == Street.TURN:
+                    amount = round(state.pot_size * 0.50, 2)
+                    return Decision(
+                        action=Action.BET,
+                        amount=amount,
+                        display=f"BET ${amount:.2f}",
+                        explanation=f"Bet with {_hs(hand_strength)}. Still strong enough for a controlled bet multiway.",
+                        calculation="Multiway value bet — 50% pot",
+                        confidence=0.75
+                    )
+                return Decision(
+                    action=Action.CHECK,
+                    amount=None,
+                    display="CHECK",
+                    explanation=f"Check. {_hs(hand_strength).capitalize()} on the river multiway — control the pot.",
+                    calculation="Multiway pot control",
+                    confidence=0.78
+                )
+            return Decision(
+                action=Action.CHECK,
+                amount=None,
+                display="CHECK",
+                explanation=f"Check. Not strong enough to bet into multiple opponents on the {state.street.value}.",
+                calculation="Multiway = check",
+                confidence=0.80
+            )
+
         # ── FIX 2.4: DELAYED C-BET ──
         # If we checked the flop as aggressor and it's now the turn,
         # many hands benefit from a delayed c-bet (especially on turns
@@ -1921,6 +2055,39 @@ class PokerDecisionEngine:
                     confidence=0.82
                 )
         
+        # Multiway as defender: only bet monsters and strong value
+        if state.num_players > 2:
+            if hand_strength in [HandStrength.NUTS, HandStrength.MONSTER]:
+                amount = round(state.pot_size * 0.75, 2)
+                if fish:
+                    amount = round(amount * 1.2, 2)
+                return Decision(
+                    action=Action.BET,
+                    amount=amount,
+                    display=f"BET ${amount:.2f}",
+                    explanation=f"Bet big with {_hs(hand_strength)}. You're ahead of everyone — extract max value.",
+                    calculation="Multiway value bet — 75% pot",
+                    confidence=0.90
+                )
+            if hand_strength == HandStrength.TWO_PAIR:
+                amount = round(state.pot_size * 0.60, 2)
+                return Decision(
+                    action=Action.BET,
+                    amount=amount,
+                    display=f"BET ${amount:.2f}",
+                    explanation=f"Bet with two pair. Protect against draws with this many opponents.",
+                    calculation="Multiway value bet — 60% pot",
+                    confidence=0.82
+                )
+            return Decision(
+                action=Action.CHECK,
+                amount=None,
+                display="CHECK",
+                explanation=f"Check. {_hs(hand_strength).capitalize()} isn't strong enough to lead into multiple opponents.",
+                calculation="Multiway as defender = check",
+                confidence=0.78
+            )
+
         # ── FIX 2.3: DEFENDER VALUE BETTING ──
         # Monsters vs fish — just bet, they'll call with worse
         if hand_strength in [HandStrength.NUTS, HandStrength.MONSTER]:
