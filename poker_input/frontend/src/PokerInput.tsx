@@ -4574,30 +4574,11 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               💰 How Big Was the Pot?
             </div>
 
-            {/* "You're in" reference */}
-            <div style={{
-              padding: "10px 14px",
-              marginBottom: 12,
-              background: "rgba(255,255,255,0.03)",
-              borderRadius: 8,
-              border: `1px solid ${theme.border}`,
-              fontSize: 13,
-              color: theme.textMuted,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}>
-              <span>You were in for</span>
-              <span style={{ fontWeight: 700, color: theme.text, fontFamily: theme.mono }}>
-                ${currentInvestment.toFixed(0)}
-              </span>
-            </div>
-
             {/* Amount input */}
             <div style={{ position: "relative", marginBottom: 12 }}>
               <span style={{
                 position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)",
-                fontSize: 20, fontWeight: 700, color: theme.textMuted, pointerEvents: "none",
+                fontSize: 16, fontWeight: 700, color: theme.textMuted, pointerEvents: "none",
               }}>$</span>
               <input
                 ref={plInputRef}
@@ -4638,7 +4619,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
                 opacity: (!plInputStr || parseFloat(plInputStr) <= 0) ? 0.4 : 1,
               }}
             >
-              Confirm — Pot ${plInputStr || "0"} → Profit +${Math.max(0, (parseFloat(plInputStr) || 0) - currentInvestment).toFixed(0)}
+              Confirm  ·  +${Math.max(0, (parseFloat(plInputStr) || 0) - currentInvestment).toFixed(0)} profit
             </button>
 
             <button
@@ -5543,28 +5524,10 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             💰 How Big Was the Pot?
           </div>
 
-          <div style={{
-            padding: "10px 14px",
-            marginBottom: 12,
-            background: "rgba(255,255,255,0.03)",
-            borderRadius: 8,
-            border: `1px solid ${theme.border}`,
-            fontSize: 13,
-            color: theme.textMuted,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-          }}>
-            <span>You were in for</span>
-            <span style={{ fontWeight: 700, color: theme.text, fontFamily: theme.mono }}>
-              ${currentInvestment.toFixed(0)}
-            </span>
-          </div>
-
           <div style={{ position: "relative", marginBottom: 12 }}>
             <span style={{
               position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)",
-              fontSize: 20, fontWeight: 700, color: theme.textMuted, pointerEvents: "none",
+              fontSize: 16, fontWeight: 700, color: theme.textMuted, pointerEvents: "none",
               zIndex: 1,
             }}>$</span>
             <input
