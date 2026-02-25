@@ -739,7 +739,7 @@ def render_session_header():
     </script>
     """, height=0)
 
-    # Navigation guard: intercept sidebar clicks + back button during active hand
+    # Navigation guard: intercept sidebar clicks during active hand
     st.components.v1.html("""
     <script>
     (function() {
@@ -748,7 +748,6 @@ def render_session_header():
         if (parent.__navGuardActive) return;
         parent.__navGuardActive = true;
 
-        // --- Sidebar link click interception ---
         doc.addEventListener('click', function(e) {
             if (!parent.__pokerHandActive) return;
             var el = e.target;
@@ -758,7 +757,7 @@ def render_session_header():
                              doc.querySelector('.stSidebar') ||
                              doc.querySelector('section[data-testid="stSidebar"]');
                     if (sb && sb.contains(el)) {
-                        if (!parent.confirm('Hand in progress — leave this page?\\nYour current hand will be lost.')) {
+                        if (!parent.confirm('Hand in progress. Leave this page? Your current hand will be lost.')) {
                             e.preventDefault();
                             e.stopPropagation();
                             e.stopImmediatePropagation();
@@ -771,21 +770,10 @@ def render_session_header():
                 el = el.parentElement;
             }
         }, true);
-
-        // --- Back button interception ---
-        parent.history.pushState({pokerGuard: true}, '');
-        parent.addEventListener('popstate', function(e) {
-            if (parent.__pokerHandActive) {
-                parent.history.pushState({pokerGuard: true}, '');
-                if (parent.confirm('Hand in progress — go back?\\nYour current hand will be lost.')) {
-                    parent.__pokerHandActive = false;
-                    parent.history.back();
-                }
-            }
-        });
     })();
     </script>
     """, height=0)
+
 
 # =============================================================================
 # SESSION ALERTS
@@ -1538,14 +1526,6 @@ def render_setup_mode():
 def render_play_mode():
     """Main play loop: header → alerts → React component → process events."""
 
-    # ── Deferred DB stats update (runs AFTER the decision has been sent to the UI) ──
-    pending_stats = st.session_state.pop("_pending_stats_update", None)
-    if pending_stats:
-        try:
-            increment_session_stats(pending_stats, hands=0, decisions=1)
-        except Exception:
-            pass  # Non-critical
-
     # Modals take priority
     if render_modals():
         return
@@ -1706,9 +1686,6 @@ def handle_decision_request(game_state: dict, session: dict):
                 "table2_decision": game_state.get("table2_decision"),
                 "table2_board_entry_index": game_state.get("table2_board_entry_index"),
             }
-
-        # Defer stats update to next render cycle — never block the decision
-        st.session_state._pending_stats_update = session.get("id")
 
     except Exception as e:
         print(f"[engine] Decision request failed: {e}")
