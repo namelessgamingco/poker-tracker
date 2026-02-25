@@ -1268,6 +1268,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     setTimeout(() => plInputRef.current?.focus(), 100)
   }, [gameState, decision, _sendHandCompleteToStreamlit])
 
+  // ---- Helper: "You're in" display for current hand ----
+  const currentInvestment = gameState.total_invested + (decision?.amount || 0)
+
   // ---- Confirm P/L input and send hand complete ----
   const confirmPlInput = useCallback(() => {
     const val = parseFloat(plInputStr)
@@ -1277,9 +1280,6 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     const profitLoss = pendingOutcome === "won" ? (val - currentInvestment) : -val
     _sendHandCompleteToStreamlit(pendingOutcome, profitLoss)
   }, [plInputStr, pendingOutcome, currentInvestment, _sendHandCompleteToStreamlit])
-
-  // ---- Helper: "You're in" display for current hand ----
-  const currentInvestment = gameState.total_invested + (decision?.amount || 0)
 
   // ---- They raised me back — re-query same street with new action ----
   const theyRaisedMe = useCallback(() => {
