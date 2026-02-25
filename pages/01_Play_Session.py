@@ -739,6 +739,53 @@ def render_session_header():
     </script>
     """, height=0)
 
+    # Navigation guard: intercept sidebar clicks + back button during active hand
+    st.components.v1.html("""
+    <script>
+    (function() {
+        var parent = window.parent;
+        var doc = parent.document;
+        if (parent.__navGuardActive) return;
+        parent.__navGuardActive = true;
+
+        // --- Sidebar link click interception ---
+        doc.addEventListener('click', function(e) {
+            if (!parent.__pokerHandActive) return;
+            var el = e.target;
+            while (el && el !== doc) {
+                if (el.tagName === 'A' && el.href) {
+                    var sb = doc.querySelector('[data-testid="stSidebar"]') ||
+                             doc.querySelector('.stSidebar') ||
+                             doc.querySelector('section[data-testid="stSidebar"]');
+                    if (sb && sb.contains(el)) {
+                        if (!parent.confirm('Hand in progress — leave this page?\\nYour current hand will be lost.')) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            e.stopImmediatePropagation();
+                            return;
+                        } else {
+                            parent.__pokerHandActive = false;
+                        }
+                    }
+                }
+                el = el.parentElement;
+            }
+        }, true);
+
+        // --- Back button interception ---
+        parent.history.pushState({pokerGuard: true}, '');
+        parent.addEventListener('popstate', function(e) {
+            if (parent.__pokerHandActive) {
+                parent.history.pushState({pokerGuard: true}, '');
+                if (parent.confirm('Hand in progress — go back?\\nYour current hand will be lost.')) {
+                    parent.__pokerHandActive = false;
+                    parent.history.back();
+                }
+            }
+        });
+    })();
+    </script>
+    """, height=0)
 
 # =============================================================================
 # SESSION ALERTS
@@ -1522,6 +1569,14 @@ def render_play_mode():
     stakes = session.get("stakes", "$1/$2")
     bb_size = float(session.get("bb_size", 2.0))
 
+    # Clear stale hand state on fresh page entry (after sidebar/back navigation)
+    if "restore_rerun_id" not in st.session_state:
+        st.session_state.restore_rerun_id = None
+    if st.session_state.get("two_table_restore") and st.session_state.get("_pending_rerun_id") != st.session_state.restore_rerun_id:
+        st.session_state.two_table_restore = None
+        clear_hand_state()
+    st.session_state.restore_rerun_id = None
+
     restore = st.session_state.get("two_table_restore")
     component_value = poker_input(
         mode=st.session_state.input_mode,
@@ -1631,10 +1686,8 @@ def handle_decision_request(game_state: dict, session: dict):
         # DB stats update — wrapped so it never blocks the decision
         session_id = session.get("id")
         if session_id:
-            try:
-                increment_session_stats(session_id, hands=0, decisions=1)
-            except Exception:
-                pass  # Non-critical — don't block gameplay for a counter
+            import threading
+            threading.Thread(target=lambda: increment_session_stats(session_id, hands=0, decisions=1), daemon=True).start()
 
 # Preserve two-table state through rerun
         if game_state.get("show_second_table"):
@@ -1667,6 +1720,12 @@ def handle_decision_request(game_state: dict, session: dict):
             "calculation": "",
         }
         st.session_state.decision_table_id = game_state.get("table_id", 1)
+
+    # Mark rerun as intentional so render_play_mode keeps restore data
+    import uuid
+    rerun_id = str(uuid.uuid4())
+    st.session_state._pending_rerun_id = rerun_id
+    st.session_state.restore_rerun_id = rerun_id
 
     st.rerun()
 

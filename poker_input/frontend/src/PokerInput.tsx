@@ -856,16 +856,32 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     return () => clearInterval(keepAlive)
   }, [])
 
-  // Warn on page leave if hand is in progress
+  // Navigation guard: protect against accidental page leave during hand
   useEffect(() => {
+    const handInProgress = step !== "position"
+
+    // Signal parent frame about hand state (for sidebar/back button interception)
+    try {
+      const p = window as any
+      if (p.parent) p.parent.__pokerHandActive = handInProgress
+    } catch (e) {}
+
+    // beforeunload: protects tab close + page refresh
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (step !== "position" && step !== "showing_decision") {
+      if (handInProgress && step !== "showing_decision") {
         e.preventDefault()
         e.returnValue = ""
       }
     }
     window.addEventListener("beforeunload", handleBeforeUnload)
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload)
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload)
+      try {
+        const p = window as any
+        if (p.parent) p.parent.__pokerHandActive = false
+      } catch (e) {}
+    }
   }, [step])
 
   // ---- Focus amount input when step changes ----
@@ -4339,13 +4355,13 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         {/* PLAYER COUNT - FIX 1.2 */}
         {step === "player_count" && (
           <div>
-            <div style={S.sectionLabel}>Players in the Pot</div>
+            <div style={S.sectionLabel}>Players Still in Hand</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
               {[
-                { count: 2, label: "Heads Up", desc: "Just us two", key: "2" },
-                { count: 3, label: "3-Way", desc: "3 players total", key: "3" },
-                { count: 4, label: "4-Way", desc: "4 players total", key: "4" },
-                { count: 5, label: "5+", desc: "Big multiway pot", key: "5" },
+                { count: 2, label: "Heads Up", desc: "You + 1 opponent", key: "2" },
+                { count: 3, label: "3-Way", desc: "You + 2 opponents", key: "3" },
+                { count: 4, label: "4-Way", desc: "You + 3 opponents", key: "4" },
+                { count: 5, label: "5+", desc: "You + 4+ opponents", key: "5" },
               ].map((p) => (
                 <button
                   key={p.count}
@@ -5302,13 +5318,13 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       {/* PLAYER COUNT - FIX 1.2 */}
       {step === "player_count" && (
         <div>
-          <div style={S.sectionLabel}>Players in the Pot</div>
+          <div style={S.sectionLabel}>Players Still in Hand</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
             {[
-              { count: 2, label: "Heads Up", desc: "Just us two", key: "2" },
-              { count: 3, label: "3-Way", desc: "3 players total", key: "3" },
-              { count: 4, label: "4-Way", desc: "4 players total", key: "4" },
-              { count: 5, label: "5+", desc: "Big multiway pot", key: "5" },
+              { count: 2, label: "Heads Up", desc: "You + 1 opponent", key: "2" },
+              { count: 3, label: "3-Way", desc: "You + 2 opponents", key: "3" },
+              { count: 4, label: "4-Way", desc: "You + 3 opponents", key: "4" },
+              { count: 5, label: "5+", desc: "You + 4+ opponents", key: "5" },
             ].map((p) => (
               <button
                 key={p.count}
