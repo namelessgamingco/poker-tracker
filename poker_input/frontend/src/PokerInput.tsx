@@ -4861,6 +4861,27 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         )}
       </div>
 
+      {/* Persistent investment tracker — visible throughout the hand */}
+      {currentInvestment > 0 && step !== "position" && step !== "card1_rank" && step !== "card1_suit" && step !== "card2_rank" && step !== "card2_suit" && (
+        <div style={{
+          marginBottom: 12,
+          padding: "5px 14px",
+          background: "rgba(255,179,0,0.04)",
+          borderRadius: 6,
+          border: "1px solid rgba(255,179,0,0.12)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
+          fontSize: 12,
+        }}>
+          <span style={{ color: theme.textMuted }}>In for</span>
+          <span style={{ fontWeight: 700, color: theme.amber, fontFamily: theme.mono, fontSize: 14 }}>
+            ${currentInvestment.toFixed(0)}
+          </span>
+        </div>
+      )}
+
       {/* POSITION BAR */}
       {step === "position" && (
         <div>
