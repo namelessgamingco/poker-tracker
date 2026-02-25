@@ -848,6 +848,14 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     Streamlit.setFrameHeight()
   })
 
+  // Keep-alive ping to prevent Streamlit WebSocket timeout
+  useEffect(() => {
+    const keepAlive = setInterval(() => {
+      Streamlit.setFrameHeight()
+    }, 30000)
+    return () => clearInterval(keepAlive)
+  }, [])
+
   // ---- Focus amount input when step changes ----
   useEffect(() => {
     if ((step === "amount" || step === "limper_count") && amountRef.current) {
@@ -1265,9 +1273,10 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     const val = parseFloat(plInputStr)
     if (isNaN(val) || val < 0) return
     if (!pendingOutcome) return
-    const profitLoss = pendingOutcome === "won" ? val : -val
+    // User enters total pot size — subtract their investment to get profit
+    const profitLoss = pendingOutcome === "won" ? (val - currentInvestment) : -val
     _sendHandCompleteToStreamlit(pendingOutcome, profitLoss)
-  }, [plInputStr, pendingOutcome, _sendHandCompleteToStreamlit])
+  }, [plInputStr, pendingOutcome, currentInvestment, _sendHandCompleteToStreamlit])
 
   // ---- Helper: "You're in" display for current hand ----
   const currentInvestment = gameState.total_invested + (decision?.amount || 0)
@@ -3800,6 +3809,27 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           )}
         </div>
 
+        {/* Persistent investment tracker — visible throughout the hand */}
+        {currentInvestment > 0 && step !== "position" && step !== "card1_rank" && step !== "card1_suit" && step !== "card2_rank" && step !== "card2_suit" && step !== "showing_decision" && (
+          <div style={{
+            marginBottom: 12,
+            padding: "5px 14px",
+            background: "rgba(255,179,0,0.04)",
+            borderRadius: 6,
+            border: "1px solid rgba(255,179,0,0.12)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 8,
+            fontSize: 12,
+          }}>
+            <span style={{ color: theme.textMuted }}>In for</span>
+            <span style={{ fontWeight: 700, color: theme.amber, fontFamily: theme.mono, fontSize: 14 }}>
+              ${currentInvestment.toFixed(0)}
+            </span>
+          </div>
+        )}
+
         {/* Step-specific UI */}
         {renderStepUI()}
 
@@ -4562,7 +4592,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               ...S.sectionLabel,
               color: theme.green,
             }}>
-              💰 How Much Did You Profit?
+              💰 How Big Was the Pot?
             </div>
 
             {/* "You're in" reference */}
@@ -4597,7 +4627,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
                 value={plInputStr}
                 onChange={(e) => setPlInputStr(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); confirmPlInput() } }}
-                placeholder="Profit amount"
+                placeholder="Total pot"
                 style={{
                   ...S.input,
                   paddingLeft: 32,
@@ -4611,12 +4641,12 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
 
             {/* Helper text */}
             <div style={{ fontSize: 11, color: theme.textDim, marginBottom: 12, lineHeight: 1.4 }}>
-              Enter your net profit — what you collected minus what you put in.
+              Enter the total pot you won — we'll calculate your profit.
             </div>
 
             <button
               onClick={confirmPlInput}
-              disabled={!plInputStr || parseFloat(plInputStr) < 0 || isNaN(parseFloat(plInputStr))}
+              disabled={!plInputStr || parseFloat(plInputStr) <= 0 || isNaN(parseFloat(plInputStr))}
               style={{
                 ...S.btn,
                 width: "100%",
@@ -4626,10 +4656,10 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
                 background: "rgba(0,200,83,0.15)",
                 borderColor: "rgba(0,200,83,0.4)",
                 color: theme.green,
-                opacity: (!plInputStr || parseFloat(plInputStr) < 0) ? 0.4 : 1,
+                opacity: (!plInputStr || parseFloat(plInputStr) <= 0) ? 0.4 : 1,
               }}
             >
-              Confirm +${plInputStr || "0"} Profit
+              Confirm — Pot ${plInputStr || "0"} → Profit +${Math.max(0, (parseFloat(plInputStr) || 0) - currentInvestment).toFixed(0)}
             </button>
 
             <button
@@ -5510,7 +5540,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             ...S.sectionLabel,
             color: theme.green,
           }}>
-            💰 How Much Did You Profit?
+            💰 How Big Was the Pot?
           </div>
 
           <div style={{
@@ -5544,7 +5574,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               value={plInputStr}
               onChange={(e) => setPlInputStr(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); confirmPlInput() } }}
-              placeholder="0"
+              placeholder="Total pot"
               style={{
                 ...S.input,
                 width: "100%",
@@ -5558,12 +5588,12 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           </div>
 
           <div style={{ fontSize: 11, color: theme.textDim, marginBottom: 12, lineHeight: 1.4 }}>
-            Enter your net profit — what you collected minus what you put in.
+            Enter the total pot you won — we'll calculate your profit.
           </div>
 
           <button
             onClick={confirmPlInput}
-            disabled={!plInputStr || parseFloat(plInputStr) < 0 || isNaN(parseFloat(plInputStr))}
+            disabled={!plInputStr || parseFloat(plInputStr) <= 0 || isNaN(parseFloat(plInputStr))}
             style={{
               ...S.btn,
               width: "100%",
@@ -5573,10 +5603,10 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               background: "rgba(0,200,83,0.15)",
               borderColor: "rgba(0,200,83,0.4)",
               color: theme.green,
-              opacity: (!plInputStr || parseFloat(plInputStr) < 0) ? 0.4 : 1,
+              opacity: (!plInputStr || parseFloat(plInputStr) <= 0) ? 0.4 : 1,
             }}
           >
-            Confirm +${plInputStr || "0"} Profit
+            Confirm — Pot ${plInputStr || "0"} → Profit +${Math.max(0, (parseFloat(plInputStr) || 0) - currentInvestment).toFixed(0)}
           </button>
 
           <button
