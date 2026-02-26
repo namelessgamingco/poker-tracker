@@ -10,8 +10,28 @@ from datetime import datetime, timezone
 import streamlit as st
 import httpx
 
-from supabase_client import get_supabase, get_supabase_admin, reset_supabase_client
+from supabase_client import get_supabase, get_supabase_admin, get_supabase_admin_fresh, reset_supabase_client
 
+def _admin_query_with_retry(query_fn, label="auth"):
+    """Run an admin DB query with one retry on stale connection."""
+    try:
+        return query_fn(get_supabase_admin())
+    except Exception as e:
+        err = str(e).lower()
+        retryable = any(k in err for k in [
+            "server disconnected", "'nonetype'", "connection",
+            "closed", "broken pipe", "timed out", "reset by peer",
+        ])
+        if retryable:
+            import time as _time
+            _time.sleep(0.5)
+            try:
+                print(f"[auth] {label}: retrying with fresh client...")
+                return query_fn(get_supabase_admin_fresh())
+            except Exception as retry_err:
+                print(f"[auth] {label}: retry also failed: {retry_err}")
+                raise retry_err
+        raise
 
 # ---------- Helpers ----------
 
@@ -272,34 +292,29 @@ def _ensure_profile(user_id: str, email: str) -> Optional[dict]:
     """
     Check if profile exists, create if not.
     Returns profile dict or None on failure.
-    Uses admin client to bypass RLS.
+    Uses admin client to bypass RLS. Retries on stale connections.
     """
+    # Fetch existing profile WITH RETRY
     try:
-        sb_admin = get_supabase_admin()
-    except Exception as e:
-        st.error(f"Database configuration error: {e}")
-        return None
+        def _fetch(sb_admin):
+            resp = (
+                sb_admin.table("poker_profiles")
+                .select("*")
+                .eq("user_id", user_id)
+                .maybe_single()
+                .execute()
+            )
+            return resp.data if hasattr(resp, "data") else None
 
-    # Try to fetch existing profile
-    try:
-        resp = (
-            sb_admin.table("poker_profiles")
-            .select("*")
-            .eq("user_id", user_id)
-            .maybe_single()
-            .execute()
-        )
-        
-        profile = resp.data if hasattr(resp, "data") else None
-        
+        profile = _admin_query_with_retry(_fetch, "ensure_profile_fetch")
         if profile:
             return profile
-            
+
     except Exception as e:
-        st.error(f"Error checking profile: {e}")
+        print(f"[auth] _ensure_profile fetch failed after retry: {e}")
         return None
 
-    # Create new profile (shouldn't happen normally - admin creates users)
+    # Create new profile WITH RETRY (shouldn't happen normally - admin creates users)
     try:
         new_profile = {
             "user_id": user_id,
@@ -312,14 +327,17 @@ def _ensure_profile(user_id: str, email: str) -> Optional[dict]:
             "user_mode": "balanced",
             "default_stakes": "$1/$2",
         }
-        
-        sb_admin.table("poker_profiles").insert(new_profile).execute()
+
+        def _create(sb_admin):
+            sb_admin.table("poker_profiles").insert(new_profile).execute()
+            return new_profile
+
+        result = _admin_query_with_retry(_create, "ensure_profile_create")
         st.session_state["profile_created"] = True
-        
-        return new_profile
-        
+        return result
+
     except Exception as e:
-        st.error(f"Could not create profile: {e}")
+        print(f"[auth] _ensure_profile create failed after retry: {e}")
         return None
 
 
@@ -531,8 +549,16 @@ def require_auth():
     user_id = str(user_id)
     email = str(st.session_state.get("email") or "")
     
-    # Profile gate
+    # Profile gate (with cached fallback for transient DB errors)
     profile = _ensure_profile(user_id, email)
+    
+    if not profile:
+        # Fallback: use cached profile if we had one from a previous successful fetch
+        cache_key = f"_profile_cache_{user_id}"
+        cached = st.session_state.get(cache_key)
+        if cached and isinstance(cached, dict) and cached.get("data"):
+            print("[auth] Using cached profile after _ensure_profile failure")
+            profile = cached["data"]
     
     if not profile:
         st.error("Could not load or create your profile. Please contact support.")
@@ -600,26 +626,26 @@ def check_access_for_session_start() -> tuple[bool, str]:
     if not user:
         return False, "Not authenticated"
     
-    # Get fresh profile data
+    # Get fresh profile data WITH RETRY
     try:
         if isinstance(user, dict):
             user_id = user.get("id") or user.get("user_id") or user.get("sub")
         else:
             user_id = getattr(user, "id", None) or getattr(user, "user_id", None)
         
-        sb_admin = get_supabase_admin()
-        resp = (
-            sb_admin.table("poker_profiles")
-            .select("subscription_status, admin_override_active, trial_ends_at, payment_link_url")
-            .eq("user_id", str(user_id))
-            .single()
-            .execute()
-        )
+        def _fetch_sub(sb_admin):
+            resp = (
+                sb_admin.table("poker_profiles")
+                .select("subscription_status, admin_override_active, trial_ends_at, payment_link_url")
+                .eq("user_id", str(user_id))
+                .single()
+                .execute()
+            )
+            if not resp.data:
+                raise Exception("Profile not found")
+            return resp.data
         
-        if not resp.data:
-            return False, "Profile not found"
-        
-        profile = resp.data
+        profile = _admin_query_with_retry(_fetch_sub, "check_access_session")
         has_access, status_msg, _ = check_subscription_access(profile)
         
         if not has_access:

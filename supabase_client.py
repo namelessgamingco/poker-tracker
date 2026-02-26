@@ -66,8 +66,8 @@ _supabase_admin_client: Optional[Client] = None
 _supabase_client_created_at: float = 0
 _supabase_admin_client_created_at: float = 0
 
-# Recreate clients every 3 minutes to prevent stale connections
-_CLIENT_MAX_AGE_SECONDS = 180
+# Recreate clients every 2 minutes to prevent stale connections
+_CLIENT_MAX_AGE_SECONDS = 120
 
 
 def get_supabase() -> Client:
@@ -76,7 +76,7 @@ def get_supabase() -> Client:
     
     This client respects Row Level Security (RLS).
     Use for normal user operations.
-    Auto-recreates every 10 minutes to prevent stale connections.
+    Auto-recreates every 2 minutes to prevent stale connections.
     """
     global _supabase_client, _supabase_client_created_at
     
@@ -110,7 +110,7 @@ def get_supabase_admin() -> Client:
     - Creating users
     - Managing profiles across all users
     - Webhook handlers
-    Auto-recreates every 10 minutes to prevent stale connections.
+    Auto-recreates every 2 minutes to prevent stale connections.
     """
     global _supabase_admin_client, _supabase_admin_client_created_at
     

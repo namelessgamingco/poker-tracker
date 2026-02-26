@@ -501,6 +501,9 @@ def init_session_state():
         "current_loss_streak": 0,
         "tilt_banner_shown_at_streak": 0,
         "tilt_banner_shown_at_pl": None,
+
+        # Rerun tracking — True when we trigger st.rerun() ourselves
+        "_intentional_rerun": False,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -748,24 +751,41 @@ def render_session_header():
         if (parent.__navGuardActive) return;
         parent.__navGuardActive = true;
 
+        function isSidebarEl(el) {
+            var sb = doc.querySelector('section[data-testid="stSidebar"]')
+                  || doc.querySelector('[data-testid="stSidebar"]')
+                  || doc.querySelector('.stSidebar');
+            return sb && sb.contains(el);
+        }
+
         doc.addEventListener('click', function(e) {
             if (!parent.__pokerHandActive) return;
             var el = e.target;
-            while (el && el !== doc) {
-                if (el.tagName === 'A' && el.href) {
-                    var sb = doc.querySelector('[data-testid="stSidebar"]') ||
-                             doc.querySelector('.stSidebar') ||
-                             doc.querySelector('section[data-testid="stSidebar"]');
-                    if (sb && sb.contains(el)) {
-                        if (!parent.confirm('Hand in progress. Leave this page? Your current hand will be lost.')) {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            e.stopImmediatePropagation();
-                            return;
-                        } else {
-                            parent.__pokerHandActive = false;
-                        }
+            while (el && el !== doc.body) {
+                // Catch <a> links inside sidebar
+                if (el.tagName === 'A' && el.href && isSidebarEl(el)) {
+                    if (!parent.confirm('Hand in progress. Leave this page? Your current hand will be lost.')) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.stopImmediatePropagation();
+                        return false;
+                    } else {
+                        parent.__pokerHandActive = false;
                     }
+                    break;
+                }
+                // Catch Streamlit page-link elements (newer versions use data-testid)
+                var tid = el.getAttribute && el.getAttribute('data-testid');
+                if (tid && (tid === 'stSidebarNavLink' || tid === 'stSidebarNavItems') && isSidebarEl(el)) {
+                    if (!parent.confirm('Hand in progress. Leave this page? Your current hand will be lost.')) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        e.stopImmediatePropagation();
+                        return false;
+                    } else {
+                        parent.__pokerHandActive = false;
+                    }
+                    break;
                 }
                 el = el.parentElement;
             }
@@ -1550,14 +1570,16 @@ def render_play_mode():
     bb_size = float(session.get("bb_size", 2.0))
 
     # Clear stale hand state on fresh page entry (after sidebar/back navigation)
-    if "restore_rerun_id" not in st.session_state:
-        st.session_state.restore_rerun_id = None
-    if st.session_state.get("_pending_rerun_id") != st.session_state.restore_rerun_id:
-        # Not an intentional rerun — clear any stale hand/decision state
-        if st.session_state.get("two_table_restore") or st.session_state.get("current_decision_dict"):
+    # After decision_request or hand_complete, we set _intentional_rerun = True
+    # then call st.rerun(). On that rerun we consume the flag.
+    # Any OTHER rerun (page nav, sidebar click, back button) won't have the flag,
+    # so we know it's a fresh entry and must clear stale decision/restore state.
+    if st.session_state.get("_intentional_rerun"):
+        st.session_state._intentional_rerun = False
+    else:
+        if st.session_state.get("current_decision_dict") or st.session_state.get("two_table_restore"):
             st.session_state.two_table_restore = None
             clear_hand_state()
-    st.session_state.restore_rerun_id = None
 
     restore = st.session_state.get("two_table_restore")
     component_value = poker_input(
@@ -1700,12 +1722,8 @@ def handle_decision_request(game_state: dict, session: dict):
         }
         st.session_state.decision_table_id = game_state.get("table_id", 1)
 
-    # Mark rerun as intentional so render_play_mode keeps restore data
-    import uuid
-    rerun_id = str(uuid.uuid4())
-    st.session_state._pending_rerun_id = rerun_id
-    st.session_state.restore_rerun_id = rerun_id
-
+    # Mark rerun as intentional so render_play_mode keeps restore/decision data
+    st.session_state._intentional_rerun = True
     st.rerun()
 
 
@@ -1820,6 +1838,7 @@ def handle_hand_complete(component_value: dict, session: dict):
 
     # Clear decision state so component resets
     clear_hand_state()
+    st.session_state._intentional_rerun = True
     st.rerun()
 
 
