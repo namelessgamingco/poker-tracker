@@ -502,7 +502,7 @@ def init_session_state():
         "tilt_banner_shown_at_streak": 0,
         "tilt_banner_shown_at_pl": None,
 
-        # Rerun tracking — True when we trigger st.rerun() ourselves
+        # Rerun tracking — True only when OUR code triggers st.rerun()
         "_intentional_rerun": False,
     }
     for key, value in defaults.items():
@@ -762,7 +762,6 @@ def render_session_header():
             if (!parent.__pokerHandActive) return;
             var el = e.target;
             while (el && el !== doc.body) {
-                // Catch <a> links inside sidebar
                 if (el.tagName === 'A' && el.href && isSidebarEl(el)) {
                     if (!parent.confirm('Hand in progress. Leave this page? Your current hand will be lost.')) {
                         e.preventDefault();
@@ -774,7 +773,6 @@ def render_session_header():
                     }
                     break;
                 }
-                // Catch Streamlit page-link elements (newer versions use data-testid)
                 var tid = el.getAttribute && el.getAttribute('data-testid');
                 if (tid && (tid === 'stSidebarNavLink' || tid === 'stSidebarNavItems') && isSidebarEl(el)) {
                     if (!parent.confirm('Hand in progress. Leave this page? Your current hand will be lost.')) {
@@ -1570,8 +1568,7 @@ def render_play_mode():
     bb_size = float(session.get("bb_size", 2.0))
 
     # Clear stale hand state on fresh page entry (after sidebar/back navigation)
-    # After decision_request or hand_complete, we set _intentional_rerun = True
-    # then call st.rerun(). On that rerun we consume the flag.
+    # Our handlers set _intentional_rerun=True before st.rerun().
     # Any OTHER rerun (page nav, sidebar click, back button) won't have the flag,
     # so we know it's a fresh entry and must clear stale decision/restore state.
     if st.session_state.get("_intentional_rerun"):
@@ -1722,7 +1719,7 @@ def handle_decision_request(game_state: dict, session: dict):
         }
         st.session_state.decision_table_id = game_state.get("table_id", 1)
 
-    # Mark rerun as intentional so render_play_mode keeps restore/decision data
+    # Mark rerun as intentional so render_play_mode keeps decision/restore data
     st.session_state._intentional_rerun = True
     st.rerun()
 

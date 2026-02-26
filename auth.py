@@ -12,6 +12,9 @@ import httpx
 
 from supabase_client import get_supabase, get_supabase_admin, get_supabase_admin_fresh, reset_supabase_client
 
+
+# ---------- Retry Helper ----------
+
 def _admin_query_with_retry(query_fn, label="auth"):
     """Run an admin DB query with one retry on stale connection."""
     try:
@@ -32,6 +35,7 @@ def _admin_query_with_retry(query_fn, label="auth"):
                 print(f"[auth] {label}: retry also failed: {retry_err}")
                 raise retry_err
         raise
+
 
 # ---------- Helpers ----------
 
@@ -124,6 +128,8 @@ def _init_session_state():
         "admin_override_active": False,
         "trial_ends_at": None,
         "payment_link_url": None,
+        # Track whether set_session has been called this run cycle
+        "_auth_session_bound": False,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -148,6 +154,7 @@ def _clear_auth_state():
     st.session_state["is_active"] = True
     st.session_state["role"] = "player"
     st.session_state["subscription_status"] = "pending"
+    st.session_state["_auth_session_bound"] = False
     
     # Clear Supabase client
     try:
@@ -271,10 +278,11 @@ def _login_ui():
             except Exception:
                 pass
             
-            # Bind session to Supabase client for RLS
+            # Bind session to Supabase client for RLS (once at login)
             try:
                 sb = get_supabase()
                 sb.auth.set_session(access_token, refresh_token)
+                st.session_state["_auth_session_bound"] = True
             except Exception:
                 pass
             
@@ -524,15 +532,19 @@ def require_auth():
         _login_ui()
         st.stop()
     
-    # Ensure Supabase client has the session bound
-    try:
-        sb = get_supabase()
-        refresh_token = st.session_state.get("refresh_token") or ""
-        sb.auth.set_session(access_token, refresh_token)
-    except Exception:
-        _clear_auth_state()
-        _login_ui()
-        st.stop()
+    # Bind Supabase client session ONCE (not on every rerun)
+    # Calling set_session on every rerun creates new WebSocket connections
+    # which causes "already connected" errors and eventual logouts
+    if not st.session_state.get("_auth_session_bound"):
+        try:
+            sb = get_supabase()
+            refresh_token = st.session_state.get("refresh_token") or ""
+            sb.auth.set_session(access_token, refresh_token)
+            st.session_state["_auth_session_bound"] = True
+        except Exception:
+            _clear_auth_state()
+            _login_ui()
+            st.stop()
     
     # Extract user ID
     if isinstance(user, dict):
