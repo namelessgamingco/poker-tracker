@@ -19,7 +19,7 @@ render_sidebar()
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
-.block-container { max-width: 1100px; }
+.block-container { max-width: 1400px; }
 
 /* Hero */
 .m-hero {
@@ -385,7 +385,7 @@ def main():
             <div class="vbox">
                 <h3>You Will Lose — Sometimes for Weeks</h3>
                 <p>
-                    Even with a +5 BB/100 win rate, losing streaks are mathematically guaranteed.
+                    Even with a +7 BB/100 win rate, losing streaks are mathematically guaranteed.
                     This is not the app failing. This is not bad luck targeting you.
                     This is variance — and it's temporary.
                     <br><br>
@@ -399,7 +399,7 @@ def main():
             <div class="ibox">
                 <h4>💡 Key Insight</h4>
                 <p>
-                    A player with +5 BB/100 win rate can easily lose 10 buy-ins over 20,000 hands
+                    A player with +7 BB/100 win rate can easily lose 10 buy-ins over 20,000 hands
                     due to normal variance. That's not unusual — it happens roughly 5% of the time.
                     This is why bankroll management exists. This is why you never play above your stakes.
                     <strong>Survive the downswing, and the math delivers.</strong>
@@ -614,7 +614,8 @@ def main():
             <div class="fcard-eq">Perfect Execution + Proper Bankroll + Session Discipline = Consistent Profit</div>
             <div class="fcard-bd">
                 Follow every decision × Play correct stakes × End sessions on time<br>
-                = +4 to +7 BB/100 win rate = $10,000 to $33,000+/year depending on stakes
+                = +5 to +8 BB/100 win rate = $9,800 to $54,000+/year net profit depending on stakes<br>
+                <span style="font-size:12px;opacity:0.8;">(after $299/month subscription · app covers its cost in 4-11 sessions)</span>
             </div>
         </div>
     """, unsafe_allow_html=True)

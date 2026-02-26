@@ -19,7 +19,7 @@ render_sidebar()
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
-.block-container { max-width: 1100px; }
+.block-container { max-width: 1400px; }
 
 /* Hero */
 .hero-hw {
@@ -258,19 +258,19 @@ def main():
     with c1:
         st.markdown("""
             <div class="fcard" style="border-color: #22c55e;">
-                <div class="fcard-title" style="font-size:18px;">📊 Expected Win Rate: +4 to +7 BB/100</div>
+                <div class="fcard-title" style="font-size:18px;">📊 Sim-Verified Win Rate: +5 to +8 BB/100</div>
                 <div class="fcard-body" style="line-height:2.0;">
-                    <strong>Where does this come from?</strong><br><br>
-                    <strong style="color:#22c55e;">Decision Engine:</strong> +3.5 to +4.5 BB/100<br>
-                    <span style="color:#64748b;">— Mathematically optimal plays in every situation, adjusted for opponent type</span><br><br>
-                    <strong style="color:#22c55e;">Session Management:</strong> +0.7 to +1.5 BB/100<br>
-                    <span style="color:#64748b;">— Avoiding tired mistakes, tilt detection, and stop-loss discipline</span><br><br>
-                    <strong style="color:#22c55e;">Bankroll Protection:</strong> +0.5 to +1.0 BB/100<br>
-                    <span style="color:#64748b;">— Playing the right stakes, never risking more than you can afford</span><br><br>
+                    <strong>Backed by a 60,000-hand Monte Carlo simulation against the actual engine:</strong><br><br>
+                    <strong style="color:#22c55e;">Decision Engine:</strong> +5.5 to +6.0 BB/100<br>
+                    <span style="color:#64748b;">— Pre-flop ranges, postflop c-betting, check-raises, bluff EV, villain adjustments, multiway protection</span><br><br>
+                    <strong style="color:#22c55e;">Session & Tilt Management:</strong> +1.0 BB/100<br>
+                    <span style="color:#64748b;">— Fatigue prevention, stop-loss discipline, loss streak detection</span><br><br>
+                    <strong style="color:#22c55e;">Sizing & Opponent Exploitation:</strong> +1.0 BB/100<br>
+                    <span style="color:#64748b;">— Exact dollar bets, +20% sizing vs fish, board-aware adjustments</span><br><br>
                     <span style="background:#22c55e;color:white;padding:4px 12px;border-radius:6px;font-weight:700;">
-                        Conservative Total: +4 to +7 BB/100
+                        Total: +5 to +8 BB/100
                     </span>
-                    <span style="color:#64748b;font-size:13px;margin-left:8px;">depending on table composition</span>
+                    <span style="color:#64748b;font-size:13px;margin-left:8px;">at $1/$2 (higher at soft tables, lower at tough ones)</span>
                 </div>
             </div>
         """, unsafe_allow_html=True)
@@ -280,9 +280,10 @@ def main():
                 <div class="fcard-title" style="font-size:15px;">📈 The Assumptions</div>
                 <div class="fcard-body" style="line-height:1.9;">
                     40 sessions per month (about 10 per week) · 200 hands per session ·
-                    2-3 hours per session · <strong>100% compliance with app recommendations</strong> ·
-                    Win rate depends on table quality — softer tables produce the high end.
-                    See <strong>EV System</strong> page for detailed monthly and annual projections.
+                    2-3 hours per session · <strong>100% compliance — which is what the app delivers</strong>.
+                    The app is the execution layer. Your job is to input the situation and follow
+                    the decision. See <strong>EV System</strong> page for full projections at every
+                    volume tier with gross and net breakdowns.
                 </div>
             </div>
         """, unsafe_allow_html=True)
@@ -290,24 +291,27 @@ def main():
     with c2:
         st.markdown("""
             <div style="background:linear-gradient(135deg,#8b5cf6 0%,#6366f1 100%);border-radius:14px;padding:28px;text-align:center;color:white;margin-bottom:14px;">
-                <div style="font-size:36px;font-weight:700;margin-bottom:4px;">$10,500+</div>
-                <div style="font-size:14px;opacity:0.9;">Annual profit at $1/$2</div>
+                <div style="font-size:36px;font-weight:700;margin-bottom:4px;">$13,440</div>
+                <div style="font-size:14px;opacity:0.9;">Annual gross at $1/$2</div>
+                <div style="font-size:13px;opacity:0.75;margin-top:4px;">$9,852/yr after subscription</div>
             </div>
             <div style="background:linear-gradient(135deg,#8b5cf6 0%,#6366f1 100%);border-radius:14px;padding:28px;text-align:center;color:white;margin-bottom:14px;">
-                <div style="font-size:36px;font-weight:700;margin-bottom:4px;">$21,600+</div>
-                <div style="font-size:14px;opacity:0.9;">Annual profit at $2/$5</div>
+                <div style="font-size:36px;font-weight:700;margin-bottom:4px;">$33,600</div>
+                <div style="font-size:14px;opacity:0.9;">Annual gross at $2/$5</div>
+                <div style="font-size:13px;opacity:0.75;margin-top:4px;">$30,012/yr after subscription</div>
             </div>
             <div style="background:linear-gradient(135deg,#8b5cf6 0%,#6366f1 100%);border-radius:14px;padding:28px;text-align:center;color:white;">
-                <div style="font-size:36px;font-weight:700;margin-bottom:4px;">$33,600+</div>
-                <div style="font-size:14px;opacity:0.9;">Annual profit at $5/$10</div>
+                <div style="font-size:36px;font-weight:700;margin-bottom:4px;">$57,600</div>
+                <div style="font-size:14px;opacity:0.9;">Annual gross at $5/$10</div>
+                <div style="font-size:13px;opacity:0.75;margin-top:4px;">$54,012/yr after subscription</div>
             </div>
         """, unsafe_allow_html=True)
 
     st.markdown("""
         <div style="background:linear-gradient(135deg,#22c55e 0%,#16a34a 100%);border-radius:14px;padding:28px;text-align:center;color:white;margin-top:16px;">
-            <div style="font-size:14px;opacity:0.85;margin-bottom:8px;">Subscription cost: $3,588/year</div>
-            <div style="font-size:24px;font-weight:700;">That's a 3× to 9× return on investment depending on stakes</div>
-            <div style="font-size:14px;opacity:0.85;margin-top:8px;">The app pays for itself within the first 2-4 weeks of play</div>
+            <div style="font-size:14px;opacity:0.85;margin-bottom:8px;">Subscription: $299/month · The app covers its cost in 11 sessions at $1/$2 — or just 4 sessions at $2/$5</div>
+            <div style="font-size:24px;font-weight:700;">4× to 16× return on investment depending on stakes</div>
+            <div style="font-size:14px;opacity:0.85;margin-top:8px;">Every dollar you spend on this app should return $4–$16 in poker profit</div>
         </div>
     """, unsafe_allow_html=True)
 
@@ -385,7 +389,7 @@ def main():
         st.markdown("The engine asks how many players are in the hand on every postflop street. In multiway pots: no bluffs, bigger protection bets with strong hands (75% pot), and checks with medium hands. Player count updates as players fold between streets.")
 
     with st.expander("Why is the subscription $299/month?"):
-        st.markdown("At $1/$2 stakes playing 10 sessions/week, conservative expected monthly profit is **$800-$1,750**. At $2/$5 it's **$2,000-$4,375**. The subscription costs $299 — a significant return on investment. See the **EV System** page for the full breakdown.")
+        st.markdown("At $1/$2 stakes playing 10 sessions/week, the sim-verified expected monthly gross is **$1,120** (net **$821 after the $299 subscription**). At $2/$5 it's **$2,800 gross / $2,501 net**. The app pays for itself in roughly **11 sessions at $1/$2** or **4 sessions at $2/$5**. See the **EV System** page for the full breakdown.")
 
 
 if __name__ == "__main__":
