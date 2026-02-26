@@ -291,6 +291,120 @@ def main():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
+    # ===== RAKEBACK — THE HIDDEN INCOME STREAM =====
+    st.markdown('<div class="sdiv"><h2>Rakeback — The Income Stream Most Players Ignore</h2><p>Every hand you play generates rake. Rakeback gives a percentage of it back to you — on top of your win rate.</p></div>', unsafe_allow_html=True)
+
+    c1, c2 = st.columns([3, 2])
+    with c1:
+        st.markdown("""
+            <p style="font-size:14px;color:#94a3b8;line-height:1.7;margin-bottom:12px;">
+                Every pot you play online is raked by the site — typically 5% of the pot, capped at
+                $1–$5 depending on the stakes and platform. Over thousands of hands, this adds up to
+                a significant amount. <strong>Rakeback returns a percentage of that rake directly to
+                your account</strong> — regardless of whether you won or lost the hand.
+            </p>
+            <p style="font-size:14px;color:#94a3b8;line-height:1.7;margin-bottom:12px;">
+                This is money you're generating anyway just by playing. If you're not collecting
+                rakeback, you're leaving hundreds or thousands of dollars on the table every month.
+                Rakeback doesn't replace your win rate — it <strong>stacks on top of it</strong>.
+            </p>
+        """, unsafe_allow_html=True)
+
+        st.markdown("""
+            <table class="dtable">
+                <thead>
+                    <tr>
+                        <th>Stakes</th>
+                        <th>Avg Rake/100 Hands</th>
+                        <th>Rake/Month (8k hands)</th>
+                        <th>30% Rakeback</th>
+                        <th>Effective BB/100 Boost</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>$0.50/$1</strong></td>
+                        <td>$8–$12</td>
+                        <td>$640–$960</td>
+                        <td class="pos">$192–$288/mo</td>
+                        <td class="pos">+2.4 to +3.6</td>
+                    </tr>
+                    <tr>
+                        <td><strong>$1/$2</strong></td>
+                        <td>$14–$20</td>
+                        <td>$1,120–$1,600</td>
+                        <td class="pos">$336–$480/mo</td>
+                        <td class="pos">+2.1 to +3.0</td>
+                    </tr>
+                    <tr>
+                        <td><strong>$2/$5</strong></td>
+                        <td>$18–$25</td>
+                        <td>$1,440–$2,000</td>
+                        <td class="pos">$432–$600/mo</td>
+                        <td class="pos">+1.1 to +1.5</td>
+                    </tr>
+                    <tr>
+                        <td><strong>$5/$10</strong></td>
+                        <td>$20–$30</td>
+                        <td>$1,600–$2,400</td>
+                        <td class="pos">$480–$720/mo</td>
+                        <td class="pos">+0.6 to +0.9</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p style="font-size:12px;color:#64748b;margin-top:4px;">
+                Estimates based on 5% rake with standard caps, 6-max tables, ~80 raked hands/100 dealt. Actual rake varies by site. 30% rakeback is a common baseline — some sites offer up to 60%.
+            </p>
+        """, unsafe_allow_html=True)
+
+    with c2:
+        st.markdown("""
+            <div style="background:linear-gradient(135deg,#8b5cf6 0%,#6366f1 100%);border-radius:14px;padding:28px;text-align:center;color:white;margin-bottom:14px;">
+                <div style="font-size:36px;font-weight:700;margin-bottom:4px;">$336–$480</div>
+                <div style="font-size:14px;opacity:0.9;">Monthly rakeback at $1/$2</div>
+                <div style="font-size:13px;opacity:0.75;margin-top:4px;">at 30% — more than covers the $299 subscription by itself</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("""
+            <div class="ibox">
+                <h4>💡 Rakeback Alone Can Cover the Subscription</h4>
+                <p>
+                    At $1/$2 with 30% rakeback, you're collecting <strong>$336–$480/month</strong> in
+                    rakeback alone. That's $37–$181/month of pure profit <em>after</em> the $299 subscription,
+                    before your actual poker winnings even come into play. Your win rate is gravy on top.
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("""
+            <div class="wbox">
+                <h4>⚠️ Not All Rakeback Is Equal</h4>
+                <p>
+                    Rakeback ranges from 5% (low-end loyalty programs) to 60%+ (elite VIP tiers on some
+                    networks). The most common deals for cash game grinders sit around 25–33%. Some platforms
+                    like CoinPoker offer flat 33% with no tiered requirements. Others like ACR scale up to
+                    60% at high volume. <strong>Always sign up through a rakeback affiliate or deal —
+                    never use the default registration.</strong>
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("""
+        <div style="background:linear-gradient(135deg,#0f172a 0%,#162032 100%);border:1px solid #334155;border-radius:14px;padding:24px;margin:16px 0;">
+            <p style="font-size:15px;font-weight:600;color:#f1f5f9;margin-bottom:12px;">Your True Effective Win Rate = Table Win Rate + Rakeback</p>
+            <p style="font-size:14px;color:#94a3b8;line-height:1.7;margin:0;">
+                A player with +7 BB/100 at the tables collecting 30% rakeback has an effective win rate
+                closer to <strong style="color:#22c55e;">+9 to +10 BB/100</strong>. At $1/$2 over 8,000 hands/month,
+                that's $1,120 from the tables plus ~$400 in rakeback = <strong style="color:#22c55e;">$1,520/month gross</strong>
+                ($1,221/month after the $299 subscription). Rakeback transforms the economics — it's the
+                difference between a good return and an exceptional one.
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
     # ===== HOW MUCH DO YOU NEED TO PLAY? =====
     st.markdown('<div class="sdiv"><h2>How Much Do You Need to Play?</h2><p>From casual to full-time — the math scales to your schedule</p></div>', unsafe_allow_html=True)
 
@@ -357,6 +471,64 @@ def main():
         <p style="font-size:12px;color:#64748b;margin-top:4px;">
             * Net = after $299/month subscription. Based on +7 BB/100 at $1/$2. At $2/$5 these numbers are 2.5× higher.
         </p>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+        <div style="background:linear-gradient(135deg,#0f172a 0%,#162032 100%);border:1px solid #334155;border-radius:14px;padding:28px;margin:20px 0 16px 0;">
+            <p style="font-size:16px;font-weight:700;color:#f1f5f9;margin-bottom:6px;">
+                📈 The table above is the <em>floor</em>, not the ceiling
+            </p>
+            <p style="font-size:14px;color:#94a3b8;line-height:1.6;margin-bottom:18px;">
+                Those numbers are at $1/$2 — the lowest stake most serious players use this app at. 
+                Full-time players move up as their bankroll grows. Here's what 12,000 hands/month looks like across stakes:
+            </p>
+            <table class="dtable" style="margin-bottom:0;">
+                <thead>
+                    <tr>
+                        <th>Stakes</th>
+                        <th>BB/100</th>
+                        <th>Table Winnings</th>
+                        <th>+ Rakeback (30%)</th>
+                        <th>Total Gross</th>
+                        <th>Net After Sub</th>
+                        <th>Annual Net</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>$1/$2</strong></td>
+                        <td>+7</td>
+                        <td>$1,680/mo</td>
+                        <td>~$420/mo</td>
+                        <td class="pos">$2,100/mo</td>
+                        <td class="pos">$1,801/mo</td>
+                        <td class="pos">$21,612/yr</td>
+                    </tr>
+                    <tr>
+                        <td><strong>$2/$5</strong></td>
+                        <td>+7</td>
+                        <td>$4,200/mo</td>
+                        <td>~$540/mo</td>
+                        <td class="pos">$4,740/mo</td>
+                        <td class="pos">$4,441/mo</td>
+                        <td class="pos">$53,292/yr</td>
+                    </tr>
+                    <tr style="background:rgba(34,197,94,0.06);">
+                        <td><strong>$5/$10</strong></td>
+                        <td>+6</td>
+                        <td>$7,200/mo</td>
+                        <td>~$600/mo</td>
+                        <td class="pos">$7,800/mo</td>
+                        <td class="pos">$7,501/mo</td>
+                        <td class="pos">$90,012/yr</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p style="font-size:12px;color:#64748b;margin-top:6px;margin-bottom:0;">
+                Full-time = 12-15 sessions/week, 28-38 hrs/week. Rakeback estimated at 30% baseline. 
+                The $299/month subscription becomes a rounding error at $2/$5+.
+            </p>
+        </div>
     """, unsafe_allow_html=True)
 
     c1, c2 = st.columns(2)

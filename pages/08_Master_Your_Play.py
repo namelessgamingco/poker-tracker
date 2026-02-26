@@ -648,6 +648,22 @@ def main():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
+    st.markdown("""
+        <div class="ibox">
+            <h4>💡 Don't Forget Rakeback</h4>
+            <p>
+                Everything above shows your <em>table</em> win rate. On top of that, every hand you play
+                generates rake — and with a proper rakeback deal (25–33% is standard, up to 60% at high
+                volume), that rake comes back to you as cash. At $1/$2 with 30% rakeback, you're collecting
+                an additional <strong>$336–$480/month</strong> that stacks directly on top of your table
+                winnings. Rakeback alone can cover the subscription cost — making your entire table win rate
+                pure net profit. See the <strong>EV System</strong> page for the full rakeback breakdown.
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
     # ===== FINAL STATEMENT =====
     st.markdown("""
         <div class="mquote" style="border-left-color:#22c55e;background:linear-gradient(135deg,rgba(34,197,94,0.06) 0%,rgba(34,197,94,0.02) 100%);">

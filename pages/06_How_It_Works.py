@@ -391,6 +391,9 @@ def main():
     with st.expander("Why is the subscription $299/month?"):
         st.markdown("At $1/$2 stakes playing 10 sessions/week, the sim-verified expected monthly gross is **$1,120** (net **$821 after the $299 subscription**). At $2/$5 it's **$2,800 gross / $2,501 net**. The app pays for itself in roughly **11 sessions at $1/$2** or **4 sessions at $2/$5**. See the **EV System** page for the full breakdown.")
 
+    with st.expander("What about rakeback?"):
+        st.markdown("Rakeback is money your poker site returns to you from the rake collected on every hand — and it stacks on top of your win rate. At $1/$2 with a typical 30% rakeback deal, you can collect **$336–$480/month** in rakeback alone, which more than covers the $299 subscription before your table winnings even factor in. If you're not collecting rakeback, you're leaving real money on the table. See the **EV System** page for the full rakeback breakdown by stakes.")
+
 
 if __name__ == "__main__":
     main()
