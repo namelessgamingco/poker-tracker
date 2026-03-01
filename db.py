@@ -78,7 +78,7 @@ def get_profile_by_auth_id(auth_id: str) -> Optional[dict]:
     # Check session cache first — avoids DB call on every Streamlit rerun
     cache_key = f"_profile_cache_{auth_id}"
     cached = st.session_state.get(cache_key)
-    if cached and (datetime.now(timezone.utc) - cached["ts"]).total_seconds() < 60:
+    if cached and isinstance(cached, dict) and "ts" in cached and (datetime.now(timezone.utc) - cached["ts"]).total_seconds() < 60:
         return cached["data"]
     
     def query(sb):
