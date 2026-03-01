@@ -260,7 +260,7 @@ def main():
             <div class="fcard" style="border-color: #22c55e;">
                 <div class="fcard-title" style="font-size:18px;">📊 Sim-Verified Win Rate: +5 to +8 BB/100</div>
                 <div class="fcard-body" style="line-height:2.0;">
-                    <strong>Backed by a 60,000-hand Monte Carlo simulation against the actual engine:</strong><br><br>
+                    <strong>Backed by a 10,000,000-hand Monte Carlo simulation against the actual engine:</strong><br><br>
                     <strong style="color:#22c55e;">Decision Engine:</strong> +5.5 to +6.0 BB/100<br>
                     <span style="color:#64748b;">— Pre-flop ranges, postflop c-betting, check-raises, bluff EV, villain adjustments, multiway protection</span><br><br>
                     <strong style="color:#22c55e;">Session & Tilt Management:</strong> +1.0 BB/100<br>

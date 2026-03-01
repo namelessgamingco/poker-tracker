@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 import streamlit as st
 import httpx
 
-from supabase_client import get_supabase, get_supabase_admin, get_supabase_admin_fresh, reset_supabase_client
+from supabase_client import get_supabase_admin, get_supabase_admin_fresh, reset_supabase_client
 
 
 # ---------- Retry Helper ----------
@@ -128,8 +128,6 @@ def _init_session_state():
         "admin_override_active": False,
         "trial_ends_at": None,
         "payment_link_url": None,
-        # Track whether set_session has been called this run cycle
-        "_auth_session_bound": False,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -154,7 +152,6 @@ def _clear_auth_state():
     st.session_state["is_active"] = True
     st.session_state["role"] = "player"
     st.session_state["subscription_status"] = "pending"
-    st.session_state["_auth_session_bound"] = False
     
     # Clear Supabase client
     try:
@@ -275,14 +272,6 @@ def _login_ui():
             # Reset Supabase client for fresh state
             try:
                 reset_supabase_client()
-            except Exception:
-                pass
-            
-            # Bind session to Supabase client for RLS (once at login)
-            try:
-                sb = get_supabase()
-                sb.auth.set_session(access_token, refresh_token)
-                st.session_state["_auth_session_bound"] = True
             except Exception:
                 pass
             
@@ -532,20 +521,6 @@ def require_auth():
         _login_ui()
         st.stop()
     
-    # Bind Supabase client session ONCE (not on every rerun)
-    # Calling set_session on every rerun creates new WebSocket connections
-    # which causes "already connected" errors and eventual logouts
-    if not st.session_state.get("_auth_session_bound"):
-        try:
-            sb = get_supabase()
-            refresh_token = st.session_state.get("refresh_token") or ""
-            sb.auth.set_session(access_token, refresh_token)
-            st.session_state["_auth_session_bound"] = True
-        except Exception:
-            _clear_auth_state()
-            _login_ui()
-            st.stop()
-    
     # Extract user ID
     if isinstance(user, dict):
         user_id = user.get("id") or user.get("user_id") or user.get("sub")
@@ -564,13 +539,16 @@ def require_auth():
     # Profile gate (with cached fallback for transient DB errors)
     profile = _ensure_profile(user_id, email)
     
-    if not profile:
-        # Fallback: use cached profile if we had one from a previous successful fetch
-        cache_key = f"_profile_cache_{user_id}"
+    # Cache profile on success for fallback during transient failures
+    cache_key = f"_profile_cache_{user_id}"
+    if profile:
+        st.session_state[cache_key] = profile
+    else:
+        # Fallback: use cached profile from a previous successful fetch
         cached = st.session_state.get(cache_key)
-        if cached and isinstance(cached, dict) and cached.get("data"):
+        if cached and isinstance(cached, dict):
             print("[auth] Using cached profile after _ensure_profile failure")
-            profile = cached["data"]
+            profile = cached
     
     if not profile:
         st.error("Could not load or create your profile. Please contact support.")

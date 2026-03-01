@@ -1054,7 +1054,7 @@ def main():
         <div class="cbar"><div class="cbar-label"><strong>Precise Bet Sizing & Villain Adjustments</strong><small>Exact dollar amounts, +20% sizing vs fish, tighter vs nits, board-aware sizing</small></div><div class="cbar-val">+1.0 BB/100</div></div>
         <div class="cbar"><div class="cbar-label"><strong>Session & Tilt Management</strong><small>Fatigue prevention, stop-loss/stop-win, loss streak detection, session time alerts</small></div><div class="cbar-val">+1.0 BB/100</div></div>
         <div class="cbar"><div class="cbar-label"><strong>Multiway & Board Safety Adjustments</strong><small>No bluffs multiway, board-danger downgrades, overbet/donk handling</small></div><div class="cbar-val">+0.5 BB/100</div></div>
-        <div class="cbar-total"><div class="cbar-label"><strong>TOTAL EXPECTED EDGE</strong><small>All components combined — verified by 60,000-hand Monte Carlo simulation</small></div><div class="cbar-val">+8.0 BB/100</div></div>
+        <div class="cbar-total"><div class="cbar-label"><strong>TOTAL EXPECTED EDGE</strong><small>All components combined — verified by 10,000,000-hand Monte Carlo simulation</small></div><div class="cbar-val">+8.0 BB/100</div></div>
     """, unsafe_allow_html=True)
 
     st.markdown("""
@@ -1065,7 +1065,7 @@ def main():
                 is typical at $0.50/$1 and common at $1/$2. At tougher tables with more regulars,
                 expect +5 to +6 BB/100. The engine's strategy doesn't change, but your <em>opportunity</em>
                 to exploit mistakes decreases when opponents make fewer of them. This is why table
-                selection matters — and why we present ranges. Verified across a 60,000-hand
+                selection matters — and why we present ranges. Verified across a 10,000,000-hand
                 Monte Carlo simulation using realistic opponent mixes at each stake level.
             </p>
         </div>

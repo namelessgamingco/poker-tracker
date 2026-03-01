@@ -504,6 +504,9 @@ def init_session_state():
 
         # Rerun tracking — True only when OUR code triggers st.rerun()
         "_intentional_rerun": False,
+
+        # Event dedup — prevent processing same component event twice
+        "_last_processed_event": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -1363,7 +1366,11 @@ def render_setup_mode():
             if st.button("▶️ Continue Session", type="primary", use_container_width=True):
                 st.session_state.current_session = active_session
                 st.session_state.session_mode = "play"
-                st.session_state.our_stack = float(active_session.get("buy_in_amount", 200))
+                # Restore stack: use current_stack if synced, else fall back to buy-in
+                st.session_state.our_stack = float(
+                    active_session.get("current_stack")
+                    or active_session.get("buy_in_amount", 200)
+                )
                 st.session_state.session_pl = float(active_session.get("profit_loss", 0) or 0)
                 update_sidebar_session_info(active_session, st.session_state.session_pl)
                 st.rerun()
@@ -1602,18 +1609,29 @@ def render_play_mode():
         key="poker_input_main",
     )
 
-    # ── Process component events ──
+    # ── Process component events (with deduplication) ──
+    # Streamlit caches the last setComponentValue and returns it on every rerun
+    # until the component sends a new value. Without dedup, handle_decision_request
+    # would fire repeatedly: set state → st.rerun() → same event returned → loop.
     if component_value is not None:
         event_type = component_value.get("type")
 
-        if event_type == "decision_request":
-            handle_decision_request(component_value, session)
+        # Build a fingerprint to detect duplicate events
+        import hashlib, json
+        _event_raw = json.dumps(component_value, sort_keys=True, default=str)
+        _event_fingerprint = hashlib.md5(_event_raw.encode()).hexdigest()
 
-        elif event_type == "hand_complete":
-            handle_hand_complete(component_value, session)
+        if _event_fingerprint != st.session_state.get("_last_processed_event"):
+            st.session_state._last_processed_event = _event_fingerprint
 
-        elif event_type == "street_continue":
-            handle_street_continue(component_value, session)
+            if event_type == "decision_request":
+                handle_decision_request(component_value, session)
+
+            elif event_type == "hand_complete":
+                handle_hand_complete(component_value, session)
+
+            elif event_type == "street_continue":
+                handle_street_continue(component_value, session)
 
     # ── End session button (below component) ──
     st.markdown("---")
@@ -1779,6 +1797,17 @@ def handle_hand_complete(component_value: dict, session: dict):
     if profit_loss != 0:
         st.session_state.session_pl += profit_loss
         st.session_state.our_stack += profit_loss
+
+    # Sync running P/L to DB so session resume has correct values
+    _running_pl = st.session_state.session_pl
+    _running_stack = st.session_state.our_stack
+    threading.Thread(
+        target=lambda: update_session(session_id, {
+            "profit_loss": _running_pl,
+            "current_stack": _running_stack,
+        }),
+        daemon=True
+    ).start()
 
     # ── Update loss streak tracking (for tilt detection) ──
     if outcome == "lost":

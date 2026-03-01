@@ -66,8 +66,9 @@ _supabase_admin_client: Optional[Client] = None
 _supabase_client_created_at: float = 0
 _supabase_admin_client_created_at: float = 0
 
-# Recreate clients every 3 minutes to prevent stale connections
-_CLIENT_MAX_AGE_SECONDS = 120
+# Recreate clients every 10 minutes to prevent stale connections
+# (Previously 120s which caused race conditions with the anon client's realtime layer)
+_CLIENT_MAX_AGE_SECONDS = 600
 
 
 def get_supabase() -> Client:
