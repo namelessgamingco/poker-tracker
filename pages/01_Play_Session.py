@@ -470,6 +470,7 @@ def init_session_state():
         "hands_played": 0,
         "decisions_requested": 0,
         "hand_outcomes": [],
+        "hand_log_entries": [],
 
         # Decision tracking (for React component bridge)
         "current_decision_dict": None,  # Dict sent to React as decision_result prop
@@ -1609,6 +1610,7 @@ def render_play_mode():
         table2_step=restore.get("table2_step") if restore else None,
         table2_decision=restore.get("table2_decision") if restore else None,
         table2_board_entry_index=restore.get("table2_board_entry_index") if restore else None,
+        hand_log=st.session_state.get("hand_log_entries", []),
         session_active=True,
         key="poker_input_main",
     )
@@ -1837,8 +1839,23 @@ def handle_hand_complete(component_value: dict, session: dict):
     # Update sidebar
     update_sidebar_session_info(session, st.session_state.session_pl)
 
-    # Outcome display moved to inline hand log in React component
-    # No modal queued — component handles the recap display
+    # Add to hand log for React component
+    if "hand_log_entries" not in st.session_state:
+        st.session_state.hand_log_entries = []
+    st.session_state.hand_log_entries.append({
+        "id": len(st.session_state.hand_log_entries) + 1,
+        "outcome": outcome,
+        "profit_loss": profit_loss,
+        "position": hand_context.get("position", ""),
+        "cards": hand_context.get("cards", ""),
+        "board": hand_context.get("board", ""),
+        "street": hand_context.get("street", "preflop"),
+        "action_taken": action_taken,
+        "explanation": decision_explanation,
+        "calculation": decision_calculation,
+        "hand_strength": hand_context.get("hand_strength", ""),
+        "bluff_data": bluff_data,
+    })
 
     # Save two-table state so the other table survives the rerun
     if component_value.get("show_second_table"):

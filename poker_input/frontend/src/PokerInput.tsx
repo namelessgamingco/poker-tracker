@@ -773,9 +773,11 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   const [limperCount, setLimperCount] = useState<number>(0)
   const [plInputStr, setPlInputStr] = useState<string>("")  // P/L amount input
   const [pendingOutcome, setPendingOutcome] = useState<"won" | "lost" | "folded" | null>(null)  // Pending outcome for P/L input
-  const [handLog, setHandLog] = useState<HandLogEntry[]>([])
+  const handLogFromPython = args["hand_log"] as HandLogEntry[] | undefined
+  const handLog = handLogFromPython ?? []
   const [handLogCollapsed, setHandLogCollapsed] = useState(false)
   const [expandedHandId, setExpandedHandId] = useState<number | null>(null)
+  const latestHandId = handLog.length > 0 ? handLog[handLog.length - 1].id : null
   const handIdCounter = useRef(0)
   const [boardEntryIndex, setBoardEntryIndex] = useState<number>(() => {
       // Try new explicit table args first
@@ -1288,39 +1290,6 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       table2_decision: table2Decision,
       table2_board_entry_index: table2BoardEntryIndex,
     })
-
-    // Add to hand log BEFORE resetting
-    handIdCounter.current += 1
-    const newEntry: HandLogEntry = {
-      id: handIdCounter.current,
-      outcome: outcome,
-      profit_loss: profitLoss,
-      position: gs.position,
-      cards: [gs.card1, gs.card2]
-        .filter(c => c !== null)
-        .map(c => c!.rank + suitSymbol(c!.suit))
-        .join(" "),
-      board: gs.board_cards
-        .filter(c => c !== null)
-        .map(c => c!.rank + suitSymbol(c!.suit))
-        .join(" "),
-      street: gs.street,
-      action_taken: decision?.display || "",
-      explanation: decision?.explanation || "",
-      calculation: decision?.calculation || "",
-      hand_strength: HAND_STRENGTH_DISPLAY[gs.hand_strength || ""] || gs.hand_strength || "",
-      bluff_data: decision?.bluff_context ? {
-        spot_type: decision.bluff_context.spot_type,
-        pot_size: decision.bluff_context.pot_size,
-        bet_amount: decision.bluff_context.bet_amount,
-        break_even_pct: decision.bluff_context.break_even_pct,
-        estimated_fold_pct: decision.bluff_context.estimated_fold_pct,
-        ev_of_bet: decision.bluff_context.ev_of_bet,
-      } : null,
-    }
-    setHandLog(prev => [...prev, newEntry])
-    setExpandedHandId(newEntry.id)
-    setHandLogCollapsed(false)
 
     setPendingOutcome(null)
     setPlInputStr("")
@@ -3403,7 +3372,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   }
 
   const renderHandRecapCard = (hand: HandLogEntry, isLatest: boolean) => {
-    const expanded = expandedHandId === hand.id
+    const expanded = expandedHandId !== null ? expandedHandId === hand.id : hand.id === latestHandId
     const config = outcomeConfig[hand.outcome]
     const pl = hand.profit_loss
     const plStr = pl >= 0 ? `+$${Math.round(Math.abs(pl))}` : `-$${Math.round(Math.abs(pl))}`
