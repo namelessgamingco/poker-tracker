@@ -42,6 +42,7 @@ def poker_input(
     t2_step=None,
     t2_decision=None,
     restore_state=None,
+    hand_log=None,
     session_active=True,
     key=None,
 ):
@@ -100,6 +101,7 @@ def poker_input(
         t2_step=t2_step,
         t2_decision=t2_decision,
         restore_state=restore_state,
+        hand_log=hand_log,
         session_active=session_active,
         key=key,
         default=None,
