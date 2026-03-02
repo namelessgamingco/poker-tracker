@@ -515,7 +515,7 @@ function detectHandStrength(
     // Set: pocket pair hit the board
     const isPocketPair = holeRanks[0] === holeRanks[1]
     if (isPocketPair && trips.includes(holeRanks[0])) return "monster" // set
-    return "two_pair" // trips (one hole card + board pair) — treated as strong but not monster
+    return "monster" // trips (one hole card + board pair) — strong hand, play aggressively
   }
 
 // Two pair with hole cards
@@ -576,7 +576,14 @@ function detectHandStrength(
   // Underpair (pocket pair below board) — treat as bottom_pair
   if (holeRanks[0] === holeRanks[1]) return "bottom_pair"
 
-  // === DRAWS ===
+  // === DRAWS (skip on river — no cards left to draw to) ===
+  const filledBoardCount = board.length
+  if (filledBoardCount >= 5) {
+    // River — all draws have missed. No draw equity remains.
+    // Check for overcards or classify as air
+    if (holeRanks[0] > boardRanks[0] && holeRanks[1] > boardRanks[0]) return "overcards"
+    return "air"
+  }
 
   // Flush draw: 4 cards same suit including hole card
   let hasFlushDraw = false
@@ -1339,7 +1346,15 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           newAction = "4bet"
         }
       } else {
-        newAction = "check_raise"
+        // Post-flop: check what our previous decision was
+        // If we CHECKED and they bet → that's "facing a bet", not a check-raise
+        // If we BET and they raised → that's a check-raise (raise over our bet)
+        const ourPrevAction = decision?.action?.toUpperCase() || decision?.display?.toUpperCase() || ""
+        if (ourPrevAction.includes("CHECK")) {
+          newAction = "bet"  // They bet after we checked — not a check-raise
+        } else {
+          newAction = "check_raise"  // They raised our bet
+        }
       }
 
       // Add what we bet before they raised to total_invested
@@ -1368,8 +1383,13 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           setAmountContext(ourAmount ? `You 4-bet to ${ourAmount}` : `You 4-bet`)
         }
       } else {
-        setAmountLabel("Their raise to $")
-        setAmountContext(ourAmount ? `You bet ${ourAmount}` : `You bet`)
+        if (newAction === "bet") {
+          setAmountLabel("Their bet $")
+          setAmountContext("You checked")
+        } else {
+          setAmountLabel("Their raise to $")
+          setAmountContext(ourAmount ? `You bet ${ourAmount}` : `You bet`)
+        }
       }
       
       setStep("amount")
@@ -4389,9 +4409,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             <div style={S.sectionLabel}>Who Raised?</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
               {[
-                { pos: "HJ", label: "Early", desc: "UTG / HJ", key: "1" },
-                { pos: "CO", label: "Middle", desc: "Cutoff / Lojack", key: "2" },
-                { pos: "BTN", label: "Late", desc: "Button / SB", key: "3" },
+                { pos: "SB", label: "Early", desc: "SB / BB / UTG", key: "1" },
+                { pos: "CO", label: "Middle", desc: "HJ / Cutoff", key: "2" },
+                { pos: "BTN", label: "Late", desc: "Button", key: "3" },
               ].map((v) => (
                 <button
                   key={v.pos}
@@ -5352,9 +5372,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           <div style={S.sectionLabel}>Who Raised?</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
             {[
-              { pos: "HJ", label: "Early", desc: "UTG / HJ", key: "1" },
-              { pos: "CO", label: "Middle", desc: "Cutoff / Lojack", key: "2" },
-              { pos: "BTN", label: "Late", desc: "Button / SB", key: "3" },
+              { pos: "SB", label: "Early", desc: "SB / BB / UTG", key: "1" },
+              { pos: "CO", label: "Middle", desc: "HJ / Cutoff", key: "2" },
+              { pos: "BTN", label: "Late", desc: "Button", key: "3" },
             ].map((v) => (
               <button
                 key={v.pos}

@@ -1781,6 +1781,14 @@ class PokerDecisionEngine:
         """Continue betting on turn/river after c-betting (or delayed c-bet)."""
         
         hand_strength = state.hand_strength
+        
+        # Reclassify draws as air on the river (draws have missed)
+        if state.street == Street.RIVER and hand_strength in [
+            HandStrength.FLUSH_DRAW, HandStrength.OESD,
+            HandStrength.COMBO_DRAW, HandStrength.GUTSHOT
+        ]:
+            hand_strength = HandStrength.AIR
+        
         fish = _is_fish(state)
         
         # Multiway: only bet strong value hands, no bluffs or thin value
@@ -2024,6 +2032,14 @@ class PokerDecisionEngine:
         """We were not the aggressor, it's checked to us."""
         
         hand_strength = state.hand_strength
+        
+        # Reclassify draws as air on the river (draws have missed)
+        if state.street == Street.RIVER and hand_strength in [
+            HandStrength.FLUSH_DRAW, HandStrength.OESD,
+            HandStrength.COMBO_DRAW, HandStrength.GUTSHOT
+        ]:
+            hand_strength = HandStrength.AIR
+        
         fish = _is_fish(state)
         board_texture = state.board_texture or BoardTexture.SEMI_WET
         
@@ -2284,8 +2300,17 @@ class PokerDecisionEngine:
                 confidence=0.80
             )
         
-        # Draws — check for free card
+        # Draws — check for free card (or give up on river)
         if hand_strength in [HandStrength.FLUSH_DRAW, HandStrength.OESD, HandStrength.COMBO_DRAW]:
+            if state.street == Street.RIVER:
+                return Decision(
+                    action=Action.CHECK,
+                    amount=None,
+                    display="CHECK",
+                    explanation="Check. Draw missed — nothing to bet with here.",
+                    calculation="Missed draw on river = give up",
+                    confidence=0.80
+                )
             return Decision(
                 action=Action.CHECK,
                 amount=None,
@@ -2309,6 +2334,14 @@ class PokerDecisionEngine:
         """Facing a bet or raise post-flop."""
         
         hand_strength = state.hand_strength
+        
+        # Reclassify draws as air on the river (draws have missed)
+        if state.street == Street.RIVER and hand_strength in [
+            HandStrength.FLUSH_DRAW, HandStrength.OESD,
+            HandStrength.COMBO_DRAW, HandStrength.GUTSHOT
+        ]:
+            hand_strength = HandStrength.AIR
+        
         pot_odds = calculate_pot_odds(state.pot_size, state.facing_bet)
         street = state.street
         
@@ -2585,6 +2618,13 @@ class PokerDecisionEngine:
         Facing river bet - CRITICAL: River raises are 85-95% value.
         DO NOT hero call with one pair.
         """
+        
+        # Reclassify draws as air on the river (draws have missed)
+        if hand_strength in [
+            HandStrength.FLUSH_DRAW, HandStrength.OESD,
+            HandStrength.COMBO_DRAW, HandStrength.GUTSHOT
+        ]:
+            hand_strength = HandStrength.AIR
         
         fish = _is_fish(state)  # TIER1-FIX
         
