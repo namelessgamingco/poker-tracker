@@ -267,14 +267,8 @@ const HAND_STRENGTH_DISPLAY: Record<string, string> = {
 
 function humanizeExplanation(text: string): string {
   if (!text) return ""
-  let result = text
-  // Replace shorthand hand strengths with readable names
-  for (const [key, val] of Object.entries(HAND_STRENGTH_DISPLAY)) {
-    const regex = new RegExp(`\\b${key}\\b`, "gi")
-    result = result.replace(regex, val)
-  }
-  // Capitalize first letter
-  return result.charAt(0).toUpperCase() + result.slice(1)
+  // Engine sends clean readable text — just ensure first letter is capitalized
+  return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
 function roundBetDisplay(display: string): string {
