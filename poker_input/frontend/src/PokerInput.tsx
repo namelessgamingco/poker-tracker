@@ -5103,6 +5103,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         </div>
       )}
 
+      {/* HAND LOG */}
+      {renderHandLog()}
+
       {/* BREADCRUMB */}
       {renderBreadcrumb()}
 
