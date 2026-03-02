@@ -448,10 +448,8 @@ section[data-testid="stSidebar"] { background: #0F0F1A; }
 /* ── Hide Streamlit default decorations in play mode ── */
 .stDeployButton, #MainMenu { display: none; }
 
-/* ── Reduce spacing between elements ── */
-.block-container { padding-top: 1rem !important; }
-[data-testid="stVerticalBlock"] > div:empty { display: none; }
-[data-testid="stVerticalBlock"] > div { margin-bottom: -0.5rem; }
+/* ── Reduce gap between session header and component ── */
+iframe[title="poker_input.poker_input"] { margin-top: -1rem; }
 </style>
 
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
