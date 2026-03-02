@@ -777,7 +777,17 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   const handLog = handLogFromPython ?? []
   const [handLogCollapsed, setHandLogCollapsed] = useState(false)
   const [expandedHandId, setExpandedHandId] = useState<number | null>(null)
+  const [lastSeenLogLength, setLastSeenLogLength] = useState(0)
   const latestHandId = handLog.length > 0 ? handLog[handLog.length - 1].id : null
+
+  // Auto-expand latest hand when a new one arrives
+  useEffect(() => {
+    if (handLog.length > lastSeenLogLength && handLog.length > 0) {
+      setExpandedHandId(handLog[handLog.length - 1].id)
+      setHandLogCollapsed(false)
+      setLastSeenLogLength(handLog.length)
+    }
+  }, [handLog.length, lastSeenLogLength])
   const handIdCounter = useRef(0)
   const [boardEntryIndex, setBoardEntryIndex] = useState<number>(() => {
       // Try new explicit table args first
@@ -3409,7 +3419,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           </span>
           <span style={{ fontSize: 13 }}>{config.icon}</span>
           <span style={{ fontFamily: theme.mono, fontSize: 12, color: theme.text, fontWeight: 600, minWidth: 48 }}>
-            {hand.cards}
+            {formatCardString(hand.cards)}
           </span>
           <span style={{ fontSize: 10, color: theme.textMuted, minWidth: 44 }}>
             {hand.position} · {hand.street.charAt(0).toUpperCase() + hand.street.slice(1)}
@@ -3442,13 +3452,13 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
 
             {hand.board && (
               <div style={{ fontFamily: theme.mono, fontSize: 12, color: theme.text, textAlign: "center", marginBottom: 6, letterSpacing: 1 }}>
-                {hand.board}
+                {formatCardString(hand.board)}
               </div>
             )}
 
             {hand.hand_strength && (
               <div style={{ fontSize: 10, color: theme.textMuted, textAlign: "center", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                {hand.hand_strength}
+                {HAND_STRENGTH_DISPLAY[hand.hand_strength] || hand.hand_strength}
               </div>
             )}
 
@@ -3498,6 +3508,24 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     )
   }
 
+  const formatCardString = (raw: string): string => {
+    if (!raw) return ""
+    // Convert "AhKs" → "A♥ K♠", "5cQd7hAc" → "5♣ Q♦ 7♥ A♣"
+    const suitMap: Record<string, string> = { h: "♥", d: "♦", c: "♣", s: "♠" }
+    const cards: string[] = []
+    let i = 0
+    while (i < raw.length) {
+      // Handle "10" as a rank (unlikely but safe)
+      let rank = raw[i]
+      i++
+      if (i < raw.length && suitMap[raw[i]]) {
+        cards.push(rank + suitMap[raw[i]])
+        i++
+      }
+    }
+    return cards.join(" ")
+  }
+
   const renderHandLog = () => {
     if (handLog.length === 0) return null
 
@@ -3540,6 +3568,18 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               {" · "}
               <span>{foldCount}F</span>
             </span>
+            {handLogCollapsed && handLog.length > 0 && (() => {
+              const last = handLog[handLog.length - 1]
+              const lastConfig = outcomeConfig[last.outcome]
+              const lastPl = last.profit_loss
+              const lastPlStr = lastPl >= 0 ? `+$${Math.round(Math.abs(lastPl))}` : `-$${Math.round(Math.abs(lastPl))}`
+              const lastPlColor = lastPl > 0 ? theme.green : lastPl < 0 ? "#FF5252" : theme.textMuted
+              return (
+                <span style={{ fontSize: 10, color: theme.textMuted, fontFamily: theme.mono, marginLeft: 4 }}>
+                  Last: {lastConfig.icon} {formatCardString(last.cards)} {last.action_taken} <span style={{ color: lastPlColor }}>{lastPlStr}</span>
+                </span>
+              )
+            })()}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontFamily: theme.mono, fontSize: 12, fontWeight: 700, color: plColor }}>
