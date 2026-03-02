@@ -9,6 +9,27 @@ import {
 // =============================================================================
 // TYPES
 // =============================================================================
+type HandLogEntry = {
+  id: number
+  outcome: "won" | "lost" | "folded"
+  profit_loss: number
+  position: string
+  cards: string
+  board: string
+  street: string
+  action_taken: string
+  explanation: string
+  calculation: string
+  hand_strength: string
+  bluff_data: {
+    spot_type: string
+    pot_size: number
+    bet_amount: number
+    break_even_pct: number
+    estimated_fold_pct: number
+    ev_of_bet: number
+  } | null
+}
 
 type InputStep =
   | "position"
@@ -752,6 +773,10 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   const [limperCount, setLimperCount] = useState<number>(0)
   const [plInputStr, setPlInputStr] = useState<string>("")  // P/L amount input
   const [pendingOutcome, setPendingOutcome] = useState<"won" | "lost" | "folded" | null>(null)  // Pending outcome for P/L input
+  const [handLog, setHandLog] = useState<HandLogEntry[]>([])
+  const [handLogCollapsed, setHandLogCollapsed] = useState(false)
+  const [expandedHandId, setExpandedHandId] = useState<number | null>(null)
+  const handIdCounter = useRef(0)
   const [boardEntryIndex, setBoardEntryIndex] = useState<number>(() => {
       // Try new explicit table args first
       if (primaryHoldsTableFromPython === 1 && table1BoardEntryIndexFromPython !== undefined) {
@@ -1263,6 +1288,39 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       table2_decision: table2Decision,
       table2_board_entry_index: table2BoardEntryIndex,
     })
+
+    // Add to hand log BEFORE resetting
+    handIdCounter.current += 1
+    const newEntry: HandLogEntry = {
+      id: handIdCounter.current,
+      outcome: outcome,
+      profit_loss: profitLoss,
+      position: gs.position,
+      cards: [gs.card1, gs.card2]
+        .filter(c => c !== null)
+        .map(c => c!.rank + suitSymbol(c!.suit))
+        .join(" "),
+      board: gs.board_cards
+        .filter(c => c !== null)
+        .map(c => c!.rank + suitSymbol(c!.suit))
+        .join(" "),
+      street: gs.street,
+      action_taken: decision?.display || "",
+      explanation: decision?.explanation || "",
+      calculation: decision?.calculation || "",
+      hand_strength: HAND_STRENGTH_DISPLAY[gs.hand_strength || ""] || gs.hand_strength || "",
+      bluff_data: decision?.bluff_context ? {
+        spot_type: decision.bluff_context.spot_type,
+        pot_size: decision.bluff_context.pot_size,
+        bet_amount: decision.bluff_context.bet_amount,
+        break_even_pct: decision.bluff_context.break_even_pct,
+        estimated_fold_pct: decision.bluff_context.estimated_fold_pct,
+        ev_of_bet: decision.bluff_context.ev_of_bet,
+      } : null,
+    }
+    setHandLog(prev => [...prev, newEntry])
+    setExpandedHandId(newEntry.id)
+    setHandLogCollapsed(false)
 
     setPendingOutcome(null)
     setPlInputStr("")
@@ -3315,6 +3373,240 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   // ==========================================================================
 
   // =========================================================================
+  // HAND LOG COMPONENTS
+  // =========================================================================
+  const outcomeConfig: Record<string, { icon: string; color: string; bg: string; border: string; title: string; message: string }> = {
+    won: {
+      icon: "✅",
+      color: theme.green,
+      bg: "rgba(105,240,174,0.06)",
+      border: "rgba(105,240,174,0.15)",
+      title: "Good Play + Win",
+      message: "You made the +EV play and it worked out. Keep making these decisions.",
+    },
+    lost: {
+      icon: "📊",
+      color: "#FF5252",
+      bg: "rgba(255,82,82,0.06)",
+      border: "rgba(255,82,82,0.15)",
+      title: "Correct Play — Variance",
+      message: "Variance means you'll lose some +EV spots. Over hundreds of hands, correct decisions add up to significant profit.",
+    },
+    folded: {
+      icon: "🛡️",
+      color: theme.textMuted,
+      bg: "rgba(255,255,255,0.02)",
+      border: "rgba(255,255,255,0.06)",
+      title: "Good Fold — Money Saved",
+      message: "Every -EV call you avoid is money in your pocket. The best players fold more than recreational players.",
+    },
+  }
+
+  const renderHandRecapCard = (hand: HandLogEntry, isLatest: boolean) => {
+    const expanded = expandedHandId === hand.id
+    const config = outcomeConfig[hand.outcome]
+    const pl = hand.profit_loss
+    const plStr = pl >= 0 ? `+$${Math.round(Math.abs(pl))}` : `-$${Math.round(Math.abs(pl))}`
+    const plColor = pl > 0 ? theme.green : pl < 0 ? "#FF5252" : theme.textMuted
+
+    return (
+      <div
+        key={hand.id}
+        style={{
+          background: expanded ? config.bg : "rgba(255,255,255,0.015)",
+          border: `1px solid ${expanded ? config.border : "rgba(255,255,255,0.04)"}`,
+          borderRadius: 8,
+          overflow: "hidden",
+          transition: "all 0.2s ease",
+          marginBottom: 4,
+        }}
+      >
+        {/* Collapsed bar */}
+        <button
+          onClick={() => setExpandedHandId(expanded ? null : hand.id)}
+          style={{
+            width: "100%",
+            background: "none",
+            border: "none",
+            padding: "8px 12px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <span style={{ fontSize: 10, color: theme.textDim, fontFamily: theme.mono, minWidth: 18 }}>
+            #{hand.id}
+          </span>
+          <span style={{ fontSize: 13 }}>{config.icon}</span>
+          <span style={{ fontFamily: theme.mono, fontSize: 12, color: theme.text, fontWeight: 600, minWidth: 48 }}>
+            {hand.cards}
+          </span>
+          <span style={{ fontSize: 10, color: theme.textMuted, minWidth: 44 }}>
+            {hand.position} · {hand.street.charAt(0).toUpperCase() + hand.street.slice(1)}
+          </span>
+          <span style={{ fontSize: 11, fontFamily: theme.mono, color: "rgba(255,255,255,0.5)", flex: 1, textAlign: "left" }}>
+            {hand.action_taken}
+          </span>
+          <span style={{ fontFamily: theme.mono, fontSize: 13, fontWeight: 700, color: plColor, minWidth: 50, textAlign: "right" }}>
+            {plStr}
+          </span>
+          <span style={{
+            fontSize: 9,
+            color: theme.textDim,
+            transform: expanded ? "rotate(180deg)" : "rotate(0)",
+            transition: "transform 0.15s ease",
+            marginLeft: 2,
+          }}>
+            ▼
+          </span>
+        </button>
+
+        {/* Expanded detail */}
+        {expanded && (
+          <div style={{ padding: "0 12px 12px 12px" }}>
+            <div style={{ height: 1, background: config.border, margin: "0 0 10px 0" }} />
+
+            <div style={{ fontSize: 14, fontWeight: 700, color: config.color, marginBottom: 6, textAlign: "center" }}>
+              {config.title}
+            </div>
+
+            {hand.board && (
+              <div style={{ fontFamily: theme.mono, fontSize: 12, color: theme.text, textAlign: "center", marginBottom: 6, letterSpacing: 1 }}>
+                {hand.board}
+              </div>
+            )}
+
+            {hand.hand_strength && (
+              <div style={{ fontSize: 10, color: theme.textMuted, textAlign: "center", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                {hand.hand_strength}
+              </div>
+            )}
+
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", lineHeight: 1.6, textAlign: "center", marginBottom: 6 }}>
+              {hand.explanation}
+            </div>
+
+            {hand.calculation && (
+              <div style={{
+                background: "rgba(66,165,245,0.06)",
+                border: "1px solid rgba(66,165,245,0.12)",
+                borderRadius: 6,
+                padding: "5px 10px",
+                fontFamily: theme.mono,
+                fontSize: 10,
+                color: "#90CAF9",
+                textAlign: "center",
+                marginBottom: 6,
+              }}>
+                {hand.calculation}
+              </div>
+            )}
+
+            {hand.bluff_data && (
+              <div style={{
+                background: "rgba(255,213,79,0.06)",
+                border: "1px solid rgba(255,213,79,0.12)",
+                borderRadius: 6,
+                padding: "6px 10px",
+                marginBottom: 6,
+              }}>
+                <div style={{ fontSize: 10, color: "#FFD54F", fontWeight: 600, marginBottom: 3, textAlign: "center" }}>
+                  Bluff Math
+                </div>
+                <div style={{ fontFamily: theme.mono, fontSize: 10, color: "rgba(255,213,79,0.65)", textAlign: "center", lineHeight: 1.5 }}>
+                  ${hand.bluff_data.bet_amount.toFixed(0)} into ${hand.bluff_data.pot_size.toFixed(0)} · Needs {Math.round(hand.bluff_data.break_even_pct * 100)}% folds · Est. {Math.round(hand.bluff_data.estimated_fold_pct * 100)}% fold rate · EV: +${hand.bluff_data.ev_of_bet.toFixed(2)}/attempt
+                </div>
+              </div>
+            )}
+
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.25)", lineHeight: 1.5, textAlign: "center", marginTop: 4 }}>
+              {config.message}
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const renderHandLog = () => {
+    if (handLog.length === 0) return null
+
+    const winCount = handLog.filter(h => h.outcome === "won").length
+    const lossCount = handLog.filter(h => h.outcome === "lost").length
+    const foldCount = handLog.filter(h => h.outcome === "folded").length
+    const sessionPL = handLog.reduce((sum, h) => sum + h.profit_loss, 0)
+    const plStr = sessionPL >= 0 ? `+$${Math.round(sessionPL)}` : `-$${Math.round(Math.abs(sessionPL))}`
+    const plColor = sessionPL >= 0 ? theme.green : "#FF5252"
+
+    return (
+      <div style={{ marginBottom: 10 }}>
+        {/* Header bar */}
+        <button
+          onClick={() => setHandLogCollapsed(!handLogCollapsed)}
+          style={{
+            width: "100%",
+            background: "rgba(255,255,255,0.02)",
+            border: "1px solid rgba(255,255,255,0.05)",
+            borderRadius: handLogCollapsed ? 8 : "8px 8px 0 0",
+            padding: "7px 12px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            transition: "all 0.15s ease",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: theme.text }}>
+              Hands
+            </span>
+            <span style={{ fontSize: 10, color: theme.textMuted, fontFamily: theme.mono }}>
+              {handLog.length}
+            </span>
+            <span style={{ fontSize: 10, color: theme.textDim }}>
+              <span style={{ color: theme.green }}>{winCount}W</span>
+              {" · "}
+              <span style={{ color: "#FF5252" }}>{lossCount}L</span>
+              {" · "}
+              <span>{foldCount}F</span>
+            </span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontFamily: theme.mono, fontSize: 12, fontWeight: 700, color: plColor }}>
+              {plStr}
+            </span>
+            <span style={{
+              fontSize: 9,
+              color: theme.textDim,
+              transform: handLogCollapsed ? "rotate(0)" : "rotate(180deg)",
+              transition: "transform 0.15s ease",
+            }}>
+              ▼
+            </span>
+          </div>
+        </button>
+
+        {/* Hand list */}
+        {!handLogCollapsed && (
+          <div style={{
+            border: "1px solid rgba(255,255,255,0.05)",
+            borderTop: "none",
+            borderRadius: "0 0 8px 8px",
+            padding: 4,
+            maxHeight: 280,
+            overflowY: "auto" as const,
+          }}>
+            {[...handLog].reverse().map((hand, i) =>
+              renderHandRecapCard(hand, i === 0)
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // =========================================================================
   // TWO-TABLE MODE RENDER (when mode === "two_table" OR showSecondTable is true)
   // =========================================================================
   if (mode === "two_table" || showSecondTable) {
@@ -3772,6 +4064,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   function renderActiveTableContent() {
     return (
       <>
+        {/* HAND LOG */}
+        {renderHandLog()}
+        
         {/* BREADCRUMB */}
         {renderBreadcrumb()}
 

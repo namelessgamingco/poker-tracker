@@ -1551,9 +1551,13 @@ def render_setup_mode():
 def render_play_mode():
     """Main play loop: header → alerts → React component → process events."""
 
-    # Modals take priority
-    if render_modals():
-        return
+    # Outcome modals removed — hand log is now inline in React component
+    # Session-end modals still use the modal system
+    if st.session_state.modal_queue:
+        modal = st.session_state.modal_queue[0]
+        if modal.get("type") == "session_end":
+            if render_modals():
+                return
 
     session = st.session_state.current_session
     if not session:
@@ -1833,16 +1837,8 @@ def handle_hand_complete(component_value: dict, session: dict):
     # Update sidebar
     update_sidebar_session_info(session, st.session_state.session_pl)
 
-    # Queue outcome modal — include decision snapshot so it survives clear_hand_state
-    queue_modal("outcome", {
-        "outcome": outcome,
-        "action_taken": action_taken,
-        "hand_context": hand_context,
-        "profit_loss": profit_loss,
-        "bluff_context": bluff_data,
-        "explanation": decision_explanation,     # Snapshot: survives clear
-        "calculation": decision_calculation,     # Snapshot: survives clear
-    })
+    # Outcome display moved to inline hand log in React component
+    # No modal queued — component handles the recap display
 
     # Save two-table state so the other table survives the rerun
     if component_value.get("show_second_table"):
