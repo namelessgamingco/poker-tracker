@@ -447,6 +447,11 @@ section[data-testid="stSidebar"] { background: #0F0F1A; }
 
 /* ── Hide Streamlit default decorations in play mode ── */
 .stDeployButton, #MainMenu { display: none; }
+
+/* ── Reduce spacing between elements ── */
+.block-container { padding-top: 1rem !important; }
+[data-testid="stVerticalBlock"] > div:empty { display: none; }
+[data-testid="stVerticalBlock"] > div { margin-bottom: -0.5rem; }
 </style>
 
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -954,8 +959,9 @@ def check_session_alerts():
         </div>
         """, unsafe_allow_html=True)
 
-    # Table check (inline — doesn't interrupt current hand)
-    render_inline_table_check()
+    # Table check renders only between hands — expander clicks cause Streamlit rerun which kills hand state
+    if not st.session_state.get("current_decision_dict"):
+        render_inline_table_check()
 
 
 # =============================================================================
