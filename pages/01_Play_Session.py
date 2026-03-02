@@ -449,7 +449,6 @@ section[data-testid="stSidebar"] { background: #0F0F1A; }
 .stDeployButton, #MainMenu { display: none; }
 
 /* ── Reduce gap between session header and component ── */
-.block-container { padding-top: 1rem !important; }
 [data-testid="stExpander"] { margin-top: -2rem; }
 iframe[title="poker_input.poker_input"] { margin-top: -1rem; }
 
