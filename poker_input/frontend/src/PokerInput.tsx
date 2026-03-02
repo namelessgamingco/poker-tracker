@@ -4073,9 +4073,6 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   function renderActiveTableContent() {
     return (
       <>
-        {/* HAND LOG */}
-        {renderHandLog()}
-        
         {/* BREADCRUMB */}
         {renderBreadcrumb()}
 
@@ -4270,7 +4267,10 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               <span style={{ color: "rgba(255,255,255,0.5)" }}>Tab</span> switch table
             </span>
           </div>
-        )}
+      )}
+
+      {/* HAND LOG */}
+      {renderHandLog()}
       </>
     )
   }
@@ -5142,9 +5142,6 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           </button>
         </div>
       )}
-
-      {/* HAND LOG */}
-      {renderHandLog()}
 
       {/* BREADCRUMB */}
       {renderBreadcrumb()}
@@ -6043,6 +6040,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           </span>
         </div>
       )}
+
+      {/* HAND LOG */}
+      {renderHandLog()}
     </div>
   )
 }
