@@ -299,9 +299,7 @@ wr_sign = "+" if win_rate >= 0 else ""
 
 hero_stats = ""
 if total_sessions > 0:
-    hero_stats = f"""
-    <div class="home-hero-stat-row">
-        <div class="home-hero-stat">
+    hero_stats = f'<div class="home-hero-stat-row"><div class="home-hero-stat"><div class="home-hero-stat-num" style="color: {pl_color}">{pl_sign}${total_pl:,.0f}</div><div class="home-hero-stat-lbl">Total P/L</div></div><div class="home-hero-stat"><div class="home-hero-stat-num" style="color: {wr_color}">{wr_sign}{win_rate}</div><div class="home-hero-stat-lbl">BB/100</div></div><div class="home-hero-stat"><div class="home-hero-stat-num">{total_hands:,}</div><div class="home-hero-stat-lbl">Hands</div></div><div class="home-hero-stat"><div class="home-hero-stat-num">{total_hours}</div><div class="home-hero-stat-lbl">Hours</div></div></div>'
             <div class="home-hero-stat-num" style="color: {pl_color}">{pl_sign}${total_pl:,.0f}</div>
             <div class="home-hero-stat-lbl">Total P/L</div>
         </div>
@@ -578,14 +576,12 @@ st.markdown("""
 # Clickable buttons below cards (Streamlit can't make HTML divs clickable)
 c1, c2, c3 = st.columns(3)
 with c1:
-    if st.button("📖 How It Works", use_container_width=True):
+    if st.button("📖 How It Works", use_container_width=True, key="nav_how"):
         st.switch_page("pages/06_How_It_Works.py")
 with c2:
-    if st.button("📐 EV System", use_container_width=True):
-        st.switch_page("pages/07_EV_System.py")
+    if st.button("📐 EV System", use_container_width=True, key="nav_ev"):
 with c3:
-    if st.button("🎓 Master Your Play", use_container_width=True):
-        st.switch_page("pages/08_Master_Your_Play.py")
+    if st.button("🎓 Master Your Play", use_container_width=True, key="nav_master"):
 
 
 # =============================================================================

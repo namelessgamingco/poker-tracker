@@ -83,29 +83,22 @@ def render_sidebar():
                     duration_str = ""
 
             # P/L formatting
-            pl_color = "green" if session_pl >= 0 else "red"
             pl_sign = "+" if session_pl >= 0 else ""
             pl_display = f"{pl_sign}${session_pl:.2f}"
+            pl_html_color = "#69F0AE" if session_pl >= 0 else "#FF5252"
 
             # BB/100 calculation
-            bb100 = ""
+            bb100_html = ""
             if hands_played > 0 and bb_size > 0:
                 bb_won = session_pl / bb_size
                 bb_per_100 = (bb_won / hands_played) * 100
-                bb100 = f"{bb_per_100:+.1f} BB/100"
+                bb100_html = f'<span style="color: rgba(255,255,255,0.15); margin: 0 6px;">·</span><span style="color: rgba(255,255,255,0.45);">{bb_per_100:+.1f} BB/100</span>'
 
-            st.markdown(f"""
-            <div style="padding: 8px 0;">
-                <div style="font-size: 13px; color: rgba(255,255,255,0.4); font-weight: 600; margin-bottom: 6px;">📍 ACTIVE SESSION</div>
-                <div style="font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 700; color: #E0E0E0;">{stakes} <span style="font-weight: 400; color: rgba(255,255,255,0.3);">·</span> <span style="font-size: 13px; color: rgba(255,255,255,0.5);">{duration_str}</span></div>
-                <div style="margin-top: 6px; font-size: 13px;">
-                    <span style="color: rgba(255,255,255,0.45);">P/L:</span> <span style="color: {'#69F0AE' if session_pl >= 0 else '#FF5252'}; font-family: 'JetBrains Mono', monospace; font-weight: 700;">{pl_display}</span>
-                    <span style="color: rgba(255,255,255,0.15); margin: 0 6px;">·</span>
-                    <span style="color: rgba(255,255,255,0.45);">Hands:</span> <span style="color: #E0E0E0; font-family: 'JetBrains Mono', monospace;">{hands_played}</span>
-                    {"<span style='color: rgba(255,255,255,0.15); margin: 0 6px;'>·</span><span style='color: rgba(255,255,255,0.45);'>" + bb100 + "</span>" if bb100 else ""}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"""<div style="padding: 8px 0;">
+<div style="font-size: 13px; color: rgba(255,255,255,0.4); font-weight: 600; margin-bottom: 6px;">📍 ACTIVE SESSION</div>
+<div style="font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 700; color: #E0E0E0;">{stakes} <span style="font-weight: 400; color: rgba(255,255,255,0.3);">·</span> <span style="font-size: 13px; color: rgba(255,255,255,0.5);">{duration_str}</span></div>
+<div style="margin-top: 6px; font-size: 13px;"><span style="color: rgba(255,255,255,0.45);">P/L:</span> <span style="color: {pl_html_color}; font-family: 'JetBrains Mono', monospace; font-weight: 700;">{pl_display}</span><span style="color: rgba(255,255,255,0.15); margin: 0 6px;">·</span><span style="color: rgba(255,255,255,0.45);">Hands:</span> <span style="color: #E0E0E0; font-family: 'JetBrains Mono', monospace;">{hands_played}</span>{bb100_html}</div>
+</div>""", unsafe_allow_html=True)
 
             if st.button("← Back to Session", use_container_width=True):
                 st.switch_page("pages/01_Play_Session.py")
