@@ -194,94 +194,117 @@ def sign_out():
     st.rerun()
 
 
+
 # ---------- Login UI ----------
 
 def _login_ui():
     """Render login form and handle authentication."""
     _hide_sidebar_while_logged_out()
 
-    # Hide Streamlit branding on login screen
-    st.markdown(
-        """
-        <style>
-          div[data-testid="stToolbar"] {display: none !important;}
-          header[data-testid="stHeader"] {height: 0rem !important;}
-          footer {visibility: hidden !important;}
-          .stDeployButton {display: none !important;}
-          [data-testid="stDecoration"] {display: none !important;}
-          .viewerBadge_container__r5tak {display: none !important;}
-          .styles_viewerBadge__CvC9N {display: none !important;}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown("""<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+div[data-testid="stToolbar"] {display: none !important;}
+header[data-testid="stHeader"] {height: 0rem !important;}
+footer {visibility: hidden !important;}
+.stDeployButton {display: none !important;}
+[data-testid="stDecoration"] {display: none !important;}
+[data-testid="stSidebarNav"] {display: none !important;}
+section[data-testid="stSidebar"] {display: none !important;}
+[data-testid="stAppViewContainer"] {background: #0A0A12;}
+.block-container {max-width: 440px; padding-top: 4rem !important;}
+.stTextInput > div > div > input {
+    background: rgba(255,255,255,0.04) !important;
+    border: 1px solid rgba(255,255,255,0.08) !important;
+    border-radius: 10px !important; color: #E0E0E0 !important;
+    padding: 12px 16px !important; font-size: 14px !important;
+}
+.stTextInput > div > div > input:focus {
+    border-color: rgba(105,240,174,0.4) !important;
+    box-shadow: 0 0 0 1px rgba(105,240,174,0.15) !important;
+}
+.stTextInput > label {
+    color: rgba(255,255,255,0.4) !important; font-size: 12px !important;
+    letter-spacing: 0.03em !important; text-transform: uppercase !important;
+}
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #69F0AE 0%, #4CAF50 100%) !important;
+    color: #0A0A12 !important; font-weight: 700 !important;
+    border: none !important; border-radius: 10px !important;
+    padding: 12px 24px !important; font-size: 15px !important;
+}
+</style>""", unsafe_allow_html=True)
 
-    st.title("🃏 Poker Decision App")
-    st.markdown("**One answer. No thinking required.**")
-    
-    # Show environment indicator in dev
+    st.markdown('<div style="text-align:center;padding:0 0 32px 0"><div style="font-family:JetBrains Mono,monospace;font-size:28px;font-weight:800;letter-spacing:0.08em;color:#E0E0E0;margin-bottom:10px">NAMELESS POKER</div><div style="font-size:14px;color:rgba(255,255,255,0.35)">One answer. No thinking required.</div></div>', unsafe_allow_html=True)
+
     if APP_ENV == "dev":
-        st.caption("🔧 Development Environment")
-    
-    st.markdown("---")
-    
+        st.markdown('<div style="text-align:center;margin-bottom:16px"><span style="font-size:11px;color:rgba(255,255,255,0.2);background:rgba(255,255,255,0.04);padding:4px 10px;border-radius:4px">DEV ENVIRONMENT</span></div>', unsafe_allow_html=True)
+
+    st.markdown('<div style="height:1px;background:rgba(255,255,255,0.06);margin:0 0 24px 0"></div>', unsafe_allow_html=True)
+
     email_input = st.text_input("Email", key="login_email_input")
     password_input = st.text_input("Password", type="password", key="login_password_input")
 
+    _err = '<div style="text-align:center;padding:12px;background:rgba(255,82,82,0.08);border:1px solid rgba(255,82,82,0.2);border-radius:8px;margin-top:8px"><span style="color:#FF5252;font-size:13px">{}</span></div>'
+
     if st.button("Sign In", type="primary", use_container_width=True):
         if not email_input or not password_input:
-            st.error("Please enter both email and password.")
+            st.markdown(_err.format("Enter your email and password to continue."), unsafe_allow_html=True)
             return
-        
+
         try:
             email = email_input.strip().lower()
-            
-            # Authenticate via GoTrue
             data = _gotrue_password_login(email, password_input)
-            
             access_token = data.get("access_token")
             refresh_token = data.get("refresh_token")
             user_obj = data.get("user")
-            
+
             if not access_token:
-                st.error("Login failed: No access token received.")
+                st.markdown(_err.format("Authentication failed. Please try again."), unsafe_allow_html=True)
                 return
-            
-            # Clear any stale caches from previous user
+
             try:
                 from cache import clear_all_user_caches
                 clear_all_user_caches()
             except Exception:
                 pass
-            
-            # Store in session state
+
             st.session_state["authenticated"] = True
             st.session_state["access_token"] = access_token
             st.session_state["refresh_token"] = refresh_token
             st.session_state["user"] = user_obj
-            
-            # Extract email from user object
+
             if isinstance(user_obj, dict):
                 user_email = (user_obj.get("email") or "").strip().lower()
             else:
                 user_email = email
-            
+
             st.session_state["email"] = user_email
             st.session_state["is_admin"] = user_email in ADMIN_EMAILS
-            
-            # Reset Supabase client for fresh state
+
             try:
                 reset_supabase_client()
             except Exception:
                 pass
-            
+
             st.rerun()
-            
+
         except Exception as e:
-            st.error(f"Login failed: {e}")
+            error_msg = str(e)
+            if "Invalid login credentials" in error_msg:
+                display_msg = "Incorrect email or password."
+            elif "Email not confirmed" in error_msg:
+                display_msg = "Check your email for a confirmation link."
+            elif "too many requests" in error_msg.lower():
+                display_msg = "Too many attempts. Wait a moment and try again."
+            elif "connection" in error_msg.lower() or "timed out" in error_msg.lower():
+                display_msg = "Connection issue. Please try again."
+            else:
+                display_msg = "Unable to sign in. Please check your credentials."
+            st.markdown(_err.format(display_msg), unsafe_allow_html=True)
+
+    st.markdown('<div style="text-align:center;padding:32px 0 0 0"><div style="font-family:JetBrains Mono,monospace;font-size:10px;color:rgba(255,255,255,0.12);letter-spacing:0.05em">Texas Hold&#39;em NL 6-Max Cash</div></div>', unsafe_allow_html=True)
 
     st.stop()
-
 
 # ---------- Profile & Subscription Management ----------
 
@@ -411,90 +434,56 @@ def check_subscription_access(profile: dict) -> tuple[bool, str, Optional[str]]:
     return False, "unknown", payment_link
 
 
-def _show_lockout_screen(status: str, payment_link: Optional[str]):
-    """Show lockout screen when user doesn't have access."""
-    
+
+def _show_lockout_screen(status, payment_link):
+    """Show lockout screen when user does not have access."""
+
     _hide_sidebar_while_logged_out()
-    
-    st.title("🃏 Poker Decision App")
-    st.markdown("---")
-    
-    if status == "pending":
-        st.error("### Complete Your Subscription")
-        st.markdown(
-            """
-            Your account has been created but you haven't completed payment yet.
-            
-            Subscribe to get access to:
-            - **Mathematically optimal decisions** for every poker situation
-            - **Exact bet sizing** — "$12", not "raise 3x"
-            - **Session management** — know when to stop
-            - **Expected win rate: +6-7 BB/100**
-            """
-        )
-    
-    elif status == "trial_expired":
-        st.error("### Your Free Trial Has Ended")
-        st.markdown(
-            """
-            We hope you enjoyed your trial! Subscribe now to continue using
-            the app and keep making +EV decisions at the table.
-            """
-        )
-    
-    elif status == "overdue":
-        st.error("### Payment Overdue")
-        st.markdown(
-            """
-            Your subscription payment failed and the grace period has ended.
-            
-            Please update your payment method to restore access.
-            """
-        )
-    
-    elif status == "cancelled":
-        st.warning("### Subscription Cancelled")
-        st.markdown(
-            """
-            Your subscription has been cancelled. 
-            
-            You can resubscribe anytime to regain access.
-            """
-        )
-    
-    elif status == "expired":
-        st.warning("### Subscription Expired")
-        st.markdown(
-            """
-            Your subscription has expired.
-            
-            Renew now to continue making optimal decisions at the table.
-            """
-        )
-    
-    else:
-        st.error("### Access Denied")
-        st.markdown("Please contact support if you believe this is an error.")
-    
-    # Payment button
+
+    st.markdown("""<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+div[data-testid="stToolbar"] {display: none !important;}
+header[data-testid="stHeader"] {height: 0rem !important;}
+footer {visibility: hidden !important;}
+.stDeployButton {display: none !important;}
+[data-testid="stSidebarNav"] {display: none !important;}
+section[data-testid="stSidebar"] {display: none !important;}
+[data-testid="stAppViewContainer"] {background: #0A0A12;}
+.block-container {max-width: 520px; padding-top: 3rem !important;}
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #69F0AE 0%, #4CAF50 100%) !important;
+    color: #0A0A12 !important; font-weight: 700 !important;
+    border: none !important; border-radius: 10px !important;
+    padding: 12px 24px !important; font-size: 15px !important;
+}
+</style>""", unsafe_allow_html=True)
+
+    st.markdown('<div style="text-align:center;padding:0 0 24px 0"><div style="font-family:JetBrains Mono,monospace;font-size:24px;font-weight:800;letter-spacing:0.08em;color:#E0E0E0">NAMELESS POKER</div></div>', unsafe_allow_html=True)
+    st.markdown('<div style="height:1px;background:rgba(255,255,255,0.06);margin:0 0 28px 0"></div>', unsafe_allow_html=True)
+
+    msgs = {
+        "pending": ("&#x1F512;", "Complete Your Subscription", "Your account is ready. Subscribe to unlock real-time poker decisions, exact bet sizing, session management, and an expected win rate of +6-7 BB/100."),
+        "trial_expired": ("&#x23F0;", "Your Free Trial Has Ended", "We hope you saw the value. Subscribe now to keep making +EV decisions at the table and let the math work for you."),
+        "overdue": ("&#x26A0;", "Payment Overdue", "Your payment failed and the grace period has ended. Update your payment method to restore access immediately."),
+        "cancelled": ("&#x270B;", "Subscription Cancelled", "Your subscription has been cancelled. You can resubscribe anytime to regain access to all features."),
+        "expired": ("&#x1F4C5;", "Subscription Expired", "Your subscription has expired. Renew now to continue making optimal decisions at the table."),
+    }
+
+    icon, title, body = msgs.get(status, ("&#x1F512;", "Access Denied", "Please contact support if you believe this is an error."))
+
+    st.markdown(f'<div style="background:linear-gradient(135deg,#0F0F1A 0%,#151520 100%);border:1px solid rgba(255,255,255,0.06);border-radius:14px;padding:32px 28px;text-align:center"><div style="font-size:36px;margin-bottom:16px">{icon}</div><div style="font-size:20px;font-weight:700;color:#E0E0E0;margin-bottom:12px">{title}</div><div style="font-size:14px;color:rgba(255,255,255,0.45);line-height:1.7;max-width:400px;margin:0 auto">{body}</div></div>', unsafe_allow_html=True)
+
     if payment_link:
-        st.markdown("---")
-        st.link_button(
-            "💳 Subscribe Now — $299/month",
-            payment_link,
-            type="primary",
-            use_container_width=True,
-        )
-        st.caption("Secure crypto payment via Radom. Cancel anytime.")
-    
-    st.markdown("---")
-    
-    # Sign out button
+        st.markdown('<div style="margin-top:20px"></div>', unsafe_allow_html=True)
+        st.link_button("Subscribe Now", payment_link, type="primary", use_container_width=True)
+        st.markdown('<div style="text-align:center;margin-top:8px"><span style="font-size:11px;color:rgba(255,255,255,0.2)">Secure payment via Radom. Cancel anytime.</span></div>', unsafe_allow_html=True)
+
+    st.markdown('<div style="margin-top:24px"></div>', unsafe_allow_html=True)
+
     if st.button("Sign Out", use_container_width=True):
         sign_out()
-    
-    st.stop()
 
+    st.stop()
 
 # ---------- Main Auth Gate ----------
 
