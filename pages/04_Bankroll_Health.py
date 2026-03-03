@@ -1152,27 +1152,39 @@ def render_empty_state():
         move_down_text = (f' Move down if you drop to {fmtc(rec["typical_bi"] * 12)} (12 buy-ins).'
                           if rec != STAKES_CONFIG[0] else '')
 
+        # ---- Render the live preview in separate markdown calls ----
+        # Title
         st.markdown(f"""
             <div class="edu-section" style="margin-top: 12px;">
                 <div class="edu-title" style="font-size: 15px;">
                     Your Bankroll: {fmtc(bankroll)} in {sel_mode['name']} Mode
                 </div>
+        """, unsafe_allow_html=True)
 
-                <div style="margin-bottom: 18px;">
-                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px;">
-                        {compare_html}
-                    </div>
-                    <div style="font-family:'Inter',sans-serif;font-size:11px;color:rgba(255,255,255,0.25);text-align:center;">
-                        {mode_note}
-                    </div>
+        # 3-mode comparison strip
+        st.markdown(f"""
+            <div style="margin-bottom: 18px;">
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px;">
+                    {compare_html}
                 </div>
-
-                <div style="font-family:'Inter',sans-serif;font-size:11px;font-weight:600;color:rgba(255,255,255,0.30);
-                    text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">
-                    Stakes unlocked with {fmtc(bankroll)}
+                <div style="font-family:'Inter',sans-serif;font-size:11px;color:rgba(255,255,255,0.25);text-align:center;">
+                    {mode_note}
                 </div>
-                {ladder_html}
+            </div>
+        """, unsafe_allow_html=True)
 
+        # Stakes ladder header + rows
+        st.markdown(f"""
+            <div style="font-family:'Inter',sans-serif;font-size:11px;font-weight:600;color:rgba(255,255,255,0.30);
+                text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">
+                Stakes unlocked with {fmtc(bankroll)}
+            </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown(ladder_html, unsafe_allow_html=True)
+
+        # Bottom callout + close the edu-section div
+        st.markdown(f"""
                 <div class="callout" style="margin-top: 14px;">
                     You'll play <span style="color:{sel_mode['color']};font-weight:600;">{rec['name']}</span> with
                     <span class="edu-highlight">{rec_bis:.1f} buy-ins</span> of cushion.
@@ -1230,6 +1242,27 @@ def render_hero(bankroll, stats, rec_stakes, risk_mode):
         </div>
     """, unsafe_allow_html=True)
 
+    # Explain data sources: bankroll = manual, stats = automatic from sessions
+    if stats["has_data"]:
+        source_text = (
+            f'Your bankroll is set by you — update it below after deposits or withdrawals. '
+            f'Hourly rate, win rate, and hours are pulled automatically from your '
+            f'{stats["total_sessions"]} tracked sessions and drive your move-up projections.'
+        )
+    else:
+        source_text = (
+            'Your bankroll is set by you — update it below after deposits or withdrawals. '
+            'Once you play sessions, your hourly rate and win rate will populate automatically '
+            'from real data and power your move-up projections.'
+        )
+
+    st.markdown(f"""
+        <div style="font-family:'Inter',sans-serif;font-size:11px;color:rgba(255,255,255,0.20);
+            text-align:center;margin-top:-12px;margin-bottom:16px;line-height:1.5;">
+            {source_text}
+        </div>
+    """, unsafe_allow_html=True)
+
 
 def render_bankroll_editor(bankroll, user_id, risk_mode, rec_stakes):
     """Bankroll editor with context about when/why to update and impact preview."""
@@ -1244,8 +1277,10 @@ def render_bankroll_editor(bankroll, user_id, risk_mode, rec_stakes):
             <div style="font-family:'Inter',sans-serif;font-size:12px;color:rgba(255,255,255,0.40);
                 line-height:1.6;margin-bottom:16px;">
                 Update your bankroll after deposits, withdrawals, or at the start of each week. 
-                This keeps your stakes recommendation and move-up projections accurate. 
-                Your current bankroll of <span style="color:#fff;font-weight:600;">{fmtc(bankroll)}</span> gives you 
+                This is your total poker bankroll — it's not automatically adjusted by session results. 
+                Your session P/L feeds the stats above (hourly rate, win rate), but your bankroll 
+                number is always set by you.
+                Currently <span style="color:#fff;font-weight:600;">{fmtc(bankroll)}</span> = 
                 <span style="color:{mode['color']};font-weight:600;">{bis:.1f} buy-ins</span> at 
                 <span style="color:#fff;font-weight:600;">{rec_stakes['name']}</span>.
             </div>
@@ -1547,6 +1582,7 @@ def render_risk_mode_selector(current_mode, bankroll, rec_stakes):
         """
     cards += '</div>'
 
+    # Render header and intro text
     st.markdown(f"""
         <div class="dk">
             <div class="dk-hdr">⚙️ RISK MODE</div>
@@ -1556,8 +1592,10 @@ def render_risk_mode_selector(current_mode, bankroll, rec_stakes):
                 Changing modes may change your recommended stakes. Below shows what each mode 
                 means for your current bankroll of <span style="color:#fff;font-weight:600;">{fmtc(bankroll)}</span>.
             </div>
-            {cards}
     """, unsafe_allow_html=True)
+
+    # Render mode cards separately
+    st.markdown(cards, unsafe_allow_html=True)
 
     # Expanded details for selected mode
     cm = RISK_MODES[current_mode]
