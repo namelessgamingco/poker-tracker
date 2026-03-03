@@ -71,7 +71,7 @@ TABLE_CHECK_OPTIONS = [
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
-.block-container { max-width: 900px; }
+.block-container { max-width: 1200px; }
 
 .pg-hdr { text-align: left; margin-bottom: 32px; }
 .pg-hdr h1 { font-family: Inter, sans-serif; font-size: 28px; font-weight: 700; color: #FFFFFF; margin: 0 0 4px 0; }
@@ -141,7 +141,7 @@ def get_user_id() -> Optional[str]:
     return st.session_state.get("user_db_id")
 
 def get_user_email() -> str:
-    return st.session_state.get("user_email", "")
+    return st.session_state.get("email") or st.session_state.get("user_email") or ""
 
 def fmtc(v):
     if v is None: return "—"
