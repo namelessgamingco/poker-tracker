@@ -1055,8 +1055,15 @@ def render_empty_state():
             st.session_state["bankroll"] = bankroll
             uid = get_user_id()
             if uid:
-                try: update_user_bankroll(uid, bankroll)
-                except Exception: pass
+                try:
+                    update_user_bankroll(uid, bankroll)
+                    from db import get_supabase_admin
+                    supabase = get_supabase_admin()
+                    supabase.table("poker_profiles").update(
+                        {"user_mode": risk_mode}
+                    ).eq("user_id", uid).execute()
+                except Exception:
+                    pass
             st.rerun()
 
     # ---- LIVE PREVIEW — What your bankroll unlocks ----
@@ -1652,7 +1659,190 @@ def render_risk_mode_selector(current_mode, bankroll, rec_stakes):
         """, unsafe_allow_html=True)
 
         st.session_state["risk_mode"] = new_mode
+        try:
+            from db import get_supabase_admin
+            supabase = get_supabase_admin()
+            uid = get_user_id()
+            if uid:
+                supabase.table("poker_profiles").update(
+                    {"user_mode": new_mode}
+                ).eq("user_id", uid).execute()
+        except Exception:
+            pass
         st.rerun()
+
+
+def render_rakeback(bankroll, rec_stakes, stats, risk_mode):
+    """Rakeback section showing how rakeback offsets subscription and accelerates bankroll growth."""
+    mode = RISK_MODES[risk_mode]
+    bb = rec_stakes["bb"]
+    bi = rec_stakes["typical_bi"]
+    sub_cost = 299  # monthly subscription
+
+    # Rake per 100 hands estimate by stakes (standard online 6-max rake caps)
+    # Approximate rake paid per 100 hands at each stakes level
+    rake_per_100 = {
+        "$0.50/$1": 30, "$1/$2": 55, "$2/$5": 120,
+        "$5/$10": 200, "$10/$20": 350, "$25/$50": 600,
+    }
+    est_rake_100 = rake_per_100.get(rec_stakes["name"], 55)
+
+    # Platform rakeback data
+    platforms = [
+        {"name": "ACR / Americas Cardroom", "pct": 27, "note": "Elite Benefits VIP tier", "crypto": True},
+        {"name": "GGPoker", "pct": 25, "note": "Fish Buffet Gold+", "crypto": True},
+        {"name": "Ignition / Bovada", "pct": 15, "note": "Flat rakeback on all hands", "crypto": True},
+        {"name": "CoinPoker", "pct": 33, "note": "CHP token staking bonus", "crypto": True},
+        {"name": "Winamax", "pct": 35, "note": "VIP Store rewards (EU)", "crypto": False},
+        {"name": "iPoker Network", "pct": 40, "note": "Affiliate deals (varies by skin)", "crypto": False},
+        {"name": "PokerStars", "pct": 15, "note": "Chest rewards (lower volume)", "crypto": False},
+    ]
+
+    # Hours/month assumption
+    hours_per_month = 40
+    hands_per_hour = 200
+    hands_per_month = hours_per_month * hands_per_hour
+
+    # Intro
+    st.markdown(f"""
+        <div class="dk">
+            <div class="dk-hdr">💎 RAKEBACK & SUBSCRIPTION ROI</div>
+            <div style="font-family:Inter,sans-serif;font-size:12px;color:rgba(255,255,255,0.40);
+                line-height:1.6;margin-bottom:16px;">
+                Every hand you play generates rake — and most platforms give a percentage back. 
+                This is free money that grows your bankroll on top of your win rate. 
+                At <span style="color:#fff;font-weight:600;">{rec_stakes['name']}</span> playing 
+                <span style="color:#fff;font-weight:600;">{hours_per_month}h/month</span>, 
+                here's what each platform returns to you.
+            </div>
+    """, unsafe_allow_html=True)
+
+    # Build platform comparison rows
+    rows_html = ""
+    for p in platforms:
+        monthly_rake = (hands_per_month / 100) * est_rake_100
+        monthly_rb = monthly_rake * (p["pct"] / 100)
+        annual_rb = monthly_rb * 12
+        net_after_sub = monthly_rb - sub_cost
+        covers_sub = net_after_sub >= 0
+
+        if covers_sub:
+            net_color = "#69F0AE"
+            net_label = f'+{fmtc(net_after_sub)}/mo profit'
+            sub_tag = '<span style="color:#69F0AE;font-size:9px;font-weight:600;">✓ COVERS SUB</span>'
+        else:
+            net_color = "#FFB300"
+            shortfall = abs(net_after_sub)
+            net_label = f'{fmtc(shortfall)}/mo gap'
+            sub_tag = f'<span style="color:#FFB300;font-size:9px;font-weight:600;">OFFSETS {fmtc(monthly_rb)}</span>'
+
+        crypto_dot = '<span style="color:#69F0AE;font-size:8px;">₿</span> ' if p["crypto"] else ''
+
+        rows_html += (
+            f'<div style="display:grid;grid-template-columns:1.8fr 0.6fr 0.8fr 0.8fr 1fr;align-items:center;'
+            f'padding:10px 14px;border-bottom:1px solid rgba(255,255,255,0.04);">'
+            f'<div>'
+            f'<div style="font-family:Inter,sans-serif;font-size:13px;color:#E0E0E0;font-weight:600;">{crypto_dot}{p["name"]}</div>'
+            f'<div style="font-family:Inter,sans-serif;font-size:10px;color:rgba(255,255,255,0.25);margin-top:2px;">{p["note"]}</div>'
+            f'</div>'
+            f'<div style="font-family:JetBrains Mono,monospace;font-size:13px;color:{RISK_MODES[risk_mode]["color"]};text-align:center;">{p["pct"]}%</div>'
+            f'<div style="font-family:JetBrains Mono,monospace;font-size:13px;color:#E0E0E0;text-align:center;">{fmtc(monthly_rb)}</div>'
+            f'<div style="font-family:JetBrains Mono,monospace;font-size:13px;color:#69F0AE;text-align:center;">{fmtc(annual_rb)}</div>'
+            f'<div style="text-align:right;">{sub_tag}</div>'
+            f'</div>'
+        )
+
+    # Table header + rows
+    st.markdown(
+        f'<div style="display:grid;grid-template-columns:1.8fr 0.6fr 0.8fr 0.8fr 1fr;'
+        f'padding:8px 14px;border-bottom:1px solid rgba(255,255,255,0.08);">'
+        f'<div style="font-family:Inter,sans-serif;font-size:10px;color:rgba(255,255,255,0.30);text-transform:uppercase;letter-spacing:0.05em;">Platform</div>'
+        f'<div style="font-family:Inter,sans-serif;font-size:10px;color:rgba(255,255,255,0.30);text-transform:uppercase;letter-spacing:0.05em;text-align:center;">Rate</div>'
+        f'<div style="font-family:Inter,sans-serif;font-size:10px;color:rgba(255,255,255,0.30);text-transform:uppercase;letter-spacing:0.05em;text-align:center;">Monthly</div>'
+        f'<div style="font-family:Inter,sans-serif;font-size:10px;color:rgba(255,255,255,0.30);text-transform:uppercase;letter-spacing:0.05em;text-align:center;">Annual</div>'
+        f'<div style="font-family:Inter,sans-serif;font-size:10px;color:rgba(255,255,255,0.30);text-transform:uppercase;letter-spacing:0.05em;text-align:right;">vs $299/mo</div>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+    st.markdown(rows_html, unsafe_allow_html=True)
+
+    # Subscription ROI breakdown
+    monthly_rake_total = (hands_per_month / 100) * est_rake_100
+    mid_rb_pct = 25  # use a middle-ground estimate
+    mid_monthly_rb = monthly_rake_total * (mid_rb_pct / 100)
+    win_rate_income = 0
+    if stats["has_data"] and stats["hourly_rate"] > 0:
+        win_rate_income = stats["hourly_rate"] * hours_per_month
+    elif bb > 0:
+        # Default estimate: 6 BB/100
+        win_rate_income = (6 / 100) * bb * hands_per_month
+
+    total_monthly = win_rate_income + mid_monthly_rb
+    profit_after_sub = total_monthly - sub_cost
+    roi_pct = ((total_monthly - sub_cost) / sub_cost) * 100 if sub_cost > 0 else 0
+
+    profit_color = "#69F0AE" if profit_after_sub > 0 else "#FF5252"
+
+    st.markdown(f"""
+        <div style="margin-top:20px;padding:16px 18px;background:rgba(255,255,255,0.02);
+            border:1px solid rgba(255,255,255,0.06);border-radius:10px;">
+            <div style="font-family:Inter,sans-serif;font-size:11px;font-weight:600;color:rgba(255,255,255,0.30);
+                text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px;">
+                Your Monthly Math at {rec_stakes['name']} ({hours_per_month}h/month · ~25% rakeback)
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
+                <div style="text-align:center;">
+                    <div style="font-family:Inter,sans-serif;font-size:10px;color:rgba(255,255,255,0.30);margin-bottom:4px;">Win Rate Income</div>
+                    <div style="font-family:JetBrains Mono,monospace;font-size:16px;font-weight:700;color:#69F0AE;">{fmtc(win_rate_income)}</div>
+                </div>
+                <div style="text-align:center;">
+                    <div style="font-family:Inter,sans-serif;font-size:10px;color:rgba(255,255,255,0.30);margin-bottom:4px;">Rakeback</div>
+                    <div style="font-family:JetBrains Mono,monospace;font-size:16px;font-weight:700;color:#4BA3FF;">+{fmtc(mid_monthly_rb)}</div>
+                </div>
+                <div style="text-align:center;">
+                    <div style="font-family:Inter,sans-serif;font-size:10px;color:rgba(255,255,255,0.30);margin-bottom:4px;">Subscription</div>
+                    <div style="font-family:JetBrains Mono,monospace;font-size:16px;font-weight:700;color:#FF5252;">-$299</div>
+                </div>
+                <div style="text-align:center;">
+                    <div style="font-family:Inter,sans-serif;font-size:10px;color:rgba(255,255,255,0.30);margin-bottom:4px;">Net Profit</div>
+                    <div style="font-family:JetBrains Mono,monospace;font-size:16px;font-weight:700;color:{profit_color};">{fmtc(profit_after_sub)}</div>
+                </div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Move-up acceleration
+    nxt = get_next_stakes(rec_stakes)
+    if nxt:
+        target = nxt["typical_bi"] * mode["buy_ins"]
+        needed = max(0, target - bankroll)
+        if needed > 0 and total_monthly > 0:
+            months_with_rb = needed / total_monthly
+            months_without_rb = needed / win_rate_income if win_rate_income > 0 else 0
+            saved_months = months_without_rb - months_with_rb if months_without_rb > 0 else 0
+
+            st.markdown(f"""
+                <div class="callout" style="margin-top:14px;">
+                    💎 <strong>Rakeback accelerates your move-up.</strong>
+                    With rakeback, you reach <span style="color:#69F0AE;font-weight:600;">{nxt['name']}</span> in 
+                    ~<span style="font-weight:600;">{months_with_rb:.0f} months</span> instead of 
+                    ~{months_without_rb:.0f} months — saving you 
+                    <span style="color:#4BA3FF;font-weight:600;">{saved_months:.0f} months</span> of grinding.
+                </div>
+            """, unsafe_allow_html=True)
+
+    # Pro tip
+    st.markdown("""
+        <div style="margin-top:14px;font-family:Inter,sans-serif;font-size:11px;color:rgba(255,255,255,0.25);line-height:1.6;">
+            💡 <strong style="color:rgba(255,255,255,0.40);">Pro tip:</strong> 
+            Always sign up through an affiliate link for the best rakeback deal. 
+            Default VIP programs often pay less than negotiated affiliate rates. 
+            Rakeback rates shown are estimates — check your platform's current VIP program for exact numbers.
+            Platforms marked with <span style="color:#69F0AE;">₿</span> accept crypto deposits.
+        </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # =============================================================================
@@ -1675,15 +1865,22 @@ def main():
     # Load bankroll from DB if not already in session state (survives refresh/re-login)
     if not st.session_state.get("bankroll"):
         try:
-            stats = get_player_stats(user_id)
-            if stats:
-                saved_br = float(stats.get("bankroll", 0) or 0)
+            from db import get_supabase_admin
+            supabase = get_supabase_admin()
+            result = supabase.table("poker_profiles").select(
+                "current_bankroll, user_mode, default_stakes"
+            ).eq("user_id", user_id).execute()
+            if result.data and len(result.data) > 0:
+                row = result.data[0]
+                saved_br = float(row.get("current_bankroll", 0) or 0)
                 if saved_br > 0:
                     st.session_state["bankroll"] = saved_br
-                # Also restore risk mode if saved
-                saved_mode = stats.get("risk_mode", "")
+                saved_mode = row.get("user_mode", "")
                 if saved_mode in RISK_MODES:
                     st.session_state["risk_mode"] = saved_mode
+                saved_stakes = row.get("default_stakes", "")
+                if saved_stakes:
+                    st.session_state["default_stakes"] = saved_stakes
         except Exception:
             pass
 
@@ -1716,11 +1913,12 @@ def main():
     render_move_up(bankroll, stats, rec_stakes, risk_mode)
 
     # ===== TABBED DEEP DIVES =====
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "🎲 Risk Analysis",
         "🪜 Stakes Ladder",
         "⚙️ Risk Mode",
         "📉 Drawdowns",
+        "💎 Rakeback",
     ])
 
     with tab1:
@@ -1734,6 +1932,9 @@ def main():
 
     with tab4:
         render_drawdown(sessions, bankroll)
+
+    with tab5:
+        render_rakeback(bankroll, rec_stakes, stats, risk_mode)
 
 
 if __name__ == "__main__":
