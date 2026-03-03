@@ -79,11 +79,11 @@ LOSING_SESSION_PCT = 38  # ~38% of sessions are losing even at +6 BB/100
 
 # Session time thresholds (minutes)
 TIME_OPTIMAL = 90
-TIME_WARNING = 180
+TIME_WARNING = st.session_state.get("time_warning_hours", 3) * 60
 TIME_HARD_STOP = 240
 
 # Table check interval (minutes)
-TABLE_CHECK_INTERVAL = 20
+TABLE_CHECK_INTERVAL = st.session_state.get("table_check_interval", 20)
 
 # Tilt detection thresholds
 TILT_LOSS_STREAK = 3           # Consecutive losses before tilt banner
