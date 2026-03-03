@@ -449,7 +449,7 @@ section[data-testid="stSidebar"] { background: #0F0F1A; }
 .stDeployButton, #MainMenu { display: none; }
 
 /* ── Reduce gap between session header and component ── */
-[data-testid="stExpander"] { margin-top: -2rem; }
+[data-testid="stExpander"] { margin-top: -0.5rem; }
 iframe[title="poker_input.poker_input"] { margin-top: -1rem; }
 
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">

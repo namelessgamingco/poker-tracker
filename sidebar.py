@@ -20,16 +20,13 @@ def render_sidebar():
         """, unsafe_allow_html=True)
 
         # ── Branding ──
-        st.markdown("## 🃏 Poker Decision App")
-
-        # ── User Info ──
+        st.markdown("### NAMELESS POKER")
         email = st.session_state.get("email", "")
         is_admin = st.session_state.get("is_admin", False)
-
         if is_admin:
-            st.caption(f"👤 {email} · 🔐 Admin")
+            st.caption(f"{email} · Admin")
         else:
-            st.caption(f"👤 {email}")
+            st.caption(email)
 
         # ── Subscription Warning ──
         subscription_status = st.session_state.get("subscription_status", "active")
@@ -64,7 +61,8 @@ def render_sidebar():
         active_session = st.session_state.get("active_session")
 
         if active_session:
-            stakes = active_session.get("stakes", "$1/$2")
+            stakes_raw = active_session.get("stakes", "$1/$2")
+            stakes = stakes_raw if stakes_raw.startswith("$") else f"${stakes_raw}"
             started_at = active_session.get("started_at", "")
             session_pl = st.session_state.get("session_pl", 0)
             hands_played = st.session_state.get("hands_played", 0)
@@ -145,6 +143,9 @@ def render_sidebar():
             st.markdown("---")
 
         # ── Navigation ──
+        if st.button("🏠 Home", use_container_width=True):
+            st.switch_page("app.py")
+
         if st.button("🎯 Play Session", use_container_width=True):
             st.switch_page("pages/01_Play_Session.py")
 
