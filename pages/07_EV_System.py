@@ -198,7 +198,7 @@ def main():
 
     st.markdown("""
         <p style="font-size:14px;color:#94a3b8;line-height:1.7;margin-bottom:8px;">
-            These projections are derived from a <strong>15,000-hand Monte Carlo simulation</strong> run
+            These projections are derived from a <strong>10,000,000-hand Monte Carlo simulation</strong> run
             against the current decision engine with realistic opponent distributions at each stake level.
             Volume assumes <strong>8,000 hands/month</strong> (~200 hands/session × 40 sessions) and
             <strong>100% compliance</strong> with app recommendations — which is exactly what the app

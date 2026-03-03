@@ -1673,19 +1673,36 @@ def render_risk_mode_selector(current_mode, bankroll, rec_stakes):
 
 
 def render_rakeback(bankroll, rec_stakes, stats, risk_mode):
-    """Rakeback section showing how rakeback offsets subscription and accelerates bankroll growth."""
+    """Rakeback section — numbers match the EV System page exactly."""
     mode = RISK_MODES[risk_mode]
     bb = rec_stakes["bb"]
     bi = rec_stakes["typical_bi"]
     sub_cost = 299  # monthly subscription
 
-    # Rake per 100 hands estimate by stakes (standard online 6-max rake caps)
-    # Approximate rake paid per 100 hands at each stakes level
-    rake_per_100 = {
-        "$0.50/$1": 30, "$1/$2": 55, "$2/$5": 120,
-        "$5/$10": 200, "$10/$20": 350, "$25/$50": 600,
+    # Volume: 8,000 hands/month (200 hands/session × 40 sessions) — matches EV System page
+    hands_per_month = 8000
+
+    # Monthly gross win rate income from EV System page (average win rate × volume)
+    monthly_gross = {
+        "$0.50/$1": 640, "$1/$2": 1120, "$2/$5": 2800,
+        "$5/$10": 4800, "$10/$20": 8000, "$25/$50": 16000,
     }
-    est_rake_100 = rake_per_100.get(rec_stakes["name"], 55)
+    # Monthly net = gross - $299 subscription
+    gross = monthly_gross.get(rec_stakes["name"], 1120)
+    net = gross - sub_cost
+
+    # Rake per 100 hands (mid-range from EV System page)
+    # $0.50/$1: $8-12, $1/$2: $14-20, $2/$5: $18-25, $5/$10: $20-30
+    rake_per_100_range = {
+        "$0.50/$1": (8, 12), "$1/$2": (14, 20), "$2/$5": (18, 25),
+        "$5/$10": (20, 30), "$10/$20": (25, 40), "$25/$50": (30, 50),
+    }
+    rake_low, rake_high = rake_per_100_range.get(rec_stakes["name"], (14, 20))
+    rake_mid = (rake_low + rake_high) / 2
+
+    # Monthly rake = (hands / 100) × rake per 100
+    monthly_rake_low = (hands_per_month / 100) * rake_low
+    monthly_rake_high = (hands_per_month / 100) * rake_high
 
     # Platform rakeback data
     platforms = [
@@ -1698,55 +1715,49 @@ def render_rakeback(bankroll, rec_stakes, stats, risk_mode):
         {"name": "PokerStars", "pct": 15, "note": "Chest rewards (lower volume)", "crypto": False},
     ]
 
-    # Hours/month assumption
-    hours_per_month = 40
-    hands_per_hour = 200
-    hands_per_month = hours_per_month * hands_per_hour
-
     # Intro
     st.markdown(f"""
         <div class="dk">
             <div class="dk-hdr">💎 RAKEBACK & SUBSCRIPTION ROI</div>
             <div style="font-family:Inter,sans-serif;font-size:12px;color:rgba(255,255,255,0.40);
-                line-height:1.6;margin-bottom:16px;">
-                Every hand you play generates rake — and most platforms give a percentage back. 
-                This is free money that grows your bankroll on top of your win rate. 
-                At <span style="color:#fff;font-weight:600;">{rec_stakes['name']}</span> playing 
-                <span style="color:#fff;font-weight:600;">{hours_per_month}h/month</span>, 
-                here's what each platform returns to you.
+                line-height:1.6;margin-bottom:6px;">
+                Every hand you play generates rake — and most platforms give a percentage back.
+                At <span style="color:#fff;font-weight:600;">{rec_stakes['name']}</span>, you generate
+                <span style="color:#fff;font-weight:600;">{fmtc(monthly_rake_low)}–{fmtc(monthly_rake_high)}/month</span> in rake
+                over 8,000 hands. Here's what each platform returns to you.
+            </div>
+            <div style="font-family:Inter,sans-serif;font-size:10px;color:rgba(255,255,255,0.20);
+                margin-bottom:16px;">
+                Based on 8,000 hands/month (200 hands/session × 40 sessions) · 5% rake with standard caps · 6-max tables
             </div>
     """, unsafe_allow_html=True)
 
     # Build platform comparison rows
     rows_html = ""
     for p in platforms:
-        monthly_rake = (hands_per_month / 100) * est_rake_100
-        monthly_rb = monthly_rake * (p["pct"] / 100)
-        annual_rb = monthly_rb * 12
-        net_after_sub = monthly_rb - sub_cost
+        rb_low = monthly_rake_low * (p["pct"] / 100)
+        rb_high = monthly_rake_high * (p["pct"] / 100)
+        rb_mid = (rb_low + rb_high) / 2
+        annual_rb = rb_mid * 12
+        net_after_sub = rb_mid - sub_cost
         covers_sub = net_after_sub >= 0
 
         if covers_sub:
-            net_color = "#69F0AE"
-            net_label = f'+{fmtc(net_after_sub)}/mo profit'
             sub_tag = '<span style="color:#69F0AE;font-size:9px;font-weight:600;">✓ COVERS SUB</span>'
         else:
-            net_color = "#FFB300"
-            shortfall = abs(net_after_sub)
-            net_label = f'{fmtc(shortfall)}/mo gap'
-            sub_tag = f'<span style="color:#FFB300;font-size:9px;font-weight:600;">OFFSETS {fmtc(monthly_rb)}</span>'
+            sub_tag = f'<span style="color:#FFB300;font-size:9px;font-weight:600;">OFFSETS {fmtc(rb_mid)}</span>'
 
         crypto_dot = '<span style="color:#69F0AE;font-size:8px;">₿</span> ' if p["crypto"] else ''
 
         rows_html += (
-            f'<div style="display:grid;grid-template-columns:1.8fr 0.6fr 0.8fr 0.8fr 1fr;align-items:center;'
+            f'<div style="display:grid;grid-template-columns:1.8fr 0.6fr 1fr 0.8fr 1fr;align-items:center;'
             f'padding:10px 14px;border-bottom:1px solid rgba(255,255,255,0.04);">'
             f'<div>'
             f'<div style="font-family:Inter,sans-serif;font-size:13px;color:#E0E0E0;font-weight:600;">{crypto_dot}{p["name"]}</div>'
             f'<div style="font-family:Inter,sans-serif;font-size:10px;color:rgba(255,255,255,0.25);margin-top:2px;">{p["note"]}</div>'
             f'</div>'
-            f'<div style="font-family:JetBrains Mono,monospace;font-size:13px;color:{RISK_MODES[risk_mode]["color"]};text-align:center;">{p["pct"]}%</div>'
-            f'<div style="font-family:JetBrains Mono,monospace;font-size:13px;color:#E0E0E0;text-align:center;">{fmtc(monthly_rb)}</div>'
+            f'<div style="font-family:JetBrains Mono,monospace;font-size:13px;color:{mode["color"]};text-align:center;">{p["pct"]}%</div>'
+            f'<div style="font-family:JetBrains Mono,monospace;font-size:12px;color:#E0E0E0;text-align:center;">{fmtc(rb_low)}–{fmtc(rb_high)}</div>'
             f'<div style="font-family:JetBrains Mono,monospace;font-size:13px;color:#69F0AE;text-align:center;">{fmtc(annual_rb)}</div>'
             f'<div style="text-align:right;">{sub_tag}</div>'
             f'</div>'
@@ -1754,7 +1765,7 @@ def render_rakeback(bankroll, rec_stakes, stats, risk_mode):
 
     # Table header + rows
     st.markdown(
-        f'<div style="display:grid;grid-template-columns:1.8fr 0.6fr 0.8fr 0.8fr 1fr;'
+        f'<div style="display:grid;grid-template-columns:1.8fr 0.6fr 1fr 0.8fr 1fr;'
         f'padding:8px 14px;border-bottom:1px solid rgba(255,255,255,0.08);">'
         f'<div style="font-family:Inter,sans-serif;font-size:10px;color:rgba(255,255,255,0.30);text-transform:uppercase;letter-spacing:0.05em;">Platform</div>'
         f'<div style="font-family:Inter,sans-serif;font-size:10px;color:rgba(255,255,255,0.30);text-transform:uppercase;letter-spacing:0.05em;text-align:center;">Rate</div>'
@@ -1766,21 +1777,22 @@ def render_rakeback(bankroll, rec_stakes, stats, risk_mode):
     )
     st.markdown(rows_html, unsafe_allow_html=True)
 
-    # Subscription ROI breakdown
-    monthly_rake_total = (hands_per_month / 100) * est_rake_100
-    mid_rb_pct = 25  # use a middle-ground estimate
-    mid_monthly_rb = monthly_rake_total * (mid_rb_pct / 100)
-    win_rate_income = 0
+    # Your Monthly Math — matching EV System page numbers
+    # Use 30% rakeback as baseline (matches EV System "common baseline")
+    rb_30_low = monthly_rake_low * 0.30
+    rb_30_high = monthly_rake_high * 0.30
+    rb_30_mid = (rb_30_low + rb_30_high) / 2
+
+    # Use actual stats if available, otherwise use EV System gross
     if stats["has_data"] and stats["hourly_rate"] > 0:
-        win_rate_income = stats["hourly_rate"] * hours_per_month
-    elif bb > 0:
-        # Default estimate: 6 BB/100
-        win_rate_income = (6 / 100) * bb * hands_per_month
+        actual_gross = stats["hourly_rate"] * (hands_per_month / 200)  # hours × hourly rate
+        win_label = "Your Win Rate Income"
+    else:
+        actual_gross = gross
+        win_label = "Expected Win Rate Income"
 
-    total_monthly = win_rate_income + mid_monthly_rb
+    total_monthly = actual_gross + rb_30_mid
     profit_after_sub = total_monthly - sub_cost
-    roi_pct = ((total_monthly - sub_cost) / sub_cost) * 100 if sub_cost > 0 else 0
-
     profit_color = "#69F0AE" if profit_after_sub > 0 else "#FF5252"
 
     st.markdown(f"""
@@ -1788,16 +1800,17 @@ def render_rakeback(bankroll, rec_stakes, stats, risk_mode):
             border:1px solid rgba(255,255,255,0.06);border-radius:10px;">
             <div style="font-family:Inter,sans-serif;font-size:11px;font-weight:600;color:rgba(255,255,255,0.30);
                 text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px;">
-                Your Monthly Math at {rec_stakes['name']} ({hours_per_month}h/month · ~25% rakeback)
+                Your Monthly Math at {rec_stakes['name']} (8,000 hands/month · 30% rakeback)
             </div>
             <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;">
                 <div style="text-align:center;">
-                    <div style="font-family:Inter,sans-serif;font-size:10px;color:rgba(255,255,255,0.30);margin-bottom:4px;">Win Rate Income</div>
-                    <div style="font-family:JetBrains Mono,monospace;font-size:16px;font-weight:700;color:#69F0AE;">{fmtc(win_rate_income)}</div>
+                    <div style="font-family:Inter,sans-serif;font-size:10px;color:rgba(255,255,255,0.30);margin-bottom:4px;">{win_label}</div>
+                    <div style="font-family:JetBrains Mono,monospace;font-size:16px;font-weight:700;color:#69F0AE;">{fmtc(actual_gross)}</div>
                 </div>
                 <div style="text-align:center;">
-                    <div style="font-family:Inter,sans-serif;font-size:10px;color:rgba(255,255,255,0.30);margin-bottom:4px;">Rakeback</div>
-                    <div style="font-family:JetBrains Mono,monospace;font-size:16px;font-weight:700;color:#4BA3FF;">+{fmtc(mid_monthly_rb)}</div>
+                    <div style="font-family:Inter,sans-serif;font-size:10px;color:rgba(255,255,255,0.30);margin-bottom:4px;">30% Rakeback</div>
+                    <div style="font-family:JetBrains Mono,monospace;font-size:16px;font-weight:700;color:#4BA3FF;">+{fmtc(rb_30_mid)}</div>
+                    <div style="font-family:Inter,sans-serif;font-size:9px;color:rgba(255,255,255,0.20);margin-top:2px;">({fmtc(rb_30_low)}–{fmtc(rb_30_high)} range)</div>
                 </div>
                 <div style="text-align:center;">
                     <div style="font-family:Inter,sans-serif;font-size:10px;color:rgba(255,255,255,0.30);margin-bottom:4px;">Subscription</div>
@@ -1811,34 +1824,44 @@ def render_rakeback(bankroll, rec_stakes, stats, risk_mode):
         </div>
     """, unsafe_allow_html=True)
 
+    # Rakeback alone vs subscription callout
+    st.markdown(f"""
+        <div class="callout" style="margin-top:14px;">
+            💎 At {rec_stakes['name']} with 30% rakeback, you collect
+            <span style="color:#4BA3FF;font-weight:600;">{fmtc(rb_30_low)}–{fmtc(rb_30_high)}/month</span> in rakeback alone.
+            {'That more than covers the $299 subscription by itself — your poker winnings are pure profit on top.' if rb_30_low >= sub_cost else f'That offsets {fmtc(rb_30_mid)} of the $299 subscription — your poker winnings cover the rest and then some.'}
+        </div>
+    """, unsafe_allow_html=True)
+
     # Move-up acceleration
     nxt = get_next_stakes(rec_stakes)
     if nxt:
         target = nxt["typical_bi"] * mode["buy_ins"]
         needed = max(0, target - bankroll)
-        if needed > 0 and total_monthly > 0:
-            months_with_rb = needed / total_monthly
-            months_without_rb = needed / win_rate_income if win_rate_income > 0 else 0
-            saved_months = months_without_rb - months_with_rb if months_without_rb > 0 else 0
+        if needed > 0:
+            months_without = needed / actual_gross if actual_gross > 0 else 0
+            months_with = needed / total_monthly if total_monthly > 0 else 0
+            saved = months_without - months_with if months_without > 0 else 0
 
-            st.markdown(f"""
-                <div class="callout" style="margin-top:14px;">
-                    💎 <strong>Rakeback accelerates your move-up.</strong>
-                    With rakeback, you reach <span style="color:#69F0AE;font-weight:600;">{nxt['name']}</span> in 
-                    ~<span style="font-weight:600;">{months_with_rb:.0f} months</span> instead of 
-                    ~{months_without_rb:.0f} months — saving you 
-                    <span style="color:#4BA3FF;font-weight:600;">{saved_months:.0f} months</span> of grinding.
-                </div>
-            """, unsafe_allow_html=True)
+            if saved > 0.5:
+                st.markdown(f"""
+                    <div class="callout" style="margin-top:10px;">
+                        📈 <strong>Rakeback accelerates your move-up.</strong>
+                        With rakeback, you reach <span style="color:#69F0AE;font-weight:600;">{nxt['name']}</span> in
+                        ~<span style="font-weight:600;">{months_with:.0f} months</span> instead of
+                        ~{months_without:.0f} months — saving you
+                        <span style="color:#4BA3FF;font-weight:600;">{saved:.0f} months</span> of grinding.
+                    </div>
+                """, unsafe_allow_html=True)
 
     # Pro tip
     st.markdown("""
         <div style="margin-top:14px;font-family:Inter,sans-serif;font-size:11px;color:rgba(255,255,255,0.25);line-height:1.6;">
-            💡 <strong style="color:rgba(255,255,255,0.40);">Pro tip:</strong> 
-            Always sign up through an affiliate link for the best rakeback deal. 
-            Default VIP programs often pay less than negotiated affiliate rates. 
-            Rakeback rates shown are estimates — check your platform's current VIP program for exact numbers.
+            💡 <strong style="color:rgba(255,255,255,0.40);">Pro tip:</strong>
+            Always sign up through a rakeback affiliate — never use default registration.
+            Common deals: 25–33% standard, up to 60% at high volume.
             Platforms marked with <span style="color:#69F0AE;">₿</span> accept crypto deposits.
+            See the <strong style="color:rgba(255,255,255,0.40);">EV System</strong> page for detailed rake math.
         </div>
     """, unsafe_allow_html=True)
 
