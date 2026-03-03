@@ -66,6 +66,9 @@ def render_sidebar():
             started_at = active_session.get("started_at", "")
             session_pl = st.session_state.get("session_pl", 0)
             hands_played = st.session_state.get("hands_played", 0)
+            if hands_played == 0 and active_session.get("hands_played"):
+                hands_played = int(active_session.get("hands_played", 0) or 0)
+                st.session_state["hands_played"] = hands_played
             bb_size = float(active_session.get("bb_size", 2.0))
 
             # Duration
