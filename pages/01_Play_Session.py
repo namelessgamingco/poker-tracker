@@ -1377,6 +1377,7 @@ def render_setup_mode():
                     or active_session.get("buy_in_amount", 200)
                 )
                 st.session_state.session_pl = float(active_session.get("profit_loss", 0) or 0)
+                st.session_state.hands_played = int(active_session.get("hands_played", 0) or 0)
                 update_sidebar_session_info(active_session, st.session_state.session_pl)
                 st.rerun()
         with col2:
