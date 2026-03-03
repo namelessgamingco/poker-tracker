@@ -563,8 +563,10 @@ with c1:
         st.switch_page("pages/06_How_It_Works.py")
 with c2:
     if st.button("📐 EV System", use_container_width=True, key="nav_ev"):
+        st.switch_page("pages/07_EV_System.py")
 with c3:
     if st.button("🎓 Master Your Play", use_container_width=True, key="nav_master"):
+        st.switch_page("pages/08_Master_Your_Play.py")
 
 
 # =============================================================================
