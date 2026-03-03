@@ -16,6 +16,8 @@ from sidebar import render_sidebar
 user = require_auth()
 render_sidebar()
 
+st.session_state["visited_master"] = True
+
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');

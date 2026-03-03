@@ -20,13 +20,13 @@ def render_sidebar():
         """, unsafe_allow_html=True)
 
         # ── Branding ──
-        st.markdown("### NAMELESS POKER")
-        email = st.session_state.get("email", "")
+        st.markdown("""
+        <div style="padding: 4px 0 8px 0;">
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 15px; font-weight: 700; letter-spacing: 0.05em; color: #E0E0E0;">NAMELESS POKER</div>
+            <div style="font-size: 12px; color: rgba(255,255,255,0.35); margin-top: 4px;">""" + (st.session_state.get("email", "")) + ("  ·  🔐 Admin" if st.session_state.get("is_admin", False) else "") + """</div>
+        </div>
+        """, unsafe_allow_html=True)
         is_admin = st.session_state.get("is_admin", False)
-        if is_admin:
-            st.caption(f"{email} · Admin")
-        else:
-            st.caption(email)
 
         # ── Subscription Warning ──
         subscription_status = st.session_state.get("subscription_status", "active")
@@ -94,13 +94,18 @@ def render_sidebar():
                 bb_per_100 = (bb_won / hands_played) * 100
                 bb100 = f"{bb_per_100:+.1f} BB/100"
 
-            st.markdown("### 📍 Active Session")
-            st.markdown(
-                f"**{stakes}** · {duration_str}  \n"
-                f"**P/L:** :{pl_color}[{pl_display}]  \n"
-                f"**Hands:** {hands_played}"
-                + (f" · {bb100}" if bb100 else "")
-            )
+            st.markdown(f"""
+            <div style="padding: 8px 0;">
+                <div style="font-size: 13px; color: rgba(255,255,255,0.4); font-weight: 600; margin-bottom: 6px;">📍 ACTIVE SESSION</div>
+                <div style="font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 700; color: #E0E0E0;">{stakes} <span style="font-weight: 400; color: rgba(255,255,255,0.3);">·</span> <span style="font-size: 13px; color: rgba(255,255,255,0.5);">{duration_str}</span></div>
+                <div style="margin-top: 6px; font-size: 13px;">
+                    <span style="color: rgba(255,255,255,0.45);">P/L:</span> <span style="color: {'#69F0AE' if session_pl >= 0 else '#FF5252'}; font-family: 'JetBrains Mono', monospace; font-weight: 700;">{pl_display}</span>
+                    <span style="color: rgba(255,255,255,0.15); margin: 0 6px;">·</span>
+                    <span style="color: rgba(255,255,255,0.45);">Hands:</span> <span style="color: #E0E0E0; font-family: 'JetBrains Mono', monospace;">{hands_played}</span>
+                    {"<span style='color: rgba(255,255,255,0.15); margin: 0 6px;'>·</span><span style='color: rgba(255,255,255,0.45);'>" + bb100 + "</span>" if bb100 else ""}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
             if st.button("← Back to Session", use_container_width=True):
                 st.switch_page("pages/01_Play_Session.py")

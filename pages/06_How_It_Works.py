@@ -16,6 +16,8 @@ from sidebar import render_sidebar
 user = require_auth()
 render_sidebar()
 
+st.session_state["visited_how_it_works"] = True
+
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
@@ -197,7 +199,8 @@ def main():
         <div class="sflow"><div class="sflow-badge">1</div><div><div class="sflow-title">Enter Your Cards & Situation</div><div class="sflow-desc">Tap your two hole cards, select your position, and tell the app what action you're facing. On postflop streets, enter board cards, pot size, and how many players remain. The entire input takes 3-5 seconds.</div></div></div>
         <div class="sflow"><div class="sflow-badge">2</div><div><div class="sflow-title">Get Your Decision Instantly</div><div class="sflow-desc">The engine evaluates hand strength, board texture, position, opponent type, and stack depth — then delivers one clear action: <strong style="color:#22c55e">RAISE TO $18</strong>, <strong style="color:#3b82f6">CALL $6</strong>, or <strong style="color:#ef4444">FOLD</strong>. Every decision includes a coaching explanation so you learn <em>why</em>.</div></div></div>
         <div class="sflow"><div class="sflow-badge">3</div><div><div class="sflow-title">Continue Through Every Street</div><div class="sflow-desc">If the hand continues to the turn or river, add the new board card and get your next decision. The app tracks your investment across every street — you always know exactly how much you have in the pot.</div></div></div>
-        <div class="sflow"><div class="sflow-badge">4</div><div><div class="sflow-title">Record the Result</div><div class="sflow-desc">When the hand ends, tap Won, Lost, or Folded. For won/lost hands, enter the total pot — the app calculates your profit automatically. Session stats, P/L tracking, and performance data update in real time.</div></div></div>
+        <div class="sflow"><div class="sflow-badge">4</div><div><div class="sflow-title">Record the Result</div><div class="sflow-desc">When the hand ends, tap Won, Lost, or Folded. For won/lost hands, enter the total pot — the app calculates your profit automatically. Your result instantly appears in the <strong>Hand Log</strong> at the bottom of the screen.</div></div></div>
+        <div class="sflow"><div class="sflow-badge">5</div><div><div class="sflow-title">Review in the Hand Log</div><div class="sflow-desc">Every completed hand appears in an inline log below the input — no pop-ups, no interruptions. The latest hand auto-expands to show your action, the engine's reasoning, EV math, and bluff stats. Previous hands collapse to a single line showing cards, position, action, and P/L. Click any hand to expand its full detail. Collapse the entire log to a summary bar showing your win/loss count and session P/L. You're always ready for the next hand — zero clicks required to continue.</div></div></div>
     """, unsafe_allow_html=True)
 
     st.markdown("""

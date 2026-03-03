@@ -40,6 +40,7 @@ from db import get_user_sessions, get_player_stats
 user = require_auth()
 render_sidebar()
 
+st.session_state["visited_bankroll"] = True
 
 # =============================================================================
 # CONFIGURATION
