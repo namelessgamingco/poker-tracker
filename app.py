@@ -372,11 +372,6 @@ if is_new_user:
     has_bankroll = current_bankroll and current_bankroll > 0
     has_session = total_sessions > 0
     has_10_hands = total_hands >= 10
-    has_reviewed = total_sessions >= 2
-
-has_bankroll = current_bankroll and current_bankroll > 0
-    has_session = total_sessions > 0
-    has_10_hands = total_hands >= 10
     has_reviewed_stats = total_sessions >= 3
     # Track page visits via session state (set by each page)
     visited_how_it_works = st.session_state.get("visited_how_it_works", False)
