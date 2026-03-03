@@ -959,14 +959,86 @@ def render_empty_state():
         </div>
     """, unsafe_allow_html=True)
 
-    # ---- Bankroll Input ----
+    # ================================================================
+    # INTERACTIVE SETUP — Risk Mode + Bankroll + Live Preview
+    # ================================================================
+
     st.markdown("""
         <div class="edu-section">
-            <div class="edu-title">Set Your Bankroll</div>
+            <div class="edu-title">Set Up Your Bankroll</div>
             <div class="edu-subtitle">
-                Enter the total amount of money you have dedicated to poker. 
-                This should be money you can afford to lose — not rent money. 
-                You can update this anytime.
+                Two things determine which stakes you should play: your 
+                <span class="edu-highlight">bankroll</span> (how much money you have) and your 
+                <span class="edu-highlight">risk mode</span> (how much safety cushion you want). 
+                Together, these tell us the highest stakes you can safely play without 
+                risking going broke during a normal downswing.
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # ---- STEP 1: Risk Mode ----
+    st.markdown("""
+        <div class="edu-section">
+            <div class="edu-title" style="font-size: 15px;">
+                Step 1 — How much risk can you handle?
+            </div>
+            <div class="edu-text" style="margin-bottom: 4px;">
+                This sets your safety cushion. More buy-ins = safer but slower progression. 
+                Fewer buy-ins = faster progression but more exposure to variance. 
+                <span style="color: rgba(255,255,255,0.60);">Not sure? Start with Balanced — you can change anytime.</span>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    risk_mode = st.radio(
+        "YOUR RISK MODE",
+        options=list(RISK_MODES.keys()),
+        format_func=lambda x: f"{RISK_MODES[x]['emoji']} {RISK_MODES[x]['name']} — {RISK_MODES[x]['buy_ins']} buy-in cushion",
+        index=1,
+        horizontal=False,
+        key="empty_risk_mode"
+    )
+    st.session_state["risk_mode"] = risk_mode
+
+    # Show selected mode details
+    sel_mode = RISK_MODES[risk_mode]
+    sel_cls = "agg" if risk_mode == "aggressive" else "bal" if risk_mode == "balanced" else "con"
+    rec_tag = '<span class="rec-tag">RECOMMENDED</span>' if risk_mode == "balanced" else ""
+    st.markdown(f"""
+        <div class="mode-compare {sel_cls}" style="margin-top: 8px; margin-bottom: 20px;">
+            <div class="mc-header">
+                <div class="mc-name">{sel_mode['emoji']} {sel_mode['name']}{rec_tag}</div>
+                <div class="mc-bis" style="color: {sel_mode['color']};">{sel_mode['buy_ins']} Buy-ins</div>
+            </div>
+            <div class="mc-body">{sel_mode['personality']}</div>
+            <div class="mc-stats">
+                <div class="mc-stat">
+                    <div class="mc-stat-label">Session Stop-Loss</div>
+                    <div class="mc-stat-val">{sel_mode['stop_loss']} BI</div>
+                </div>
+                <div class="mc-stat">
+                    <div class="mc-stat-label">Session Stop-Win</div>
+                    <div class="mc-stat-val">{sel_mode['stop_win']} BI</div>
+                </div>
+                <div class="mc-stat">
+                    <div class="mc-stat-label">Risk of Ruin</div>
+                    <div class="mc-stat-val">{sel_mode['ror_15bi']}</div>
+                </div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # ---- STEP 2: Bankroll ----
+    st.markdown(f"""
+        <div class="edu-section">
+            <div class="edu-title" style="font-size: 15px;">
+                Step 2 — Enter your poker bankroll
+            </div>
+            <div class="edu-text" style="margin-bottom: 4px;">
+                This is the total money you've set aside for poker — not your life savings. 
+                With <span style="color: {sel_mode['color']}; font-weight: 600;">{sel_mode['name']}</span> mode, 
+                you need <span class="edu-highlight">{sel_mode['buy_ins']} buy-ins</span> at your stake level to play safely. 
+                We'll show you exactly which stakes your bankroll unlocks.
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -987,33 +1059,128 @@ def render_empty_state():
                 except Exception: pass
             st.rerun()
 
-    # Show what their bankroll means
+    # ---- LIVE PREVIEW — What your bankroll unlocks ----
     if bankroll > 0:
-        mode = RISK_MODES["balanced"]
-        rec = get_stakes_for_bankroll(bankroll, "balanced")
-        bis = get_buy_ins(bankroll, rec)
-        status = get_health_status(bis)
+        req_bis = sel_mode["buy_ins"]
+        rec = get_stakes_for_bankroll(bankroll, risk_mode)
+        rec_bis = get_buy_ins(bankroll, rec)
+        rec_status = get_health_status(rec_bis)
+
+        # Build mini stakes ladder for this bankroll + mode
+        ladder_html = ""
+        for s in STAKES_CONFIG:
+            min_br = s["typical_bi"] * req_bis
+            is_rec = s["name"] == rec["name"]
+            is_avail = bankroll >= min_br
+
+            if is_rec:
+                sel_r = "75,163,255" if risk_mode == "balanced" else "255,179,0" if risk_mode == "aggressive" else "105,240,174"
+                row_bg = f"rgba({sel_r},0.08)"
+                row_border = f"1px solid {sel_mode['color']}40"
+                name_color = sel_mode['color']
+                tag = (f'<span style="font-family:Inter,sans-serif;font-size:9px;font-weight:600;'
+                       f'color:{sel_mode["color"]};background:rgba(255,255,255,0.05);padding:2px 6px;'
+                       f'border-radius:3px;text-transform:uppercase;letter-spacing:0.05em;margin-left:8px;">'
+                       f'← YOUR STAKES</span>')
+            elif is_avail:
+                row_bg = "rgba(105,240,174,0.03)"
+                row_border = "1px solid rgba(105,240,174,0.10)"
+                name_color = "#69F0AE"
+                tag = ""
+            else:
+                row_bg = "rgba(255,255,255,0.01)"
+                row_border = "1px solid rgba(255,255,255,0.03)"
+                name_color = "rgba(255,255,255,0.20)"
+                tag = ""
+
+            check = "✓" if is_avail else "🔒"
+            need_text = ""
+            if not is_avail:
+                need_text = (f'<span style="color:rgba(255,255,255,0.20);font-size:11px;">'
+                             f' — need {fmtc(min_br - bankroll)} more</span>')
+
+            ladder_html += f"""
+                <div style="display:flex;align-items:center;padding:10px 14px;border-radius:8px;
+                    margin-bottom:4px;background:{row_bg};border:{row_border};">
+                    <span style="font-size:12px;width:20px;">{check}</span>
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;
+                        color:{name_color};min-width:85px;">{s['name']}</span>
+                    <span style="font-family:'Inter',sans-serif;font-size:11px;color:rgba(255,255,255,0.30);flex:1;">
+                        {fmtc(min_br)} required{need_text}
+                    </span>
+                    {tag}
+                </div>
+            """
+
+        # Show comparison across all 3 modes
+        compare_html = ""
+        for mk, mv in RISK_MODES.items():
+            m_rec = get_stakes_for_bankroll(bankroll, mk)
+            m_bis = get_buy_ins(bankroll, m_rec)
+            is_selected = mk == risk_mode
+            opacity = "1" if is_selected else "0.45"
+            border = f"1px solid {mv['color']}40" if is_selected else "1px solid rgba(255,255,255,0.04)"
+            bg = "rgba(255,255,255,0.03)" if is_selected else "rgba(255,255,255,0.01)"
+            sel_dot = (f'<span style="color:{mv["color"]};font-size:8px;margin-right:4px;">●</span>'
+                       if is_selected else "")
+
+            compare_html += f"""
+                <div style="background:{bg};border:{border};border-radius:8px;padding:12px 14px;
+                    text-align:center;opacity:{opacity};">
+                    <div style="font-family:'Inter',sans-serif;font-size:10px;color:rgba(255,255,255,0.30);
+                        text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">
+                        {sel_dot}{mv['emoji']} {mv['name']}</div>
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;
+                        color:{mv['color']};">{m_rec['name']}</div>
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;
+                        color:rgba(255,255,255,0.35);margin-top:2px;">{m_bis:.1f} buy-ins</div>
+                </div>
+            """
+
+        # Check if modes differ
+        all_same = all(
+            get_stakes_for_bankroll(bankroll, m)['name'] == rec['name'] for m in RISK_MODES
+        )
+        mode_note = ('Same stakes across all modes at this bankroll.' if all_same
+                     else 'Different modes may recommend different stakes for your bankroll. '
+                          'A higher risk mode can unlock higher stakes sooner.')
+
+        # Move up/down callout
+        nxt = get_next_stakes(rec)
+        move_up_text = (f'Move up to {nxt["name"]} when you reach {fmtc(nxt["typical_bi"] * 20)} '
+                        f'(20 buy-ins at next level).' if nxt else "You're at the highest tracked stakes.")
+        move_down_text = (f' Move down if you drop to {fmtc(rec["typical_bi"] * 12)} (12 buy-ins).'
+                          if rec != STAKES_CONFIG[0] else '')
+
         st.markdown(f"""
-            <div class="callout" style="margin-top: 12px;">
-                With <span class="edu-highlight">{fmtc(bankroll)}</span> in Balanced mode, 
-                you'd play <span class="edu-highlight">{rec['name']}</span> 
-                with <span class="edu-highlight">{bis:.1f} buy-ins</span>. 
-                Health status: <span style="color: {status['color']}; font-weight: 600;">
-                {status['emoji']} {status['label']}</span>
+            <div class="edu-section" style="margin-top: 12px;">
+                <div class="edu-title" style="font-size: 15px;">
+                    Your Bankroll: {fmtc(bankroll)} in {sel_mode['name']} Mode
+                </div>
+
+                <div style="margin-bottom: 18px;">
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px;">
+                        {compare_html}
+                    </div>
+                    <div style="font-family:'Inter',sans-serif;font-size:11px;color:rgba(255,255,255,0.25);text-align:center;">
+                        {mode_note}
+                    </div>
+                </div>
+
+                <div style="font-family:'Inter',sans-serif;font-size:11px;font-weight:600;color:rgba(255,255,255,0.30);
+                    text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">
+                    Stakes unlocked with {fmtc(bankroll)}
+                </div>
+                {ladder_html}
+
+                <div class="callout" style="margin-top: 14px;">
+                    You'll play <span style="color:{sel_mode['color']};font-weight:600;">{rec['name']}</span> with
+                    <span class="edu-highlight">{rec_bis:.1f} buy-ins</span> of cushion.
+                    Health: <span style="color:{rec_status['color']};font-weight:600;">{rec_status['emoji']} {rec_status['label']}</span>.
+                    {move_up_text}{move_down_text}
+                </div>
             </div>
         """, unsafe_allow_html=True)
-
-    # Risk mode selector
-    st.markdown("<div style='height: 8px'></div>", unsafe_allow_html=True)
-    risk_mode = st.radio(
-        "RISK MODE",
-        options=list(RISK_MODES.keys()),
-        format_func=lambda x: f"{RISK_MODES[x]['emoji']} {RISK_MODES[x]['name']} ({RISK_MODES[x]['buy_ins']} BI)",
-        index=1,
-        horizontal=True,
-        key="empty_risk_mode"
-    )
-    st.session_state["risk_mode"] = risk_mode
 
 
 # =============================================================================
@@ -1064,10 +1231,29 @@ def render_hero(bankroll, stats, rec_stakes, risk_mode):
     """, unsafe_allow_html=True)
 
 
-def render_bankroll_editor(bankroll, user_id):
-    col1, col2, col3 = st.columns([3, 1, 1])
+def render_bankroll_editor(bankroll, user_id, risk_mode, rec_stakes):
+    """Bankroll editor with context about when/why to update and impact preview."""
+    mode = RISK_MODES[risk_mode]
+    bis = get_buy_ins(bankroll, rec_stakes)
+    nxt = get_next_stakes(rec_stakes)
+
+    # Context: when should you update?
+    st.markdown(f"""
+        <div class="dk">
+            <div class="dk-hdr">💰 UPDATE BANKROLL</div>
+            <div style="font-family:'Inter',sans-serif;font-size:12px;color:rgba(255,255,255,0.40);
+                line-height:1.6;margin-bottom:16px;">
+                Update your bankroll after deposits, withdrawals, or at the start of each week. 
+                This keeps your stakes recommendation and move-up projections accurate. 
+                Your current bankroll of <span style="color:#fff;font-weight:600;">{fmtc(bankroll)}</span> gives you 
+                <span style="color:{mode['color']};font-weight:600;">{bis:.1f} buy-ins</span> at 
+                <span style="color:#fff;font-weight:600;">{rec_stakes['name']}</span>.
+            </div>
+    """, unsafe_allow_html=True)
+
+    col1, col2 = st.columns([3, 1])
     with col1:
-        new_br = st.number_input("UPDATE BANKROLL", min_value=0.0, value=bankroll,
+        new_br = st.number_input("NEW BANKROLL AMOUNT", min_value=0.0, value=bankroll,
                                   step=100.0, format="%.2f", key="br_edit")
     with col2:
         st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
@@ -1077,14 +1263,88 @@ def render_bankroll_editor(bankroll, user_id):
                 try: update_user_bankroll(user_id, new_br)
                 except Exception: pass
                 st.rerun()
-    with col3:
-        st.markdown("<div style='height: 28px'></div>", unsafe_allow_html=True)
+
+    # Live impact preview when value differs
+    if new_br != bankroll and new_br > 0:
         diff = new_br - bankroll
-        if diff != 0:
-            c = "#69F0AE" if diff > 0 else "#FF5252"
-            st.markdown(f"<div style='font-family:JetBrains Mono,monospace;font-size:15px;"
-                        f"font-weight:600;color:{c};padding-top:8px;'>{fmt(diff,sign=True)}</div>",
-                        unsafe_allow_html=True)
+        diff_color = "#69F0AE" if diff > 0 else "#FF5252"
+        new_rec = get_stakes_for_bankroll(new_br, risk_mode)
+        new_bis = get_buy_ins(new_br, new_rec)
+        new_status = get_health_status(new_bis)
+        stakes_changed = new_rec["name"] != rec_stakes["name"]
+
+        # Build impact items
+        impact_html = f"""
+            <div style="margin-top:12px;padding:14px 18px;background:rgba(255,255,255,0.02);
+                border:1px solid rgba(255,255,255,0.05);border-radius:10px;">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:16px;
+                        font-weight:700;color:{diff_color};">{fmt(diff, sign=True)}</span>
+                    <span style="font-family:'Inter',sans-serif;font-size:11px;
+                        color:rgba(255,255,255,0.30);">change</span>
+                </div>
+                <div class="sg sg-3">
+                    <div class="si">
+                        <div class="si-label">New Stakes</div>
+                        <div class="si-val {'amber' if stakes_changed else 'blue'}">{new_rec['name']}</div>
+                        <div class="si-detail">{'⚠️ STAKES CHANGE' if stakes_changed else 'no change'}</div>
+                    </div>
+                    <div class="si">
+                        <div class="si-label">Buy-ins</div>
+                        <div class="si-val">{new_bis:.1f}</div>
+                        <div class="si-detail">{'↑' if new_bis > bis else '↓'} from {bis:.1f}</div>
+                    </div>
+                    <div class="si">
+                        <div class="si-label">Health</div>
+                        <div class="si-val" style="color:{new_status['color']};">{new_status['label']}</div>
+                        <div class="si-detail">{new_status['emoji']}</div>
+                    </div>
+                </div>
+        """
+
+        if stakes_changed:
+            if new_rec["bb"] > rec_stakes["bb"]:
+                impact_html += f"""
+                    <div class="callout" style="margin-top:10px;">
+                        📈 This bankroll increase unlocks <span style="color:#69F0AE;font-weight:600;">{new_rec['name']}</span> stakes.
+                        You'll have {new_bis:.1f} buy-ins at the higher level.
+                    </div>
+                """
+            else:
+                impact_html += f"""
+                    <div class="callout warn" style="margin-top:10px;">
+                        📉 This drop moves your recommended stakes down to 
+                        <span style="color:#FFB300;font-weight:600;">{new_rec['name']}</span>.
+                        Protect your bankroll by playing at the recommended level.
+                    </div>
+                """
+
+        impact_html += "</div>"
+        st.markdown(impact_html, unsafe_allow_html=True)
+
+    # Move-up/down thresholds for context
+    threshold_parts = []
+    if nxt:
+        move_up_br = nxt["typical_bi"] * 20
+        threshold_parts.append(
+            f'Move up to <span style="color:#69F0AE;font-weight:600;">{nxt["name"]}</span> '
+            f'at {fmtc(move_up_br)} (20 buy-ins)'
+        )
+    if rec_stakes != STAKES_CONFIG[0]:
+        move_down_br = rec_stakes["typical_bi"] * 12
+        threshold_parts.append(
+            f'Move down at {fmtc(move_down_br)} (12 buy-ins)'
+        )
+
+    if threshold_parts:
+        st.markdown(f"""
+            <div style="font-family:'Inter',sans-serif;font-size:11px;color:rgba(255,255,255,0.25);
+                margin-top:12px;line-height:1.6;">
+                {'  ·  '.join(threshold_parts)}
+            </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_move_up(bankroll, stats, rec_stakes, risk_mode):
@@ -1246,22 +1506,58 @@ def render_stakes_ladder(bankroll, risk_mode, current_stakes):
     st.markdown(html, unsafe_allow_html=True)
 
 
-def render_risk_mode_selector(current_mode):
+def render_risk_mode_selector(current_mode, bankroll, rec_stakes):
+    """Risk mode selector that shows impact of switching modes on your actual bankroll."""
+    mode = RISK_MODES[current_mode]
+    bis = get_buy_ins(bankroll, rec_stakes)
+
+    # Build comparison cards showing what each mode means for THIS bankroll
     cards = '<div class="rm-grid">'
     for k, m in RISK_MODES.items():
         sel = k == current_mode
+        m_rec = get_stakes_for_bankroll(bankroll, k)
+        m_bis = get_buy_ins(bankroll, m_rec)
+        m_status = get_health_status(m_bis)
+        stakes_differ = m_rec["name"] != rec_stakes["name"]
+
         scls = "sel" if sel else ""
         bc = m["color"] if sel else "rgba(255,255,255,0.06)"
         bg = "rgba(255,255,255,0.04)" if sel else "rgba(255,255,255,0.02)"
-        cards += f"""<div class="rm {scls}" style="border-color:{bc};background:{bg};">
-            <div class="rm-emoji">{m['emoji']}</div>
-            <div class="rm-name">{m['name']}</div>
-            <div class="rm-bis" style="color:{m['color']};">{m['buy_ins']} Buy-ins</div>
-            <div class="rm-desc">{m['description']}</div>
-        </div>"""
+
+        # Show stakes + buy-ins for this mode
+        stakes_color = m["color"] if sel else "rgba(255,255,255,0.55)"
+        current_tag = ('<span style="font-size:8px;color:rgba(255,255,255,0.30);'
+                       'text-transform:uppercase;letter-spacing:0.05em;">CURRENT</span><br>'
+                       if sel else '')
+
+        cards += f"""
+            <div class="rm {scls}" style="border-color:{bc};background:{bg};">
+                {current_tag}
+                <div class="rm-emoji">{m['emoji']}</div>
+                <div class="rm-name">{m['name']}</div>
+                <div class="rm-bis" style="color:{m['color']};">{m['buy_ins']} Buy-ins</div>
+                <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.05);">
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;
+                        color:{stakes_color};">{m_rec['name']}</div>
+                    <div style="font-family:'Inter',sans-serif;font-size:10px;color:rgba(255,255,255,0.30);
+                        margin-top:2px;">{m_bis:.1f} buy-ins · {m_status['emoji']} {m_status['label']}</div>
+                </div>
+                <div class="rm-desc" style="margin-top:8px;">{m['description']}</div>
+            </div>
+        """
     cards += '</div>'
 
-    st.markdown(f'<div class="dk"><div class="dk-hdr">⚙️ RISK MODE</div>{cards}', unsafe_allow_html=True)
+    st.markdown(f"""
+        <div class="dk">
+            <div class="dk-hdr">⚙️ RISK MODE</div>
+            <div style="font-family:'Inter',sans-serif;font-size:12px;color:rgba(255,255,255,0.40);
+                line-height:1.6;margin-bottom:16px;">
+                Your risk mode sets how many buy-ins you keep as a safety cushion. 
+                Changing modes may change your recommended stakes. Below shows what each mode 
+                means for your current bankroll of <span style="color:#fff;font-weight:600;">{fmtc(bankroll)}</span>.
+            </div>
+            {cards}
+    """, unsafe_allow_html=True)
 
     # Expanded details for selected mode
     cm = RISK_MODES[current_mode]
@@ -1270,12 +1566,12 @@ def render_risk_mode_selector(current_mode):
             <div class="mc-body">{cm['personality']}</div>
             <div class="mc-stats">
                 <div class="mc-stat">
-                    <div class="mc-stat-label">Stop-Loss</div>
-                    <div class="mc-stat-val">{cm['stop_loss']} BI</div>
+                    <div class="mc-stat-label">Session Stop-Loss</div>
+                    <div class="mc-stat-val">{cm['stop_loss']} BI ({fmtc(cm['stop_loss'] * rec_stakes['typical_bi'])})</div>
                 </div>
                 <div class="mc-stat">
-                    <div class="mc-stat-label">Stop-Win</div>
-                    <div class="mc-stat-val">{cm['stop_win']} BI</div>
+                    <div class="mc-stat-label">Session Stop-Win</div>
+                    <div class="mc-stat-val">{cm['stop_win']} BI ({fmtc(cm['stop_win'] * rec_stakes['typical_bi'])})</div>
                 </div>
                 <div class="mc-stat">
                     <div class="mc-stat-label">Risk of Ruin</div>
@@ -1294,7 +1590,35 @@ def render_risk_mode_selector(current_mode):
         horizontal=True,
         key="risk_mode_selector"
     )
+
+    # Show what would change if switching
     if new_mode != current_mode:
+        new_m = RISK_MODES[new_mode]
+        new_rec = get_stakes_for_bankroll(bankroll, new_mode)
+        new_bis = get_buy_ins(bankroll, new_rec)
+        new_status = get_health_status(new_bis)
+        stakes_change = new_rec["name"] != rec_stakes["name"]
+
+        callout_cls = "callout warn" if stakes_change else "callout"
+        stakes_note = ""
+        if stakes_change:
+            if new_rec["bb"] > rec_stakes["bb"]:
+                stakes_note = (f'<br>📈 This unlocks <span style="color:#69F0AE;font-weight:600;">'
+                               f'{new_rec["name"]}</span> — you have enough buy-ins at the higher cushion requirement.')
+            else:
+                stakes_note = (f'<br>📉 Stakes drop to <span style="color:#FFB300;font-weight:600;">'
+                               f'{new_rec["name"]}</span> — {new_m["name"]} mode requires more buy-ins per stake level.')
+
+        st.markdown(f"""
+            <div class="{callout_cls}" style="margin-top:10px;">
+                Switching to <span style="color:{new_m['color']};font-weight:600;">{new_m['name']}</span>: 
+                Play <span style="font-weight:600;">{new_rec['name']}</span> with {new_bis:.1f} buy-ins.
+                Health: <span style="color:{new_status['color']};font-weight:600;">{new_status['emoji']} {new_status['label']}</span>.
+                Stop-loss changes to {new_m['stop_loss']} BI ({fmtc(new_m['stop_loss'] * new_rec['typical_bi'])}).
+                {stakes_note}
+            </div>
+        """, unsafe_allow_html=True)
+
         st.session_state["risk_mode"] = new_mode
         st.rerun()
 
@@ -1337,7 +1661,7 @@ def main():
     render_hero(bankroll, stats, rec_stakes, risk_mode)
 
     # ===== INLINE BANKROLL EDITOR =====
-    render_bankroll_editor(bankroll, user_id)
+    render_bankroll_editor(bankroll, user_id, risk_mode, rec_stakes)
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
@@ -1359,7 +1683,7 @@ def main():
         render_stakes_ladder(bankroll, risk_mode, rec_stakes)
 
     with tab3:
-        render_risk_mode_selector(risk_mode)
+        render_risk_mode_selector(risk_mode, bankroll, rec_stakes)
 
     with tab4:
         render_drawdown(sessions, bankroll)
