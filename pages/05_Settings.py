@@ -71,7 +71,7 @@ TABLE_CHECK_OPTIONS = [
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
-.block-container { max-width: 1200px; }
+.block-container { max-width: 1400px; }
 
 .pg-hdr { text-align: left; margin-bottom: 32px; }
 .pg-hdr h1 { font-family: Inter, sans-serif; font-size: 28px; font-weight: 700; color: #FFFFFF; margin: 0 0 4px 0; }
@@ -376,7 +376,7 @@ def main():
             'Periodic reminder to assess whether your table still has enough recreational players. '
             'A good table is worth +2-3 BB/100 over a tough one — '
             'this reminder ensures you never grind a dead table by accident.'
-            '</div></div>', unsafe_allow_html=True
+            '</div><div style="height:8px"></div></div>', unsafe_allow_html=True
         )
         current_interval = settings.get("table_check_interval", 20)
         interval_labels = [opt[0] for opt in TABLE_CHECK_OPTIONS]
