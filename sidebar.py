@@ -109,9 +109,9 @@ def render_sidebar():
             st.markdown("---")
 
         # ── Bankroll Health ──
-        current_bankroll = st.session_state.get("current_bankroll", 0)
+        current_bankroll = st.session_state.get("bankroll", 0) or st.session_state.get("current_bankroll", 0)
         default_stakes = st.session_state.get("default_stakes", "$1/$2")
-        user_mode = st.session_state.get("user_mode", "balanced")
+        user_mode = st.session_state.get("risk_mode", "balanced") or st.session_state.get("user_mode", "balanced")
 
         if current_bankroll and current_bankroll > 0:
             stakes_to_buyin = {
@@ -133,14 +133,25 @@ def render_sidebar():
             required_buyins = mode_buyins.get(user_mode, 15)
 
             if buyins_available >= required_buyins:
-                health = f"✅ {buyins_available:.0f} buy-ins"
+                health_color = "#69F0AE"
+                health_icon = "✅"
             elif buyins_available >= 12:
-                health = f"⚠️ {buyins_available:.0f} buy-ins"
+                health_color = "#FFB300"
+                health_icon = "⚠️"
             else:
-                health = f"🔴 {buyins_available:.0f} buy-ins"
+                health_color = "#FF5252"
+                health_icon = "🔴"
 
-            st.markdown(f"### 💰 ${current_bankroll:,.0f}")
-            st.caption(f"{health} at {default_stakes}")
+            br_display = f"${current_bankroll:,.0f}"
+            stakes_display = default_stakes if default_stakes.startswith("$") else f"${default_stakes}"
+            mode_label = user_mode.capitalize()
+
+            st.markdown(f"""<div style="padding: 8px 0;">
+<div style="font-size: 13px; color: rgba(255,255,255,0.4); font-weight: 600; margin-bottom: 6px;">💰 BANKROLL</div>
+<div style="font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 700; color: #E0E0E0;">{br_display} <span style="font-weight: 400; color: rgba(255,255,255,0.3);">·</span> <span style="font-size: 13px; color: rgba(255,255,255,0.5);">{mode_label}</span></div>
+<div style="margin-top: 6px; font-size: 13px;"><span style="color: {health_color}; font-family: 'JetBrains Mono', monospace; font-weight: 600;">{health_icon} {buyins_available:.0f} buy-ins</span><span style="color: rgba(255,255,255,0.15); margin: 0 6px;">·</span><span style="color: rgba(255,255,255,0.45);">at {stakes_display}</span></div>
+</div>""", unsafe_allow_html=True)
+
             st.markdown("---")
 
         # ── Navigation ──

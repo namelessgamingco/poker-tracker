@@ -1099,18 +1099,16 @@ def render_empty_state():
                 need_text = (f'<span style="color:rgba(255,255,255,0.20);font-size:11px;">'
                              f' — need {fmtc(min_br - bankroll)} more</span>')
 
-            ladder_html += f"""
-                <div style="display:flex;align-items:center;padding:10px 14px;border-radius:8px;
-                    margin-bottom:4px;background:{row_bg};border:{row_border};">
-                    <span style="font-size:12px;width:20px;">{check}</span>
-                    <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;
-                        color:{name_color};min-width:85px;">{s['name']}</span>
-                    <span style="font-family:'Inter',sans-serif;font-size:11px;color:rgba(255,255,255,0.30);flex:1;">
-                        {fmtc(min_br)} required{need_text}
-                    </span>
-                    {tag}
-                </div>
-            """
+            ladder_html += (
+                f'<div style="display:flex;align-items:center;padding:10px 14px;border-radius:8px;'
+                f'margin-bottom:4px;background:{row_bg};border:{row_border};">'
+                f'<span style="font-size:12px;width:20px;">{check}</span>'
+                f'<span style="font-family:JetBrains Mono,monospace;font-size:13px;font-weight:700;'
+                f'color:{name_color};min-width:85px;">{s["name"]}</span>'
+                f'<span style="font-family:Inter,sans-serif;font-size:11px;color:rgba(255,255,255,0.30);flex:1;">'
+                f'{fmtc(min_br)} required{need_text}</span>'
+                f'{tag}</div>'
+            )
 
         # Show comparison across all 3 modes
         compare_html = ""
@@ -1124,18 +1122,18 @@ def render_empty_state():
             sel_dot = (f'<span style="color:{mv["color"]};font-size:8px;margin-right:4px;">●</span>'
                        if is_selected else "")
 
-            compare_html += f"""
-                <div style="background:{bg};border:{border};border-radius:8px;padding:12px 14px;
-                    text-align:center;opacity:{opacity};">
-                    <div style="font-family:'Inter',sans-serif;font-size:10px;color:rgba(255,255,255,0.30);
-                        text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">
-                        {sel_dot}{mv['emoji']} {mv['name']}</div>
-                    <div style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;
-                        color:{mv['color']};">{m_rec['name']}</div>
-                    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;
-                        color:rgba(255,255,255,0.35);margin-top:2px;">{m_bis:.1f} buy-ins</div>
-                </div>
-            """
+            compare_html += (
+                f'<div style="background:{bg};border:{border};border-radius:8px;padding:12px 14px;'
+                f'text-align:center;opacity:{opacity};">'
+                f'<div style="font-family:Inter,sans-serif;font-size:10px;color:rgba(255,255,255,0.30);'
+                f'text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">'
+                f'{sel_dot}{mv["emoji"]} {mv["name"]}</div>'
+                f'<div style="font-family:JetBrains Mono,monospace;font-size:18px;font-weight:700;'
+                f'color:{mv["color"]};">{m_rec["name"]}</div>'
+                f'<div style="font-family:JetBrains Mono,monospace;font-size:11px;'
+                f'color:rgba(255,255,255,0.35);margin-top:2px;">{m_bis:.1f} buy-ins</div>'
+                f'</div>'
+            )
 
         # Check if modes differ
         all_same = all(
@@ -1309,50 +1307,44 @@ def render_bankroll_editor(bankroll, user_id, risk_mode, rec_stakes):
         stakes_changed = new_rec["name"] != rec_stakes["name"]
 
         # Build impact items
-        impact_html = f"""
-            <div style="margin-top:12px;padding:14px 18px;background:rgba(255,255,255,0.02);
-                border:1px solid rgba(255,255,255,0.05);border-radius:10px;">
-                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-                    <span style="font-family:'JetBrains Mono',monospace;font-size:16px;
-                        font-weight:700;color:{diff_color};">{fmt(diff, sign=True)}</span>
-                    <span style="font-family:'Inter',sans-serif;font-size:11px;
-                        color:rgba(255,255,255,0.30);">change</span>
-                </div>
-                <div class="sg sg-3">
-                    <div class="si">
-                        <div class="si-label">New Stakes</div>
-                        <div class="si-val {'amber' if stakes_changed else 'blue'}">{new_rec['name']}</div>
-                        <div class="si-detail">{'⚠️ STAKES CHANGE' if stakes_changed else 'no change'}</div>
-                    </div>
-                    <div class="si">
-                        <div class="si-label">Buy-ins</div>
-                        <div class="si-val">{new_bis:.1f}</div>
-                        <div class="si-detail">{'↑' if new_bis > bis else '↓'} from {bis:.1f}</div>
-                    </div>
-                    <div class="si">
-                        <div class="si-label">Health</div>
-                        <div class="si-val" style="color:{new_status['color']};">{new_status['label']}</div>
-                        <div class="si-detail">{new_status['emoji']}</div>
-                    </div>
-                </div>
-        """
+        val_cls = 'amber' if stakes_changed else 'blue'
+        change_note = '⚠️ STAKES CHANGE' if stakes_changed else 'no change'
+        arrow = '↑' if new_bis > bis else '↓'
+        impact_html = (
+            f'<div style="margin-top:12px;padding:14px 18px;background:rgba(255,255,255,0.02);'
+            f'border:1px solid rgba(255,255,255,0.05);border-radius:10px;">'
+            f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+            f'<span style="font-family:JetBrains Mono,monospace;font-size:16px;'
+            f'font-weight:700;color:{diff_color};">{fmt(diff, sign=True)}</span>'
+            f'<span style="font-family:Inter,sans-serif;font-size:11px;'
+            f'color:rgba(255,255,255,0.30);">change</span></div>'
+            f'<div class="sg sg-3">'
+            f'<div class="si"><div class="si-label">New Stakes</div>'
+            f'<div class="si-val {val_cls}">{new_rec["name"]}</div>'
+            f'<div class="si-detail">{change_note}</div></div>'
+            f'<div class="si"><div class="si-label">Buy-ins</div>'
+            f'<div class="si-val">{new_bis:.1f}</div>'
+            f'<div class="si-detail">{arrow} from {bis:.1f}</div></div>'
+            f'<div class="si"><div class="si-label">Health</div>'
+            f'<div class="si-val" style="color:{new_status["color"]};">{new_status["label"]}</div>'
+            f'<div class="si-detail">{new_status["emoji"]}</div></div>'
+            f'</div>'
+        )
 
         if stakes_changed:
             if new_rec["bb"] > rec_stakes["bb"]:
-                impact_html += f"""
-                    <div class="callout" style="margin-top:10px;">
-                        📈 This bankroll increase unlocks <span style="color:#69F0AE;font-weight:600;">{new_rec['name']}</span> stakes.
-                        You'll have {new_bis:.1f} buy-ins at the higher level.
-                    </div>
-                """
+                impact_html += (
+                    f'<div class="callout" style="margin-top:10px;">'
+                    f'📈 This bankroll increase unlocks <span style="color:#69F0AE;font-weight:600;">{new_rec["name"]}</span> stakes. '
+                    f'You\'ll have {new_bis:.1f} buy-ins at the higher level.</div>'
+                )
             else:
-                impact_html += f"""
-                    <div class="callout warn" style="margin-top:10px;">
-                        📉 This drop moves your recommended stakes down to 
-                        <span style="color:#FFB300;font-weight:600;">{new_rec['name']}</span>.
-                        Protect your bankroll by playing at the recommended level.
-                    </div>
-                """
+                impact_html += (
+                    f'<div class="callout warn" style="margin-top:10px;">'
+                    f'📉 This drop moves your recommended stakes down to '
+                    f'<span style="color:#FFB300;font-weight:600;">{new_rec["name"]}</span>. '
+                    f'Protect your bankroll by playing at the recommended level.</div>'
+                )
 
         impact_html += "</div>"
         st.markdown(impact_html, unsafe_allow_html=True)
@@ -1532,11 +1524,13 @@ def render_stakes_ladder(bankroll, risk_mode, current_stakes):
         else:
             cls, stxt, scol = "locked", f"🔒 Need {fmtc(min_br - bankroll)}", "rgba(255,255,255,0.25)"
 
-        html += f"""<div class="ls {cls}">
-            <div class="ls-name">{s['name']}</div>
-            <div class="ls-req">{fmtc(min_br)} required ({req} × {fmtc(s['typical_bi'])})</div>
-            <div class="ls-status" style="color:{scol};">{stxt}</div>
-        </div>"""
+        html += (
+            f'<div class="ls {cls}">'
+            f'<div class="ls-name">{s["name"]}</div>'
+            f'<div class="ls-req">{fmtc(min_br)} required ({req} × {fmtc(s["typical_bi"])})</div>'
+            f'<div class="ls-status" style="color:{scol};">{stxt}</div>'
+            f'</div>'
+        )
     html += '</div>'
     st.markdown(html, unsafe_allow_html=True)
 
@@ -1565,21 +1559,21 @@ def render_risk_mode_selector(current_mode, bankroll, rec_stakes):
                        'text-transform:uppercase;letter-spacing:0.05em;">CURRENT</span><br>'
                        if sel else '')
 
-        cards += f"""
-            <div class="rm {scls}" style="border-color:{bc};background:{bg};">
-                {current_tag}
-                <div class="rm-emoji">{m['emoji']}</div>
-                <div class="rm-name">{m['name']}</div>
-                <div class="rm-bis" style="color:{m['color']};">{m['buy_ins']} Buy-ins</div>
-                <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.05);">
-                    <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;
-                        color:{stakes_color};">{m_rec['name']}</div>
-                    <div style="font-family:'Inter',sans-serif;font-size:10px;color:rgba(255,255,255,0.30);
-                        margin-top:2px;">{m_bis:.1f} buy-ins · {m_status['emoji']} {m_status['label']}</div>
-                </div>
-                <div class="rm-desc" style="margin-top:8px;">{m['description']}</div>
-            </div>
-        """
+        cards += (
+            f'<div class="rm {scls}" style="border-color:{bc};background:{bg};">'
+            f'{current_tag}'
+            f'<div class="rm-emoji">{m["emoji"]}</div>'
+            f'<div class="rm-name">{m["name"]}</div>'
+            f'<div class="rm-bis" style="color:{m["color"]};">{m["buy_ins"]} Buy-ins</div>'
+            f'<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.05);">'
+            f'<div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:700;'
+            f'color:{stakes_color};">{m_rec["name"]}</div>'
+            f'<div style="font-family:Inter,sans-serif;font-size:10px;color:rgba(255,255,255,0.30);'
+            f'margin-top:2px;">{m_bis:.1f} buy-ins · {m_status["emoji"]} {m_status["label"]}</div>'
+            f'</div>'
+            f'<div class="rm-desc" style="margin-top:8px;">{m["description"]}</div>'
+            f'</div>'
+        )
     cards += '</div>'
 
     # Render header and intro text
@@ -1677,6 +1671,21 @@ def main():
     if not user_id:
         st.warning("Please log in to view your bankroll health.")
         return
+
+    # Load bankroll from DB if not already in session state (survives refresh/re-login)
+    if not st.session_state.get("bankroll"):
+        try:
+            stats = get_player_stats(user_id)
+            if stats:
+                saved_br = float(stats.get("bankroll", 0) or 0)
+                if saved_br > 0:
+                    st.session_state["bankroll"] = saved_br
+                # Also restore risk mode if saved
+                saved_mode = stats.get("risk_mode", "")
+                if saved_mode in RISK_MODES:
+                    st.session_state["risk_mode"] = saved_mode
+        except Exception:
+            pass
 
     bankroll = get_current_bankroll()
 
