@@ -300,23 +300,6 @@ wr_sign = "+" if win_rate >= 0 else ""
 hero_stats = ""
 if total_sessions > 0:
     hero_stats = f'<div class="home-hero-stat-row"><div class="home-hero-stat"><div class="home-hero-stat-num" style="color: {pl_color}">{pl_sign}${total_pl:,.0f}</div><div class="home-hero-stat-lbl">Total P/L</div></div><div class="home-hero-stat"><div class="home-hero-stat-num" style="color: {wr_color}">{wr_sign}{win_rate}</div><div class="home-hero-stat-lbl">BB/100</div></div><div class="home-hero-stat"><div class="home-hero-stat-num">{total_hands:,}</div><div class="home-hero-stat-lbl">Hands</div></div><div class="home-hero-stat"><div class="home-hero-stat-num">{total_hours}</div><div class="home-hero-stat-lbl">Hours</div></div></div>'
-            <div class="home-hero-stat-num" style="color: {pl_color}">{pl_sign}${total_pl:,.0f}</div>
-            <div class="home-hero-stat-lbl">Total P/L</div>
-        </div>
-        <div class="home-hero-stat">
-            <div class="home-hero-stat-num" style="color: {wr_color}">{wr_sign}{win_rate}</div>
-            <div class="home-hero-stat-lbl">BB/100</div>
-        </div>
-        <div class="home-hero-stat">
-            <div class="home-hero-stat-num">{total_hands:,}</div>
-            <div class="home-hero-stat-lbl">Hands</div>
-        </div>
-        <div class="home-hero-stat">
-            <div class="home-hero-stat-num">{total_hours}</div>
-            <div class="home-hero-stat-lbl">Hours</div>
-        </div>
-    </div>
-    """
 
 st.markdown(f"""
 <div class="home-hero">
