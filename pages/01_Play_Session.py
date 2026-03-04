@@ -83,8 +83,8 @@ TIME_OPTIMAL = 90
 TIME_WARNING = st.session_state.get("time_warning_hours", 3) * 60
 TIME_HARD_STOP = 240
 
-# Table check interval (minutes)
-TABLE_CHECK_INTERVAL = st.session_state.get("table_check_interval", 20)
+# Table check interval — read dynamically in check_session_alerts() 
+# (not a constant, because user can change it in Settings)
 
 # Tilt detection thresholds
 TILT_LOSS_STREAK = 3           # Consecutive losses before tilt banner
@@ -805,13 +805,29 @@ def render_session_header():
 # SESSION ALERTS
 # =============================================================================
 def render_inline_table_check():
-    """Render table check inline as an expandable panel."""
+    """Render table check inline as a prominent banner — only between hands."""
     if not st.session_state.table_check_due:
         return
     
-    with st.expander("🎯 Quick Table Check — Is your table still good?", expanded=st.session_state.get("table_check_active", False)):
-        st.caption("3 quick questions about the last 10 hands")
-        
+    # Eye-catching banner to grab attention
+    st.markdown("""
+    <div style="
+        background: linear-gradient(135deg, rgba(255,179,0,0.12), rgba(255,111,0,0.08));
+        border: 2px solid rgba(255,179,0,0.5);
+        border-radius: 12px;
+        padding: 16px 20px;
+        margin: 8px 0 12px 0;
+    ">
+        <div style="font-size: 16px; font-weight: 700; color: #FFB300; margin-bottom: 4px;">
+            🎯 Quick Table Check
+        </div>
+        <div style="font-size: 13px; color: rgba(255,255,255,0.6);">
+            Rate your table — 3 quick questions about the last 10 hands
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    with st.expander("Answer 3 questions", expanded=st.session_state.get("table_check_active", False)):
         players_to_flop = st.radio("How many players typically see the flop?", ["2-3 (Tight)", "3-4 (Average)", "4-5 (Loose)", "5-6 (Very Loose)"], key="tc_q1", horizontal=True)
         has_limpers = st.radio("Are there limpers?", ["Yes", "No"], key="tc_q2", horizontal=True)
         three_bet_freq = st.radio("Is anyone 3-betting a lot?", ["No (Good)", "Sometimes", "Yes (Reg-heavy)"], key="tc_q3", horizontal=True)
@@ -937,15 +953,16 @@ def check_session_alerts():
             "Take a deep breath. The math hasn't changed."))
         st.session_state.tilt_banner_shown_at_streak = streak
 
-    # Table check (every TABLE_CHECK_INTERVAL minutes)
-    if duration > 0 and not st.session_state.table_check_due:
+    # Table check (every N minutes, configurable in Settings)
+    table_check_interval = st.session_state.get("table_check_interval", 20)
+    if table_check_interval > 0 and duration > 0 and not st.session_state.table_check_due:
         last_check = st.session_state.last_table_check
         check_needed = False
         if not last_check:
-            check_needed = duration >= TABLE_CHECK_INTERVAL
+            check_needed = duration >= table_check_interval
         else:
             elapsed = (datetime.now(timezone.utc) - last_check).total_seconds()
-            check_needed = elapsed >= TABLE_CHECK_INTERVAL * 60
+            check_needed = elapsed >= table_check_interval * 60
         if check_needed:
             st.session_state.table_check_due = True
 
