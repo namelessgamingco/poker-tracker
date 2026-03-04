@@ -2195,6 +2195,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       fontFamily: theme.sans,
       position: "relative",
       outline: "none",
+      minHeight: 700,  // Stable height — prevents scroll jumping on step changes
     },
     header: {
       display: "flex",

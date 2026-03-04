@@ -1886,10 +1886,32 @@ def handle_hand_complete(component_value: dict, session: dict):
 
 def handle_street_continue(component_value: dict, session: dict):
     """Component sent street_continue — user is continuing to next street.
-    Re-run decision with updated game state."""
-    # The component sends the updated game_state with the new street info.
-    # We treat it the same as a decision_request.
-    handle_decision_request(component_value, session)
+    
+    This ONLY persists the two-table state through the rerun.
+    It does NOT run the engine — the user still needs to enter board cards,
+    pot size, action, and villain type before a decision is requested.
+    The actual decision_request fires separately when the user completes those steps.
+    """
+    # Preserve table state through rerun
+    st.session_state.two_table_restore = {
+        "show_second_table": component_value.get("show_second_table", False),
+        "active_table": component_value.get("active_table", 1),
+        "primary_holds_table": component_value.get("primary_holds_table", 1),
+        "table1_game_state": component_value.get("table1_game_state"),
+        "table1_step": component_value.get("table1_step"),
+        "table1_decision": component_value.get("table1_decision"),
+        "table1_board_entry_index": component_value.get("table1_board_entry_index"),
+        "table2_game_state": component_value.get("table2_game_state"),
+        "table2_step": component_value.get("table2_step"),
+        "table2_decision": component_value.get("table2_decision"),
+        "table2_board_entry_index": component_value.get("table2_board_entry_index"),
+    }
+    
+    # Clear any stale decision so component doesn't show old result
+    clear_hand_state()
+    
+    st.session_state._intentional_rerun = True
+    st.rerun()
 
 
 # =============================================================================
