@@ -145,6 +145,26 @@ def get_supabase_admin_fresh() -> Client:
     return get_supabase_admin()
 
 
+def get_supabase_admin_for_thread() -> Client:
+    """
+    Create a standalone admin client for use in background threads.
+    
+    Background threads must NOT share the global admin client because:
+    1. The global client can be recreated (set to None) mid-query by another thread
+    2. Multiple threads mutating the same client causes race conditions
+    3. The "admin client expired, recreating" cascade kills Streamlit sessions
+    
+    Each background thread gets its own short-lived client.
+    """
+    url = _get_supabase_url()
+    key = _get_supabase_service_role_key()
+    
+    if not url or not key:
+        raise RuntimeError("Supabase admin not configured for thread client.")
+    
+    return create_client(url, key)
+
+
 def reset_supabase_client():
     """
     Reset the cached Supabase client.

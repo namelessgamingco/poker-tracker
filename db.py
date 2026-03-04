@@ -10,7 +10,7 @@ from decimal import Decimal
 
 import streamlit as st
 
-from supabase_client import get_supabase, get_supabase_admin, get_supabase_admin_fresh
+from supabase_client import get_supabase, get_supabase_admin, get_supabase_admin_fresh, get_supabase_admin_for_thread
 
 
 # ---------- Helpers ----------
@@ -44,6 +44,20 @@ def _db_retry(fn, label="db"):
                 return None
         print(f"[db] {label}: non-retryable error: {e}")
         raise
+
+
+def _db_thread_safe(fn, label="db_thread"):
+    """Run a DB function in a background thread with its own client.
+    
+    Uses a dedicated client to avoid race conditions with the global admin client.
+    No retry — background writes are best-effort and must not cascade errors.
+    """
+    try:
+        sb = get_supabase_admin_for_thread()
+        return fn(sb)
+    except Exception as e:
+        print(f"[db] {label}: background write failed: {e}")
+        return None
 
 def _get_secret(name: str, default=None):
     """Read from env var or Streamlit secrets."""
@@ -286,13 +300,13 @@ def get_active_session(user_id: str) -> Optional[dict]:
         return None
 
 
-def update_session(session_id: str, updates: dict) -> bool:
+def update_session(session_id: str, updates: dict, _use_thread_client: bool = False) -> bool:
     """Update session fields."""
     if not session_id or not updates:
         return False
     
     try:
-        sb = get_supabase_admin()
+        sb = get_supabase_admin_for_thread() if _use_thread_client else get_supabase_admin()
         sb.table("poker_sessions").update(updates).eq("id", session_id).execute()
         return True
     except Exception as e:
@@ -300,8 +314,12 @@ def update_session(session_id: str, updates: dict) -> bool:
         return False
 
 
-def increment_session_stats(session_id: str, hands: int = 0, decisions: int = 0) -> bool:
-    """Increment hands played and decisions requested counters."""
+def increment_session_stats(session_id: str, hands: int = 0, decisions: int = 0, _use_thread_client: bool = False) -> bool:
+    """Increment hands played and decisions requested counters.
+    
+    Args:
+        _use_thread_client: If True, uses a dedicated client (for background threads).
+    """
     if not session_id:
         return False
     
@@ -323,6 +341,8 @@ def increment_session_stats(session_id: str, hands: int = 0, decisions: int = 0)
                 "decisions_requested": current_decisions + decisions,
             }).eq("id", session_id).execute()
             return True
+        if _use_thread_client:
+            return _db_thread_safe(query, "increment_session_stats")
         return _db_retry(query)
     except Exception as e:
         print(f"[db] increment_session_stats error: {e}")
@@ -1103,6 +1123,7 @@ def record_hand_outcome(
     hand_strength: str = None,
     decision_explanation: str = None,
     decision_calculation: str = None,
+    _use_thread_client: bool = False,
 ) -> Optional[dict]:
     if not session_id or not user_id:
         return None
@@ -1143,6 +1164,8 @@ def record_hand_outcome(
         return None
     
     try:
+        if _use_thread_client:
+            return _db_thread_safe(query, "record_hand_outcome")
         return _db_retry(query, "record_hand_outcome")
     except Exception as e:
         print(f"[db] record_hand_outcome error: {e}")
@@ -1341,7 +1364,7 @@ def _default_user_settings() -> dict:
 # =============================================================================
 # Add this function to increment outcome counters
 
-def update_session_outcome(session_id: str, outcome: str) -> bool:
+def update_session_outcome(session_id: str, outcome: str, _use_thread_client: bool = False) -> bool:
     """
     Increment the appropriate outcome counter for a session.
     
@@ -1356,7 +1379,7 @@ def update_session_outcome(session_id: str, outcome: str) -> bool:
         return False
     
     try:
-        sb = get_supabase_admin()
+        sb = get_supabase_admin_for_thread() if _use_thread_client else get_supabase_admin()
         
         # Map outcome to column name
         column_map = {
@@ -1491,7 +1514,7 @@ def sync_settings_to_session_state(user_id: str) -> None:
 # BLUFF STATS OPERATIONS
 # =============================================================================
 
-def update_session_bluff_stats(session_id: str, user_bet: bool, opponent_folded: bool, profit: float) -> bool:
+def update_session_bluff_stats(session_id: str, user_bet: bool, opponent_folded: bool, profit: float, _use_thread_client: bool = False) -> bool:
     """
     Increment bluff aggregate counters on session record.
     
@@ -1506,7 +1529,7 @@ def update_session_bluff_stats(session_id: str, user_bet: bool, opponent_folded:
     if not session_id:
         return False
     try:
-        sb = get_supabase_admin()
+        sb = get_supabase_admin_for_thread() if _use_thread_client else get_supabase_admin()
         resp = (
             sb.table("poker_sessions")
             .select("bluff_spots_total, bluff_spots_bet, bluff_spots_checked, bluff_folds_won, bluff_profit")

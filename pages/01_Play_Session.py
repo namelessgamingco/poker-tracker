@@ -1717,7 +1717,7 @@ def handle_decision_request(game_state: dict, session: dict):
         session_id = session.get("id")
         if session_id:
             import threading
-            threading.Thread(target=lambda: increment_session_stats(session_id, hands=0, decisions=1), daemon=True).start()
+            threading.Thread(target=lambda: increment_session_stats(session_id, hands=0, decisions=1, _use_thread_client=True), daemon=True).start()
 
 # Preserve two-table state through rerun
         if game_state.get("show_second_table"):
@@ -1796,9 +1796,10 @@ def handle_hand_complete(component_value: dict, session: dict):
             hand_strength=hand_context.get("hand_strength", ""),
             decision_explanation=decision_explanation,
             decision_calculation=decision_calculation,
+            _use_thread_client=True,
         )
-        increment_session_stats(session_id, hands=1, decisions=0)
-        update_session_outcome(session_id, outcome)
+        increment_session_stats(session_id, hands=1, decisions=0, _use_thread_client=True)
+        update_session_outcome(session_id, outcome, _use_thread_client=True)
     threading.Thread(target=_db_writes, daemon=True).start()
 
     # Update local state
@@ -1819,7 +1820,7 @@ def handle_hand_complete(component_value: dict, session: dict):
         target=lambda: update_session(session_id, {
             "profit_loss": _running_pl,
             "current_stack": _running_stack,
-        }),
+        }, _use_thread_client=True),
         daemon=True
     ).start()
 
@@ -1835,7 +1836,7 @@ def handle_hand_complete(component_value: dict, session: dict):
         opponent_folded = bluff_data.get("outcome") == "fold"
         bluff_profit = float(bluff_data.get("profit", 0))
 
-        threading.Thread(target=lambda: update_session_bluff_stats(session_id, user_bet, opponent_folded, bluff_profit), daemon=True).start()
+        threading.Thread(target=lambda: update_session_bluff_stats(session_id, user_bet, opponent_folded, bluff_profit, _use_thread_client=True), daemon=True).start()
 
         st.session_state.session_bluff_spots += 1
         if user_bet:

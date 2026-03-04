@@ -882,8 +882,21 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   const potRef = useRef<HTMLInputElement>(null)
 
   // ---- Set frame height ----
+  // Prevent scroll jumping by saving/restoring parent scroll position during resize
   useEffect(() => {
-    Streamlit.setFrameHeight()
+    const updateHeight = () => {
+      try {
+        const parentScrollY = window.parent?.scrollY ?? 0
+        Streamlit.setFrameHeight()
+        // Restore parent scroll position after iframe resize
+        requestAnimationFrame(() => {
+          try { window.parent?.scrollTo(0, parentScrollY) } catch (e) {}
+        })
+      } catch (e) {
+        Streamlit.setFrameHeight()
+      }
+    }
+    updateHeight()
   })
 
   // Keep-alive ping to prevent Streamlit WebSocket timeout
