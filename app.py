@@ -425,6 +425,13 @@ if is_new_user:
 
     completed = sum(1 for s in steps if s["done"])
 
+    # DEBUG - remove after testing
+    st.write("DEBUG:", {
+        "sub_status": st.session_state.get("subscription_status", ""),
+        "is_trial": st.session_state.get("is_trial", False),
+        "trial_ends_at": st.session_state.get("trial_ends_at"),
+    })
+
     # Trial urgency banner
     sub_status = st.session_state.get("subscription_status", "")
     trial_ends_at = st.session_state.get("trial_ends_at")
