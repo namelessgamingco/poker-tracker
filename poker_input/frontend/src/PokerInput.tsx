@@ -882,38 +882,43 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   const potRef = useRef<HTMLInputElement>(null)
 
   // ---- Set frame height ----
-  // Track the max height seen during this hand to prevent shrinking (which causes scroll jumps)
-  const maxHeightRef = useRef<number>(0)
+  // Use a stable height to prevent scroll jumping.
+  // Only recalculate on step changes, never shrink during a hand.
+  const lastHeightRef = useRef<number>(0)
   
   useEffect(() => {
-    // On new hand (back to position step), reset the max height
-    if (step === "position") {
-      maxHeightRef.current = 0
-    }
+    // Small delay to let DOM render, then measure
+    const timer = setTimeout(() => {
+      const body = document.body
+      const contentHeight = Math.max(
+        body.scrollHeight,
+        body.offsetHeight,
+        document.documentElement.scrollHeight
+      )
+      
+      // Only grow, never shrink (prevents scroll jumps)
+      // Reset is allowed when starting a new hand
+      if (step === "position" || step === "card1_rank") {
+        lastHeightRef.current = contentHeight
+        Streamlit.setFrameHeight(contentHeight)
+      } else if (contentHeight > lastHeightRef.current) {
+        lastHeightRef.current = contentHeight
+        Streamlit.setFrameHeight(contentHeight)
+      }
+      // If content is shorter — do nothing, keep the taller height
+    }, 50)
+    return () => clearTimeout(timer)
   }, [step])
-  
-  useEffect(() => {
-    // Measure actual content height
-    const el = containerRef.current
-    if (!el) {
-      Streamlit.setFrameHeight()
-      return
-    }
-    
-    const contentHeight = el.scrollHeight + 8 // small padding
-    
-    // Only grow, never shrink — prevents scroll jumps when UI sections collapse
-    if (contentHeight > maxHeightRef.current) {
-      maxHeightRef.current = contentHeight
-    }
-    
-    Streamlit.setFrameHeight(maxHeightRef.current)
-  })
 
   // Keep-alive ping to prevent Streamlit WebSocket timeout
   useEffect(() => {
     const keepAlive = setInterval(() => {
-      Streamlit.setFrameHeight()
+      // Use last known height to avoid shrinking
+      if (lastHeightRef.current > 0) {
+        Streamlit.setFrameHeight(lastHeightRef.current)
+      } else {
+        Streamlit.setFrameHeight()
+      }
     }, 30000)
     return () => clearInterval(keepAlive)
   }, [])

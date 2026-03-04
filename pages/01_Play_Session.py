@@ -1584,17 +1584,14 @@ def render_play_mode():
     stakes = session.get("stakes", "$1/$2")
     bb_size = float(session.get("bb_size", 2.0))
 
-    # Clear stale DECISION state on fresh page entry (after sidebar/back navigation)
+    # Clear ALL stale state on fresh page entry (page nav, refresh, session reconnect)
     # Our handlers set _intentional_rerun=True before st.rerun().
-    # Any OTHER rerun (page nav, sidebar click, session reconnect) won't have the flag.
-    # We clear the decision (which might be stale) but KEEP the table restore state
-    # so cards/board survive session reconnections.
+    # Any OTHER rerun means fresh start — no stale mid-hand state.
     if st.session_state.get("_intentional_rerun"):
         st.session_state._intentional_rerun = False
     else:
-        # Only clear the decision — don't wipe table restore state
-        if st.session_state.get("current_decision_dict"):
-            clear_hand_state()
+        st.session_state.two_table_restore = None
+        clear_hand_state()
 
     restore = st.session_state.get("two_table_restore")
     component_value = poker_input(
