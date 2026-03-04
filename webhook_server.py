@@ -100,12 +100,14 @@ def handle_radom_webhook():
     """
     # --- Verify authenticity ---
     if RADOM_WEBHOOK_KEY:
+        print(f"[webhook] DEBUG stored key length={len(RADOM_WEBHOOK_KEY)} first10='{RADOM_WEBHOOK_KEY[:10]}'")
         incoming_key = None
         for header_name in ["Verification-Key", "Verification_Key", "verification_key", "verification-key"]:
             val = request.headers.get(header_name)
             if val:
                 incoming_key = val.strip()
                 break
+        print(f"[webhook] DEBUG incoming key length={len(incoming_key) if incoming_key else 0} first10='{incoming_key[:10] if incoming_key else 'None'}'")
         if incoming_key != RADOM_WEBHOOK_KEY:
             print(f"[webhook] REJECTED — invalid verification key")
             return jsonify({"error": "Invalid verification key"}), 401
