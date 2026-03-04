@@ -359,6 +359,7 @@ if is_new_user:
     visited_ev_system = st.session_state.get("visited_ev_system", False)
     visited_master = st.session_state.get("visited_master", False)
     visited_bankroll = st.session_state.get("visited_bankroll", False)
+    visited_settings = st.session_state.get("visited_settings", False)
 
     steps = [
         {
@@ -407,7 +408,7 @@ if is_new_user:
             "btn": "🎓 Open Master Your Play",
         },
         {
-            "done": visited_bankroll,
+            "done": visited_settings,
             "title": "Configure your settings",
             "desc": "Set your default stakes, risk mode, and session preferences. Dial in the app to match your game.",
             "page": "pages/05_Settings.py",

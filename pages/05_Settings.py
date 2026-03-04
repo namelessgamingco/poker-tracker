@@ -19,6 +19,7 @@ from db import get_user_settings, update_user_settings, update_user_bankroll
 # ---------- Auth Gate ----------
 user = require_auth()
 render_sidebar()
+st.session_state["visited_settings"] = True
 
 # Discord support ticket channel
 DISCORD_SUPPORT_URL = "https://discord.com/channels/1169748589522718770/1268729463500439553"
