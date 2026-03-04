@@ -882,21 +882,32 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   const potRef = useRef<HTMLInputElement>(null)
 
   // ---- Set frame height ----
-  // Prevent scroll jumping by saving/restoring parent scroll position during resize
+  // Track the max height seen during this hand to prevent shrinking (which causes scroll jumps)
+  const maxHeightRef = useRef<number>(0)
+  
   useEffect(() => {
-    const updateHeight = () => {
-      try {
-        const parentScrollY = window.parent?.scrollY ?? 0
-        Streamlit.setFrameHeight()
-        // Restore parent scroll position after iframe resize
-        requestAnimationFrame(() => {
-          try { window.parent?.scrollTo(0, parentScrollY) } catch (e) {}
-        })
-      } catch (e) {
-        Streamlit.setFrameHeight()
-      }
+    // On new hand (back to position step), reset the max height
+    if (step === "position") {
+      maxHeightRef.current = 0
     }
-    updateHeight()
+  }, [step])
+  
+  useEffect(() => {
+    // Measure actual content height
+    const el = containerRef.current
+    if (!el) {
+      Streamlit.setFrameHeight()
+      return
+    }
+    
+    const contentHeight = el.scrollHeight + 8 // small padding
+    
+    // Only grow, never shrink — prevents scroll jumps when UI sections collapse
+    if (contentHeight > maxHeightRef.current) {
+      maxHeightRef.current = contentHeight
+    }
+    
+    Streamlit.setFrameHeight(maxHeightRef.current)
   })
 
   // Keep-alive ping to prevent Streamlit WebSocket timeout

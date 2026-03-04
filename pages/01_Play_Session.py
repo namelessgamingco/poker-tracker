@@ -1584,15 +1584,16 @@ def render_play_mode():
     stakes = session.get("stakes", "$1/$2")
     bb_size = float(session.get("bb_size", 2.0))
 
-    # Clear stale hand state on fresh page entry (after sidebar/back navigation)
+    # Clear stale DECISION state on fresh page entry (after sidebar/back navigation)
     # Our handlers set _intentional_rerun=True before st.rerun().
-    # Any OTHER rerun (page nav, sidebar click, back button) won't have the flag,
-    # so we know it's a fresh entry and must clear stale decision/restore state.
+    # Any OTHER rerun (page nav, sidebar click, session reconnect) won't have the flag.
+    # We clear the decision (which might be stale) but KEEP the table restore state
+    # so cards/board survive session reconnections.
     if st.session_state.get("_intentional_rerun"):
         st.session_state._intentional_rerun = False
     else:
-        if st.session_state.get("current_decision_dict") or st.session_state.get("two_table_restore"):
-            st.session_state.two_table_restore = None
+        # Only clear the decision — don't wipe table restore state
+        if st.session_state.get("current_decision_dict"):
             clear_hand_state()
 
     restore = st.session_state.get("two_table_restore")
@@ -1719,21 +1720,20 @@ def handle_decision_request(game_state: dict, session: dict):
             import threading
             threading.Thread(target=lambda: increment_session_stats(session_id, hands=0, decisions=1, _use_thread_client=True), daemon=True).start()
 
-# Preserve two-table state through rerun
-        if game_state.get("show_second_table"):
-            st.session_state.two_table_restore = {
-                "show_second_table": True,
-                "active_table": game_state.get("active_table", 1),
-                "primary_holds_table": game_state.get("primary_holds_table", 1),
-                "table1_game_state": game_state.get("table1_game_state"),
-                "table1_step": game_state.get("table1_step"),
-                "table1_decision": game_state.get("table1_decision"),
-                "table1_board_entry_index": game_state.get("table1_board_entry_index"),
-                "table2_game_state": game_state.get("table2_game_state"),
-                "table2_step": game_state.get("table2_step"),
-                "table2_decision": game_state.get("table2_decision"),
-                "table2_board_entry_index": game_state.get("table2_board_entry_index"),
-            }
+# Preserve table state through rerun (ALWAYS save, not just two-table mode)
+        st.session_state.two_table_restore = {
+            "show_second_table": game_state.get("show_second_table", False),
+            "active_table": game_state.get("active_table", 1),
+            "primary_holds_table": game_state.get("primary_holds_table", 1),
+            "table1_game_state": game_state.get("table1_game_state"),
+            "table1_step": game_state.get("table1_step"),
+            "table1_decision": game_state.get("table1_decision"),
+            "table1_board_entry_index": game_state.get("table1_board_entry_index"),
+            "table2_game_state": game_state.get("table2_game_state"),
+            "table2_step": game_state.get("table2_step"),
+            "table2_decision": game_state.get("table2_decision"),
+            "table2_board_entry_index": game_state.get("table2_board_entry_index"),
+        }
 
     except Exception as e:
         print(f"[engine] Decision request failed: {e}")
@@ -1866,23 +1866,20 @@ def handle_hand_complete(component_value: dict, session: dict):
         "bluff_data": bluff_data,
     })
 
-    # Save two-table state so the other table survives the rerun
-    if component_value.get("show_second_table"):
-        st.session_state.two_table_restore = {
-            "show_second_table": True,
-            "active_table": component_value.get("active_table", 1),
-            "primary_holds_table": component_value.get("primary_holds_table", 1),
-            "table1_game_state": component_value.get("table1_game_state"),
-            "table1_step": component_value.get("table1_step"),
-            "table1_decision": component_value.get("table1_decision"),
-            "table1_board_entry_index": component_value.get("table1_board_entry_index"),
-            "table2_game_state": component_value.get("table2_game_state"),
-            "table2_step": component_value.get("table2_step"),
-            "table2_decision": component_value.get("table2_decision"),
-            "table2_board_entry_index": component_value.get("table2_board_entry_index"),
-        }
-    else:
-        st.session_state.two_table_restore = None
+    # Save table state so the other table survives the rerun (ALWAYS save)
+    st.session_state.two_table_restore = {
+        "show_second_table": component_value.get("show_second_table", False),
+        "active_table": component_value.get("active_table", 1),
+        "primary_holds_table": component_value.get("primary_holds_table", 1),
+        "table1_game_state": component_value.get("table1_game_state"),
+        "table1_step": component_value.get("table1_step"),
+        "table1_decision": component_value.get("table1_decision"),
+        "table1_board_entry_index": component_value.get("table1_board_entry_index"),
+        "table2_game_state": component_value.get("table2_game_state"),
+        "table2_step": component_value.get("table2_step"),
+        "table2_decision": component_value.get("table2_decision"),
+        "table2_board_entry_index": component_value.get("table2_board_entry_index"),
+    }
 
     # Clear decision state so component resets
     clear_hand_state()
