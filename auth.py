@@ -567,6 +567,7 @@ def require_auth():
     st.session_state["subscription_plan"] = profile.get("subscription_plan")
     st.session_state["admin_override_active"] = profile.get("admin_override_active", False)
     st.session_state["is_trial"] = profile.get("is_trial", False)
+    st.session_state["trial_ends_at"] = profile.get("trial_ends_at")
     st.session_state["payment_link_url"] = payment_link
     
     if not has_access:
