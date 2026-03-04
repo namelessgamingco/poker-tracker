@@ -383,9 +383,9 @@ if is_new_user:
         {
             "done": has_bankroll,
             "title": "Set up your bankroll",
-            "desc": "Go to Settings and enter your bankroll. This activates stop-loss protection and stake recommendations.",
-            "page": "pages/05_Settings.py",
-            "btn": "⚙️ Open Settings",
+            "desc": "Go to Bankroll Health and enter your bankroll. Learn why proper bankroll management is the difference between going broke and grinding up.",
+            "page": "pages/04_Bankroll_Health.py",
+            "btn": "💰 Open Bankroll Health",
         },
         {
             "done": has_session,
@@ -408,10 +408,10 @@ if is_new_user:
         },
         {
             "done": visited_bankroll,
-            "title": "Review Bankroll Health",
-            "desc": "See your buy-in calculations, risk level, and whether you're properly rolled for your stakes.",
-            "page": "pages/04_Bankroll_Health.py",
-            "btn": "💰 Open Bankroll Health",
+            "title": "Configure your settings",
+            "desc": "Set your default stakes, risk mode, and session preferences. Dial in the app to match your game.",
+            "page": "pages/05_Settings.py",
+            "btn": "⚙️ Open Settings",
         },
         {
             "done": has_reviewed_stats,
@@ -423,6 +423,33 @@ if is_new_user:
     ]
 
     completed = sum(1 for s in steps if s["done"])
+
+    # Trial urgency banner
+    is_trial = st.session_state.get("is_trial", False)
+    trial_ends_at = st.session_state.get("trial_ends_at")
+    if is_trial and trial_ends_at:
+        try:
+            from datetime import datetime, timezone
+            if isinstance(trial_ends_at, str):
+                ends_dt = datetime.fromisoformat(trial_ends_at.replace("Z", "+00:00"))
+            else:
+                ends_dt = trial_ends_at
+            days_left = max(0, (ends_dt - datetime.now(timezone.utc)).days)
+            if days_left <= 3:
+                trial_color = "rgba(255,82,82,0.08)"
+                trial_border = "rgba(255,82,82,0.2)"
+                trial_text = f"⏰ <strong>{days_left} day{'s' if days_left != 1 else ''} left</strong> on your free trial — complete the steps below to see real results before it ends."
+            else:
+                trial_color = "rgba(105,240,174,0.06)"
+                trial_border = "rgba(105,240,174,0.15)"
+                trial_text = f"🎁 You have <strong>{days_left} days</strong> of free access. Follow the quickstart below to see how the app pays for itself."
+            st.markdown(f"""
+            <div style="background:{trial_color};border:1px solid {trial_border};border-radius:10px;padding:12px 16px;margin-bottom:16px;">
+                <div style="font-size:13px;color:rgba(255,255,255,0.7);">{trial_text}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        except Exception:
+            pass
 
     st.markdown(f"""
     <div style="font-size: 13px; color: rgba(255,255,255,0.4); margin-bottom: 12px;">
