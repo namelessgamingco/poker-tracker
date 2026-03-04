@@ -848,6 +848,9 @@ with tabs[2]:
                         try:
                             if new_status == "banned":
                                 admin_ban_user(sel_user_id, reason="Banned via admin force status")
+                            elif new_status == "trial":
+                                admin_set_subscription_status(sel_user_id, new_status)
+                                admin_extend_trial(sel_user_id, days=7)
                             else:
                                 admin_set_subscription_status(sel_user_id, new_status)
                             st.success(f"✅ Status → {new_status}")
