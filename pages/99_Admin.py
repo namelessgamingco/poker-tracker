@@ -6,7 +6,7 @@
 # TABS:
 # 1. Dashboard - Revenue metrics, user counts, quick stats
 # 2. User Management - Create/Edit/Delete users
-# 3. Subscriptions - Subscription control, trials, overrides
+# 3. Subscriptions - Subscription control, trials, overrides, ban
 # 4. Player Detail - Deep dive into individual user data
 #
 # =============================================================================
@@ -41,6 +41,8 @@ from db import (
     admin_get_subscription_details,
     admin_extend_trial,
     admin_resend_payment_link,
+    admin_ban_user,
+    admin_unban_user,
 )
 
 from supabase_client import get_supabase_admin
@@ -105,6 +107,141 @@ if not st.session_state["is_admin"]:
 
 
 # =============================================================================
+# CSS — Premium dark theme matching the rest of the app
+# =============================================================================
+
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap');
+
+[data-testid="stAppViewContainer"] { background: #0A0A12; }
+.block-container { max-width: 1400px; }
+
+/* Header */
+.admin-header {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 24px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    color: #E0E0E0;
+    margin-bottom: 4px;
+}
+.admin-sub {
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    color: rgba(255,255,255,0.3);
+}
+
+/* Section headers */
+.section-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    font-weight: 700;
+    color: rgba(255,255,255,0.5);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin: 24px 0 12px 0;
+}
+
+/* Stat cards */
+.stat-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
+}
+.stat-card {
+    background: linear-gradient(135deg, #0F0F1A 0%, #151520 100%);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 16px;
+}
+.stat-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    color: #E0E0E0;
+}
+.stat-label {
+    font-size: 11px;
+    color: rgba(255,255,255,0.3);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 4px;
+}
+
+/* Action cards */
+.action-card {
+    background: linear-gradient(135deg, #0F0F1A 0%, #151520 100%);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin-bottom: 8px;
+}
+.action-card-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+    color: #E0E0E0;
+    margin-bottom: 4px;
+}
+.action-card-desc {
+    font-size: 12px;
+    color: rgba(255,255,255,0.35);
+    line-height: 1.5;
+}
+
+/* Alert cards */
+.alert-card {
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 8px;
+}
+.alert-warn {
+    background: rgba(255,179,0,0.06);
+    border: 1px solid rgba(255,179,0,0.15);
+}
+.alert-danger {
+    background: rgba(255,82,82,0.06);
+    border: 1px solid rgba(255,82,82,0.15);
+}
+.alert-success {
+    background: rgba(105,240,174,0.06);
+    border: 1px solid rgba(105,240,174,0.15);
+}
+.alert-text {
+    font-size: 13px;
+    color: rgba(255,255,255,0.5);
+}
+
+/* Info row */
+.info-row {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+.info-item {
+    min-width: 120px;
+}
+.info-label {
+    font-size: 10px;
+    color: rgba(255,255,255,0.25);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.info-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 15px;
+    font-weight: 600;
+    color: #E0E0E0;
+    margin-top: 2px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+# =============================================================================
 # HELPERS
 # =============================================================================
 
@@ -115,14 +252,10 @@ def _safe_float(x, default=0.0):
     except Exception:
         return default
 
-
 def _fmt_currency(amount: float) -> str:
-    """Format as currency."""
     return f"${amount:,.2f}"
 
-
 def _fmt_ts(ts_raw) -> str:
-    """Format ISO timestamp → 'YYYY-MM-DD HH:MM' (UTC)."""
     if not ts_raw:
         return "—"
     try:
@@ -132,9 +265,7 @@ def _fmt_ts(ts_raw) -> str:
     except Exception:
         return str(ts_raw)
 
-
 def _fmt_date(ts_raw) -> str:
-    """Format ISO timestamp → 'YYYY-MM-DD'."""
     if not ts_raw:
         return "—"
     try:
@@ -143,9 +274,7 @@ def _fmt_date(ts_raw) -> str:
     except Exception:
         return str(ts_raw)
 
-
 def _days_until(ts_raw) -> int:
-    """Days until a future timestamp."""
     if not ts_raw:
         return 0
     try:
@@ -157,9 +286,7 @@ def _days_until(ts_raw) -> int:
     except Exception:
         return 0
 
-
 def _days_ago(ts_raw) -> int:
-    """Days since a past timestamp."""
     if not ts_raw:
         return 999
     try:
@@ -171,37 +298,26 @@ def _days_ago(ts_raw) -> int:
     except Exception:
         return 999
 
-
-def _status_color(status: str) -> str:
-    """Return color for subscription status."""
-    colors = {
-        "active": "🟢",
-        "trial": "🔵",
-        "grace_period": "🟡",
-        "pending": "⚪",
-        "overdue": "🟠",
-        "cancelled": "🔴",
-        "expired": "⚫",
-    }
-    return colors.get(status, "⚪")
+def _status_emoji(status: str) -> str:
+    return {
+        "active": "🟢", "trial": "🔵", "grace_period": "🟡",
+        "pending": "⚪", "overdue": "🟠", "cancelled": "🔴",
+        "expired": "⚫", "banned": "⛔",
+    }.get(status, "⚪")
 
 
 # =============================================================================
 # PAGE HEADER
 # =============================================================================
 
-st.title("🔐 Admin Console")
+st.markdown(f"""
+<div style="margin-bottom: 8px;">
+    <div class="admin-header">🔐 ADMIN CONSOLE</div>
+    <div class="admin-sub">{cur_email}  ·  {os.getenv("APP_ENV", "unknown").upper()} environment</div>
+</div>
+""", unsafe_allow_html=True)
 
-top1, top2, top3 = st.columns(3)
-with top1:
-    st.metric("Admin User", cur_email)
-with top2:
-    st.metric("Role", role)
-with top3:
-    env = os.getenv("APP_ENV", "unknown")
-    st.metric("Environment", env.upper())
-
-st.divider()
+st.markdown('<div style="height:1px;background:rgba(255,255,255,0.06);margin:8px 0 20px 0"></div>', unsafe_allow_html=True)
 
 
 # =============================================================================
@@ -215,7 +331,7 @@ all_profiles = list_profiles_for_admin()
 # TABS
 # =============================================================================
 
-tabs = st.tabs(["📊 Dashboard", "👤 User Management", "💳 Subscriptions", "🔍 Player Detail"])
+tabs = st.tabs(["📊 Dashboard", "👤 Users", "💳 Subscriptions", "🔍 Player Detail"])
 
 
 # =============================================================================
@@ -223,78 +339,69 @@ tabs = st.tabs(["📊 Dashboard", "👤 User Management", "💳 Subscriptions", 
 # =============================================================================
 
 with tabs[0]:
-    st.subheader("📊 Revenue Dashboard")
-    
-    # Calculate metrics
+
     total_users = len(all_profiles)
-    
     active_subs = [p for p in all_profiles if p.get("subscription_status") == "active"]
     trial_users = [p for p in all_profiles if p.get("subscription_status") == "trial"]
     pending_users = [p for p in all_profiles if p.get("subscription_status") == "pending"]
     cancelled_users = [p for p in all_profiles if p.get("subscription_status") in ("cancelled", "expired")]
     override_users = [p for p in all_profiles if p.get("admin_override_active")]
-    
-    # MRR calculation ($299/month per active subscriber)
+    banned_users = [p for p in all_profiles if p.get("subscription_status") == "banned"]
+
     mrr = len(active_subs) * 299
-    
-    # Revenue at risk (trials expiring in 3 days)
+
     trials_expiring_soon = []
     for p in trial_users:
         trial_ends = p.get("trial_ends_at")
         if trial_ends and _days_until(trial_ends) <= 3:
             trials_expiring_soon.append(p)
-    
-    # Display metrics
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Total Users", total_users)
-    with col2:
-        st.metric("Active Subscribers", len(active_subs), 
-                  help="Users with subscription_status = 'active'")
-    with col3:
-        st.metric("Monthly Revenue (MRR)", _fmt_currency(mrr))
-    with col4:
-        st.metric("Trial Users", len(trial_users),
-                  help="Users currently in trial period")
-    
-    col5, col6, col7, col8 = st.columns(4)
-    
-    with col5:
-        st.metric("Pending Signup", len(pending_users),
-                  help="Users who haven't completed payment")
-    with col6:
-        st.metric("Cancelled/Expired", len(cancelled_users))
-    with col7:
-        st.metric("Admin Overrides", len(override_users),
-                  help="Users with free access granted")
-    with col8:
-        st.metric("Trials Expiring Soon", len(trials_expiring_soon),
-                  help="Trial users expiring in 3 days or less")
-    
-    st.divider()
-    
-    # Subscription breakdown
-    st.markdown("#### Subscription Status Breakdown")
-    
-    status_counts = {}
-    for p in all_profiles:
-        status = p.get("subscription_status", "unknown") or "unknown"
-        status_counts[status] = status_counts.get(status, 0) + 1
-    
-    status_data = []
-    for status, count in sorted(status_counts.items(), key=lambda x: -x[1]):
-        status_data.append({
-            "Status": f"{_status_color(status)} {status}",
-            "Count": count,
-            "% of Total": f"{count/total_users*100:.1f}%" if total_users > 0 else "0%",
-        })
-    
-    st.dataframe(status_data, use_container_width=True, height=250)
-    
-    # Trials expiring soon
+
+    # Revenue stats
+    st.markdown(f"""
+    <div class="stat-grid">
+        <div class="stat-card">
+            <div class="stat-value" style="color: #69F0AE;">{_fmt_currency(mrr)}</div>
+            <div class="stat-label">Monthly Revenue (MRR)</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{len(active_subs)}</div>
+            <div class="stat-label">Active Subscribers</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="color: #4BA3FF;">{len(trial_users)}</div>
+            <div class="stat-label">Trial Users</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{total_users}</div>
+            <div class="stat-label">Total Users</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown(f"""
+    <div class="stat-grid">
+        <div class="stat-card">
+            <div class="stat-value">{len(pending_users)}</div>
+            <div class="stat-label">Pending Signup</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{len(cancelled_users)}</div>
+            <div class="stat-label">Cancelled / Expired</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{len(override_users)}</div>
+            <div class="stat-label">Free Access (Override)</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="color: {'#FFB300' if trials_expiring_soon else 'rgba(255,255,255,0.2)'};">{len(trials_expiring_soon)}</div>
+            <div class="stat-label">Trials Expiring ≤3 Days</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Trials expiring alert
     if trials_expiring_soon:
-        st.markdown("#### ⚠️ Trials Expiring Soon")
+        st.markdown('<div class="section-title">⚠️ Trials Expiring Soon</div>', unsafe_allow_html=True)
         expiring_data = []
         for p in trials_expiring_soon:
             expiring_data.append({
@@ -302,11 +409,29 @@ with tabs[0]:
                 "Trial Ends": _fmt_date(p.get("trial_ends_at")),
                 "Days Left": _days_until(p.get("trial_ends_at")),
             })
-        st.dataframe(expiring_data, use_container_width=True, height=150)
-    
+        st.dataframe(expiring_data, use_container_width=True, hide_index=True)
+
+    # Status breakdown
+    st.markdown('<div class="section-title">Status Breakdown</div>', unsafe_allow_html=True)
+
+    status_counts = {}
+    for p in all_profiles:
+        s = p.get("subscription_status", "unknown") or "unknown"
+        status_counts[s] = status_counts.get(s, 0) + 1
+
+    status_data = []
+    for s, count in sorted(status_counts.items(), key=lambda x: -x[1]):
+        status_data.append({
+            "Status": f"{_status_emoji(s)} {s}",
+            "Count": count,
+            "% of Total": f"{count/total_users*100:.1f}%" if total_users > 0 else "0%",
+        })
+
+    st.dataframe(status_data, use_container_width=True, hide_index=True, height=200)
+
     # Recent activity
-    st.markdown("#### Recent User Activity")
-    
+    st.markdown('<div class="section-title">Recent Activity</div>', unsafe_allow_html=True)
+
     recent_activity = []
     for p in all_profiles:
         last_active = p.get("updated_at") or p.get("created_at")
@@ -316,20 +441,19 @@ with tabs[0]:
             "last_active": last_active,
             "days_ago": _days_ago(last_active),
         })
-    
-    # Sort by most recent
+
     recent_activity.sort(key=lambda x: x["days_ago"])
-    
+
     activity_display = []
     for a in recent_activity[:10]:
         activity_display.append({
             "Email": a["email"],
-            "Status": f"{_status_color(a['status'])} {a['status']}",
+            "Status": f"{_status_emoji(a['status'])} {a['status']}",
             "Last Active": _fmt_date(a["last_active"]),
             "Days Ago": a["days_ago"],
         })
-    
-    st.dataframe(activity_display, use_container_width=True, height=300)
+
+    st.dataframe(activity_display, use_container_width=True, hide_index=True, height=300)
 
 
 # =============================================================================
@@ -337,26 +461,22 @@ with tabs[0]:
 # =============================================================================
 
 with tabs[1]:
-    st.subheader("👤 User Management")
-    
-    # ----- Create new user -----
-    with st.expander("➕ Create New User", expanded=False):
+
+    # ── Create New User ──
+    st.markdown('<div class="section-title">Create New User</div>', unsafe_allow_html=True)
+    st.caption("Create a new player account. They'll receive a 7-day trial by default, or you can require immediate payment.")
+
+    with st.expander("➕ New User", expanded=False):
         col1, col2 = st.columns(2)
-        
+
         with col1:
             new_email = st.text_input("Email", key="admin_new_email")
             new_pw = st.text_input("Password", type="password", key="admin_new_pw")
-        
+
         with col2:
-            new_role = st.selectbox(
-                "Role",
-                ["player", "admin"],
-                index=0,
-                key="admin_new_role",
-            )
-            new_active = st.checkbox("Active immediately", value=False, key="admin_new_active")
+            new_role = st.selectbox("Role", ["player", "admin"], index=0, key="admin_new_role")
             start_trial = st.checkbox("Start 7-day trial", value=True, key="admin_start_trial")
-        
+
         if st.button("Create User", type="primary", key="admin_create_user_btn"):
             if not new_email.strip() or not new_pw.strip():
                 st.error("Email and password are required.")
@@ -366,68 +486,62 @@ with tabs[1]:
                         email=new_email,
                         password=new_pw,
                         role=new_role,
-                        is_active=new_active or start_trial,
+                        is_active=start_trial,
                         start_trial=start_trial,
                     )
                     st.success(f"✅ Created user: {created.get('email')}")
                     if created.get("payment_link_url"):
-                        st.info(f"Payment link: {created.get('payment_link_url')}")
+                        st.code(created.get("payment_link_url"), language=None)
+                        st.caption("Send this payment link to the user.")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Failed to create user: {e!r}")
-    
-    # ----- Edit existing user -----
+
+    # ── Edit Existing User ──
     if all_profiles:
-        with st.expander("🛠 Edit Existing User", expanded=False):
-            # Build selection
+        st.markdown('<div class="section-title">Edit User</div>', unsafe_allow_html=True)
+        st.caption("Change email, role, password, or active status for an existing user.")
+
+        with st.expander("🛠 Edit User", expanded=False):
             labels = []
             label_to_profile = {}
-            
+
             for p in all_profiles:
                 email = (p.get("email") or "—").strip()
                 status = p.get("subscription_status", "unknown")
                 label = f"{email} ({status})"
                 labels.append(label)
                 label_to_profile[label] = p
-            
+
             sel_label = st.selectbox("Select user", options=labels, key="admin_select_user")
             selected = label_to_profile.get(sel_label, {})
-            
+
             sel_user_id = str(selected.get("user_id") or "")
             if not sel_user_id:
                 st.error("Selected profile has no user_id.")
             else:
-                # Editable fields
                 col1, col2 = st.columns(2)
-                
+
                 with col1:
                     email_val = st.text_input("Email", value=selected.get("email", ""), key="admin_edit_email")
-                    
                     cur_role = selected.get("role", "player") or "player"
                     role_choices = ["player", "admin"]
                     if cur_role not in role_choices:
                         role_choices.insert(0, cur_role)
-                    new_role = st.selectbox("Role", role_choices, 
+                    new_role = st.selectbox("Role", role_choices,
                                            index=role_choices.index(cur_role), key="admin_edit_role")
-                
+
                 with col2:
                     cur_active = bool(selected.get("is_active", True))
                     new_active = st.checkbox("Active", value=cur_active, key="admin_edit_active")
-                    
-                    temp_pw = st.text_input(
-                        "Set new password (optional)",
-                        type="password",
-                        key="admin_edit_temp_pw",
-                    )
-                
-                # Action buttons
+                    temp_pw = st.text_input("Set new password (optional)", type="password", key="admin_edit_temp_pw")
+
                 col_a, col_b, col_c = st.columns(3)
-                
+
                 with col_a:
                     if st.button("💾 Save Changes", type="primary", key="admin_save_changes"):
                         something_changed = False
-                        
-                        # Email change
+
                         try:
                             old_email = (selected.get("email") or "").strip().lower()
                             new_email_clean = (email_val or "").strip().lower()
@@ -436,8 +550,7 @@ with tabs[1]:
                                 something_changed = True
                         except Exception as e:
                             st.error(f"Email update failed: {e!r}")
-                        
-                        # Role/active
+
                         try:
                             if new_role != cur_role:
                                 set_profile_role(sel_user_id, new_role)
@@ -447,21 +560,20 @@ with tabs[1]:
                                 something_changed = True
                         except Exception as e:
                             st.error(f"Role/active update failed: {e!r}")
-                        
-                        # Password
+
                         try:
                             if temp_pw:
                                 admin_set_user_password(sel_user_id, temp_pw)
                                 something_changed = True
                         except Exception as e:
                             st.error(f"Password update failed: {e!r}")
-                        
+
                         if something_changed:
                             st.success("✅ User updated.")
                             st.rerun()
                         else:
                             st.info("No changes to save.")
-                
+
                 with col_c:
                     if st.button("🗑️ Delete User", type="secondary", key="admin_delete_user"):
                         try:
@@ -471,33 +583,27 @@ with tabs[1]:
                             st.rerun()
                         except Exception as e:
                             st.error(f"Failed to delete user: {e!r}")
-    
-    # ----- All profiles table -----
-    st.markdown("#### All Users")
-    
+
+    # ── All Users Table ──
+    st.markdown('<div class="section-title">All Users</div>', unsafe_allow_html=True)
+
     if not all_profiles:
         st.info("No users found.")
     else:
         table = []
-        now_utc = datetime.now(timezone.utc)
-        
         for p in all_profiles:
-            created_raw = p.get("created_at")
-            created_str = _fmt_date(created_raw)
-            
             status = p.get("subscription_status", "unknown")
             override = "✓" if p.get("admin_override_active") else ""
-            
             table.append({
                 "Email": p.get("email"),
-                "Status": f"{_status_color(status)} {status}",
+                "Status": f"{_status_emoji(status)} {status}",
                 "Role": p.get("role", "player"),
                 "Active": "✓" if p.get("is_active") else "✗",
                 "Override": override,
-                "Created": created_str,
+                "Created": _fmt_date(p.get("created_at")),
             })
-        
-        st.dataframe(table, use_container_width=True, height=400)
+
+        st.dataframe(table, use_container_width=True, hide_index=True, height=400)
 
 
 # =============================================================================
@@ -505,145 +611,214 @@ with tabs[1]:
 # =============================================================================
 
 with tabs[2]:
-    st.subheader("💳 Subscription Management")
-    
+
     if not all_profiles:
         st.info("No users found.")
     else:
         # Select user
         labels = []
         label_to_profile = {}
-        
+
         for p in all_profiles:
             email = (p.get("email") or "—").strip()
             status = p.get("subscription_status", "unknown")
-            label = f"{_status_color(status)} {email}"
+            label = f"{_status_emoji(status)} {email}"
             labels.append(label)
             label_to_profile[label] = p
-        
+
         sel_label = st.selectbox("Select user", options=labels, key="sub_select_user")
         selected = label_to_profile.get(sel_label, {})
         sel_user_id = str(selected.get("user_id") or "")
-        
+
         if not sel_user_id:
             st.error("No user selected.")
         else:
-            # Get subscription details
             sub_details = admin_get_subscription_details(sel_user_id) or {}
-            
-            # Display current status
-            st.markdown("---")
-            st.markdown("#### Current Subscription Status")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                status = selected.get("subscription_status", "unknown")
-                st.metric("Status", f"{_status_color(status)} {status}")
-            
-            with col2:
-                plan = selected.get("subscription_plan", "—")
-                amount = selected.get("subscription_amount", 299)
-                st.metric("Plan", f"{plan} (${amount}/mo)")
-            
-            with col3:
-                is_trial = selected.get("is_trial", False)
-                trial_ends = selected.get("trial_ends_at")
-                if is_trial and trial_ends:
-                    days_left = _days_until(trial_ends)
-                    st.metric("Trial Ends", f"{_fmt_date(trial_ends)} ({days_left} days)")
-                else:
-                    st.metric("Trial", "N/A")
-            
-            with col4:
-                override = selected.get("admin_override_active", False)
-                st.metric("Admin Override", "✅ Active" if override else "❌ None")
-            
-            # Additional details
-            col5, col6, col7, col8 = st.columns(4)
-            
-            with col5:
-                started = sub_details.get("subscription_started_at")
-                st.metric("Started", _fmt_date(started) if started else "—")
-            
-            with col6:
-                period_end = sub_details.get("subscription_current_period_end")
-                st.metric("Period Ends", _fmt_date(period_end) if period_end else "—")
-            
-            with col7:
-                last_payment = sub_details.get("last_successful_payment_at")
-                st.metric("Last Payment", _fmt_date(last_payment) if last_payment else "—")
-            
-            with col8:
-                failed = sub_details.get("failed_payment_count", 0) or 0
-                st.metric("Failed Payments", failed)
-            
-            # Quick actions
-            st.markdown("---")
-            st.markdown("#### Quick Actions")
-            
-            col_a, col_b, col_c, col_d = st.columns(4)
-            
+
+            # ── Current Status ──
+            st.markdown('<div class="section-title">Current Status</div>', unsafe_allow_html=True)
+
+            status = selected.get("subscription_status", "unknown")
+            override = selected.get("admin_override_active", False)
+            is_trial = selected.get("is_trial", False)
+            trial_ends = selected.get("trial_ends_at")
+            user_active = selected.get("is_active", False)
+
+            st.markdown(f"""
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <div class="stat-value">{_status_emoji(status)} {status}</div>
+                    <div class="stat-label">Subscription Status</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{"🎁 Free" if override else "💳 Paid"}</div>
+                    <div class="stat-label">Access Type</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{"✅ Yes" if user_active else "🔒 No"}</div>
+                    <div class="stat-label">Can Access App</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{f"{_days_until(trial_ends)} days" if is_trial and trial_ends else "N/A"}</div>
+                    <div class="stat-label">Trial Remaining</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Payment details
+            started = sub_details.get("subscription_started_at")
+            period_end = sub_details.get("subscription_current_period_end")
+            last_payment = sub_details.get("last_successful_payment_at")
+            failed = sub_details.get("failed_payment_count", 0) or 0
+
+            st.markdown(f"""
+            <div class="info-row">
+                <div class="info-item">
+                    <div class="info-label">Sub Started</div>
+                    <div class="info-value">{_fmt_date(started) if started else "—"}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Period Ends</div>
+                    <div class="info-value">{_fmt_date(period_end) if period_end else "—"}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Last Payment</div>
+                    <div class="info-value">{_fmt_date(last_payment) if last_payment else "—"}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Failed Payments</div>
+                    <div class="info-value" style="color: {'#FF5252' if failed > 0 else '#E0E0E0'}">{failed}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # ── Access Control ──
+            st.markdown('<div class="section-title">Access Control</div>', unsafe_allow_html=True)
+
+            col_a, col_b = st.columns(2)
+
             with col_a:
-                if st.button("🎁 Grant Free Access", key="sub_grant_access"):
+                st.markdown("""<div class="action-card">
+                    <div class="action-card-title">🎁 Grant Free Access</div>
+                    <div class="action-card-desc">Give full access without payment. Bypasses all subscription checks. Use for VIPs, testers, or comp'd users.</div>
+                </div>""", unsafe_allow_html=True)
+                if st.button("Grant Free Access", key="sub_grant_access", use_container_width=True):
                     try:
                         admin_grant_free_access(sel_user_id, "Admin granted")
                         st.success("✅ Free access granted.")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Failed: {e!r}")
-            
+
             with col_b:
-                if st.button("🚫 Revoke Override", key="sub_revoke_access"):
+                st.markdown("""<div class="action-card">
+                    <div class="action-card-title">🚫 Remove Free Access</div>
+                    <div class="action-card-desc">Remove the override. User falls back to their subscription status. If they don't have one, they see the lockout screen.</div>
+                </div>""", unsafe_allow_html=True)
+                if st.button("Remove Free Access", key="sub_revoke_access", use_container_width=True):
                     try:
                         admin_revoke_free_access(sel_user_id)
-                        st.success("✅ Override revoked.")
+                        st.success("✅ Free access removed.")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Failed: {e!r}")
-            
+
+            # ── Trial Management ──
+            st.markdown('<div class="section-title">Trial Management</div>', unsafe_allow_html=True)
+
+            col_c, col_d = st.columns(2)
+
             with col_c:
-                extend_days = st.number_input("Days", min_value=1, max_value=30, value=7, key="sub_extend_days")
-                if st.button("⏰ Extend Trial", key="sub_extend_trial"):
+                st.markdown("""<div class="action-card">
+                    <div class="action-card-title">⏰ Extend Trial</div>
+                    <div class="action-card-desc">Add days to the trial. Extends from current end date, or starts from today if no trial exists.</div>
+                </div>""", unsafe_allow_html=True)
+                extend_days = st.number_input("Days to add", min_value=1, max_value=90, value=7, key="sub_extend_days")
+                if st.button("Extend Trial", key="sub_extend_trial", use_container_width=True):
                     try:
                         admin_extend_trial(sel_user_id, days=extend_days)
                         st.success(f"✅ Trial extended by {extend_days} days.")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Failed: {e!r}")
-            
+
             with col_d:
+                st.markdown("""<div class="action-card">
+                    <div class="action-card-title">🔗 Payment Link</div>
+                    <div class="action-card-desc">Copy and send to the user so they can subscribe. This link is unique to their account.</div>
+                </div>""", unsafe_allow_html=True)
                 payment_link = admin_resend_payment_link(sel_user_id)
                 if payment_link:
-                    st.markdown(f"[📧 Payment Link]({payment_link})")
-                    st.caption("Copy and send to user")
+                    st.code(payment_link, language=None)
                 else:
-                    st.caption("No payment link")
-            
-            # Force status change
-            st.markdown("---")
-            st.markdown("#### Force Status Change")
-            
-            col1, col2 = st.columns([2, 1])
-            
-            with col1:
-                new_status = st.selectbox(
-                    "New Status",
-                    ["pending", "trial", "active", "grace_period", "overdue", "cancelled", "expired"],
-                    key="sub_new_status"
-                )
-            
-            with col2:
-                st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("⚡ Force Status", type="secondary", key="sub_force_status"):
+                    st.caption("No payment link generated for this user.")
+
+            # ── Ban User ──
+            st.markdown('<div class="section-title">Ban / Suspend</div>', unsafe_allow_html=True)
+
+            is_banned = selected.get("subscription_status") == "banned"
+
+            if is_banned:
+                st.markdown("""<div class="alert-card alert-danger">
+                    <div class="alert-text">⛔ <strong>This user is BANNED.</strong> They cannot access the app regardless of payment status. Unban them to restore access.</div>
+                </div>""", unsafe_allow_html=True)
+                if st.button("✅ Unban User", key="sub_unban_user", use_container_width=True):
                     try:
-                        admin_set_subscription_status(sel_user_id, new_status)
-                        st.success(f"✅ Status changed to {new_status}.")
+                        admin_unban_user(sel_user_id)
+                        st.success("✅ User unbanned — set to pending. Grant free access or let them subscribe.")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Failed: {e!r}")
-            
-            st.caption("⚠️ Use with caution. This directly overrides the subscription status.")
+            else:
+                st.markdown("""<div class="action-card">
+                    <div class="action-card-title">⛔ Ban User</div>
+                    <div class="action-card-desc">Permanently lock this user out. They'll see "Account Suspended — contact admin." Even paying won't get them back in. Only you can unban them.</div>
+                </div>""", unsafe_allow_html=True)
+                ban_reason = st.text_input("Reason (shown to user)", key="sub_ban_reason", placeholder="e.g. Violated terms of service")
+                if st.button("Ban User", type="secondary", key="sub_ban_user", use_container_width=True):
+                    try:
+                        admin_ban_user(sel_user_id, reason=ban_reason or "Account suspended by admin. Contact support for details.")
+                        st.success("⛔ User banned — locked out immediately.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed: {e!r}")
+
+            # ── Advanced ──
+            with st.expander("⚙️ Advanced: Force Status Change", expanded=False):
+                st.caption("Manually override subscription status. Use only if the controls above don't cover your situation.")
+
+                col1, col2 = st.columns([2, 1])
+
+                with col1:
+                    new_status = st.selectbox(
+                        "New Status",
+                        ["pending", "trial", "active", "grace_period", "overdue", "cancelled", "expired", "banned"],
+                        key="sub_new_status"
+                    )
+                    descs = {
+                        "pending": "Not paid. Sees 'Complete Your Subscription' screen.",
+                        "trial": "Free trial. Needs trial_ends_at set.",
+                        "active": "Paid subscriber. Full access.",
+                        "grace_period": "Payment failed, temporary access with warning banner.",
+                        "overdue": "Payment failed past grace. Locked out.",
+                        "cancelled": "Cancelled. Locked out.",
+                        "expired": "Term ended. Locked out.",
+                        "banned": "Admin banned. Locked out. Can't resubscribe.",
+                    }
+                    st.caption(descs.get(new_status, ""))
+
+                with col2:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("⚡ Force Status", type="secondary", key="sub_force_status"):
+                        try:
+                            if new_status == "banned":
+                                admin_ban_user(sel_user_id, reason="Banned via admin force status")
+                            else:
+                                admin_set_subscription_status(sel_user_id, new_status)
+                            st.success(f"✅ Status → {new_status}")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Failed: {e!r}")
 
 
 # =============================================================================
@@ -651,175 +826,151 @@ with tabs[2]:
 # =============================================================================
 
 with tabs[3]:
-    st.subheader("🔍 Player Detail")
-    
+
     if not all_profiles:
         st.info("No users found.")
     else:
-        # Select user
         email_to_profile = {p.get("email", ""): p for p in all_profiles}
         emails_sorted = sorted(email_to_profile.keys())
-        
+
         sel_email = st.selectbox("Select player", options=emails_sorted, key="detail_player_email")
         sel_profile = email_to_profile.get(sel_email, {})
         sel_user_id = str(sel_profile.get("user_id") or "")
-        
+
         if not sel_user_id:
             st.warning("Selected profile has no user_id.")
         else:
-            # User info header
-            st.markdown("---")
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                status = sel_profile.get("subscription_status", "unknown")
-                st.metric("Status", f"{_status_color(status)} {status}")
-            
-            with col2:
-                st.metric("Active", "✓" if sel_profile.get("is_active") else "✗")
-            
-            with col3:
-                created = sel_profile.get("created_at")
-                st.metric("Member Since", _fmt_date(created))
-            
-            with col4:
-                override = sel_profile.get("admin_override_active", False)
-                st.metric("Free Access", "✓" if override else "✗")
-            
+            # Status header
+            status = sel_profile.get("subscription_status", "unknown")
+            override = sel_profile.get("admin_override_active", False)
+            created = sel_profile.get("created_at")
+
+            st.markdown(f"""
+            <div class="info-row" style="margin-top: 16px;">
+                <div class="info-item">
+                    <div class="info-label">Status</div>
+                    <div class="info-value">{_status_emoji(status)} {status}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Active</div>
+                    <div class="info-value">{"✅" if sel_profile.get("is_active") else "🔒"}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Member Since</div>
+                    <div class="info-value">{_fmt_date(created)}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Free Access</div>
+                    <div class="info-value">{"✅" if override else "—"}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
             # Settings
-            st.markdown("---")
-            st.markdown("#### Player Settings")
-            
+            st.markdown('<div class="section-title">Settings</div>', unsafe_allow_html=True)
+
             try:
                 settings = get_user_settings(sel_user_id)
             except Exception as e:
                 st.error(f"Could not load settings: {e!r}")
                 settings = {}
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                bankroll = settings.get("bankroll", 0)
-                st.metric("Bankroll", _fmt_currency(bankroll))
-            
-            with col2:
-                stakes = settings.get("default_stakes", "—")
-                st.metric("Default Stakes", stakes)
-            
-            with col3:
-                risk_mode = settings.get("risk_mode", "balanced")
-                st.metric("Risk Mode", risk_mode.title())
-            
-            with col4:
-                buy_ins = settings.get("buy_in_count", 15)
-                st.metric("Buy-in Requirement", f"{buy_ins} BI")
-            
+
+            bankroll = settings.get("bankroll", 0)
+            stakes = settings.get("default_stakes", "—")
+            risk_mode = settings.get("risk_mode", "balanced")
+
+            st.markdown(f"""
+            <div class="info-row">
+                <div class="info-item">
+                    <div class="info-label">Bankroll</div>
+                    <div class="info-value">{_fmt_currency(bankroll)}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Default Stakes</div>
+                    <div class="info-value">{stakes}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Risk Mode</div>
+                    <div class="info-value">{risk_mode.title()}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
             # Stats
-            st.markdown("---")
-            st.markdown("#### Player Statistics")
-            
+            st.markdown('<div class="section-title">Statistics</div>', unsafe_allow_html=True)
+
             try:
                 stats = get_player_stats(sel_user_id)
             except Exception as e:
                 st.error(f"Could not load stats: {e!r}")
                 stats = {}
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                sessions = stats.get("total_sessions", 0)
-                st.metric("Total Sessions", sessions)
-            
-            with col2:
-                hands = stats.get("total_hands", 0)
-                st.metric("Total Hands", f"{hands:,}")
-            
-            with col3:
-                hours = stats.get("total_hours", 0)
-                st.metric("Total Hours", f"{hours:.1f}")
-            
-            with col4:
-                profit = stats.get("total_profit_loss", 0)
-                color = "normal" if profit >= 0 else "inverse"
-                st.metric("Total Profit/Loss", _fmt_currency(profit), delta_color=color)
-            
-            col5, col6, col7, col8 = st.columns(4)
-            
-            with col5:
-                win_rate = stats.get("win_rate_bb_100", 0)
-                st.metric("Win Rate", f"{win_rate:+.2f} BB/100")
-            
-            with col6:
-                winning = stats.get("winning_sessions", 0)
-                st.metric("Winning Sessions", winning)
-            
-            with col7:
-                losing = stats.get("losing_sessions", 0)
-                st.metric("Losing Sessions", losing)
-            
-            with col8:
-                if sessions > 0:
-                    win_pct = (winning / sessions) * 100
-                    st.metric("Win %", f"{win_pct:.1f}%")
-                else:
-                    st.metric("Win %", "—")
-            
+
+            sessions_count = stats.get("total_sessions", 0)
+            hands = stats.get("total_hands", 0)
+            hours = stats.get("total_hours", 0)
+            profit = stats.get("total_profit_loss", 0)
+            win_rate = stats.get("win_rate_bb_100", 0)
+            winning = stats.get("winning_sessions", 0)
+            losing = stats.get("losing_sessions", 0)
+            win_pct = (winning / sessions_count * 100) if sessions_count > 0 else 0
+
+            profit_color = "#69F0AE" if profit >= 0 else "#FF5252"
+            profit_sign = "+" if profit >= 0 else ""
+
+            st.markdown(f"""
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <div class="stat-value" style="color: {profit_color}">{profit_sign}{_fmt_currency(profit)}</div>
+                    <div class="stat-label">Total Profit/Loss</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{win_rate:+.2f}</div>
+                    <div class="stat-label">BB/100</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{sessions_count}</div>
+                    <div class="stat-label">Sessions ({win_pct:.0f}% win)</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{hands:,}</div>
+                    <div class="stat-label">Total Hands · {hours:.1f}h</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
             # Recent sessions
-            st.markdown("---")
-            st.markdown("#### Recent Sessions")
-            
+            st.markdown('<div class="section-title">Recent Sessions</div>', unsafe_allow_html=True)
+
             try:
                 sessions_list = get_recent_sessions_for_user_admin(sel_user_id, limit=20)
             except Exception as e:
                 st.error(f"Could not load sessions: {e!r}")
                 sessions_list = []
-            
+
             if not sessions_list:
-                st.info("No sessions recorded yet.")
+                st.caption("No sessions recorded yet.")
             else:
                 sess_rows = []
                 for s in sessions_list:
                     pl = _safe_float(s.get("profit_loss", 0))
                     pl_str = f"+${pl:.2f}" if pl >= 0 else f"-${abs(pl):.2f}"
-                    
+
                     sess_rows.append({
                         "Date": _fmt_date(s.get("started_at")),
                         "Stakes": s.get("stakes", "—"),
-                        "Duration": f"{s.get('duration_minutes', 0) or 0} min",
+                        "Duration": f"{s.get('duration_minutes', 0) or 0}m",
                         "Hands": s.get("hands_played", 0) or 0,
                         "P/L": pl_str,
-                        "P/L (BB)": f"{_safe_float(s.get('profit_loss_bb', 0)):+.1f}",
-                        "End Reason": s.get("end_reason", "—"),
+                        "BB/100": f"{_safe_float(s.get('profit_loss_bb', 0)):+.1f}",
+                        "End": s.get("end_reason", "—"),
                     })
-                
-                st.dataframe(sess_rows, use_container_width=True, height=400)
-            
-            # Session distribution
-            if sessions_list:
-                st.markdown("#### Session P/L Distribution")
-                
-                # Group by outcome
-                wins = sum(1 for s in sessions_list if _safe_float(s.get("profit_loss", 0)) > 0)
-                losses = sum(1 for s in sessions_list if _safe_float(s.get("profit_loss", 0)) < 0)
-                breakeven = sum(1 for s in sessions_list if _safe_float(s.get("profit_loss", 0)) == 0)
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("🟢 Winning", wins)
-                with col2:
-                    st.metric("🔴 Losing", losses)
-                with col3:
-                    st.metric("⚪ Breakeven", breakeven)
+
+                st.dataframe(sess_rows, use_container_width=True, hide_index=True, height=400)
 
 
 # =============================================================================
 # FOOTER
 # =============================================================================
 
-st.divider()
-st.caption(
-    "Admin Console for Poker Decision App. "
-    "All subscription management operations are logged. "
-    "Use with appropriate caution."
-)
+st.markdown('<div style="height:1px;background:rgba(255,255,255,0.06);margin:32px 0 12px 0"></div>', unsafe_allow_html=True)
+st.markdown('<div style="text-align:center;font-size:11px;color:rgba(255,255,255,0.15);font-family:JetBrains Mono,monospace;letter-spacing:0.03em;">NAMELESS POKER · Admin Console · Handle with care</div>', unsafe_allow_html=True)

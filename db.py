@@ -940,9 +940,43 @@ def admin_revoke_free_access(user_id: str) -> bool:
         return False
 
 
+def admin_ban_user(user_id: str, reason: str = "Account suspended by admin. Contact support for details.") -> bool:
+    """Ban a user — permanent lockout until admin unbans."""
+    if not user_id:
+        return False
+    try:
+        admin = _admin_required()
+        admin.table("poker_profiles").update({
+            "subscription_status": "banned",
+            "is_active": False,
+            "admin_override_active": False,
+            "lockout_reason": reason,
+        }).eq("user_id", user_id).execute()
+        return True
+    except Exception as e:
+        print(f"[db] admin_ban_user error: {e}")
+        return False
+
+
+def admin_unban_user(user_id: str) -> bool:
+    """Unban a user — sets to pending so they need to subscribe or get free access."""
+    if not user_id:
+        return False
+    try:
+        admin = _admin_required()
+        admin.table("poker_profiles").update({
+            "subscription_status": "pending",
+            "is_active": False,
+            "lockout_reason": None,
+        }).eq("user_id", user_id).execute()
+        return True
+    except Exception as e:
+        print(f"[db] admin_unban_user error: {e}")
+        return False
+
 def admin_set_subscription_status(user_id: str, status: str) -> bool:
     """Force subscription status (admin only)."""
-    valid_statuses = ["pending", "trial", "active", "grace_period", "overdue", "cancelled", "expired"]
+    valid_statuses = ["pending", "trial", "active", "grace_period", "overdue", "cancelled", "expired", "banned"]
     if not user_id or status not in valid_statuses:
         return False
     

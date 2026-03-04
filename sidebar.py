@@ -38,7 +38,7 @@ def render_sidebar():
 <div style="font-size: 13px; color: #FF5252; font-family: 'JetBrains Mono', monospace; font-weight: 600;">Update payment to keep access</div>
 </div>""", unsafe_allow_html=True)
             if payment_link:
-                st.link_button("💳 Update Payment", payment_link, use_container_width=True)
+                st.markdown(f"""<a href="{payment_link}" target="_blank" style="display:block;text-align:center;padding:8px 12px;background:rgba(255,82,82,0.15);border:1px solid rgba(255,82,82,0.3);border-radius:6px;color:#FF5252;text-decoration:none;font-family:'JetBrains Mono',monospace;font-weight:600;font-size:13px;margin:6px 0 0 0;">💳 Update Payment</a>""", unsafe_allow_html=True)
             st.markdown("---")
 
         elif subscription_status == "trial":
@@ -72,7 +72,7 @@ def render_sidebar():
 <div style="font-size: 13px; color: {color}; font-family: 'JetBrains Mono', monospace; font-weight: 600;">{sub}</div>
 </div>""", unsafe_allow_html=True)
                 if payment_link:
-                    st.link_button("💳 Subscribe — $299/mo", payment_link, use_container_width=True)
+                    st.markdown(f"""<a href="{payment_link}" target="_blank" style="display:block;text-align:center;padding:8px 12px;background:rgba(105,240,174,0.1);border:1px solid rgba(105,240,174,0.25);border-radius:6px;color:#69F0AE;text-decoration:none;font-family:'JetBrains Mono',monospace;font-weight:600;font-size:13px;margin:6px 0 0 0;">💳 Subscribe — $299/mo</a>""", unsafe_allow_html=True)
                 st.markdown("---")
 
             else:

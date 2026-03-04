@@ -430,6 +430,10 @@ def check_subscription_access(profile: dict) -> tuple[bool, str, Optional[str]]:
     if status == "expired":
         return False, "expired", payment_link
     
+    # Banned
+    if status == "banned":
+        return False, "banned", None
+    
     # Unknown status - deny access
     return False, "unknown", payment_link
 
@@ -467,6 +471,7 @@ section[data-testid="stSidebar"] {display: none !important;}
         "overdue": ("&#x26A0;", "Payment Overdue", "Your payment failed and the grace period has ended. Update your payment method to restore access immediately."),
         "cancelled": ("&#x270B;", "Subscription Cancelled", "Your subscription has been cancelled. You can resubscribe anytime to regain access to all features."),
         "expired": ("&#x1F4C5;", "Subscription Expired", "Your subscription has expired. Renew now to continue making optimal decisions at the table."),
+        "banned": ("&#x26D4;", "Account Suspended", "Your account has been suspended. Please contact admin for more information."),
     }
 
     icon, title, body = msgs.get(status, ("&#x1F512;", "Access Denied", "Please contact support if you believe this is an error."))
