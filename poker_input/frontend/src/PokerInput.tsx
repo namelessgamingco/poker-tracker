@@ -882,43 +882,21 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   const potRef = useRef<HTMLInputElement>(null)
 
   // ---- Set frame height ----
-  // Use a stable height to prevent scroll jumping.
-  // Only recalculate on step changes, never shrink during a hand.
-  const lastHeightRef = useRef<number>(0)
-  
+  // Set a generous fixed height ONCE. Never resize during gameplay.
+  // This completely eliminates scroll jumping at the cost of some empty space.
+  const heightSetRef = useRef(false)
   useEffect(() => {
-    // Small delay to let DOM render, then measure
-    const timer = setTimeout(() => {
-      const body = document.body
-      const contentHeight = Math.max(
-        body.scrollHeight,
-        body.offsetHeight,
-        document.documentElement.scrollHeight
-      )
-      
-      // Only grow, never shrink (prevents scroll jumps)
-      // Reset is allowed when starting a new hand
-      if (step === "position" || step === "card1_rank") {
-        lastHeightRef.current = contentHeight
-        Streamlit.setFrameHeight(contentHeight)
-      } else if (contentHeight > lastHeightRef.current) {
-        lastHeightRef.current = contentHeight
-        Streamlit.setFrameHeight(contentHeight)
-      }
-      // If content is shorter — do nothing, keep the taller height
-    }, 50)
-    return () => clearTimeout(timer)
-  }, [step])
+    if (!heightSetRef.current) {
+      heightSetRef.current = true
+      // Set generous height that fits all possible UI states
+      Streamlit.setFrameHeight(900)
+    }
+  }, [])
 
   // Keep-alive ping to prevent Streamlit WebSocket timeout
   useEffect(() => {
     const keepAlive = setInterval(() => {
-      // Use last known height to avoid shrinking
-      if (lastHeightRef.current > 0) {
-        Streamlit.setFrameHeight(lastHeightRef.current)
-      } else {
-        Streamlit.setFrameHeight()
-      }
+      Streamlit.setFrameHeight(900)
     }, 30000)
     return () => clearInterval(keepAlive)
   }, [])
@@ -1165,6 +1143,10 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     const autoStrength = gs.street !== "preflop"
       ? detectHandStrength(gs.card1, gs.card2, gs.board_cards)
       : null
+
+    // DEBUG: Log hand strength detection
+    const boardCardsStr = gs.board_cards.filter(c => c !== null).map(c => `${c.rank}${c.suit}`).join(" ")
+    console.log(`[HAND_STRENGTH_DEBUG] street=${gs.street} hand=${handStr} board=[${boardCardsStr}] gs.hand_strength=${gs.hand_strength} autoStrength=${autoStrength} SENT=${gs.hand_strength || autoStrength}`)
 
     // Determine which state holds which table's data
     const table1GameState = primaryHoldsTable === 1 ? gameState : t2GameState
