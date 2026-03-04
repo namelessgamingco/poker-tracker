@@ -341,7 +341,7 @@ tabs = st.tabs(["📊 Dashboard", "👤 Users", "💳 Subscriptions", "🔍 Play
 with tabs[0]:
 
     total_users = len(all_profiles)
-    active_subs = [p for p in all_profiles if p.get("subscription_status") == "active"]
+    active_subs = [p for p in all_profiles if p.get("subscription_status") == "active" and not p.get("admin_override_active")]
     trial_users = [p for p in all_profiles if p.get("subscription_status") == "trial"]
     pending_users = [p for p in all_profiles if p.get("subscription_status") == "pending"]
     cancelled_users = [p for p in all_profiles if p.get("subscription_status") in ("cancelled", "expired")]
@@ -439,13 +439,16 @@ with tabs[0]:
 
     status_counts = {}
     for p in all_profiles:
-        s = p.get("subscription_status", "unknown") or "unknown"
+        if p.get("admin_override_active"):
+            s = "free access"
+        else:
+            s = p.get("subscription_status", "unknown") or "unknown"
         status_counts[s] = status_counts.get(s, 0) + 1
 
     status_data = []
     for s, count in sorted(status_counts.items(), key=lambda x: -x[1]):
         status_data.append({
-            "Status": f"{_status_emoji(s)} {s}",
+            "Status": f"{'🎁' if s == 'free access' else _status_emoji(s)} {s}",
             "Count": count,
             "% of Total": f"{count/total_users*100:.1f}%" if total_users > 0 else "0%",
         })
