@@ -896,7 +896,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
 
   // Navigation guard: protect against accidental page leave during hand
   useEffect(() => {
-    const handInProgress = step !== "position"
+    const handInProgress = step !== "position" || (showSecondTable && t2Step !== "position")
 
     // Signal parent frame about hand state (for sidebar/back button interception)
     try {
@@ -3360,7 +3360,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       bg: "rgba(105,240,174,0.06)",
       border: "rgba(105,240,174,0.15)",
       title: "Good Play + Win",
-      message: "You made the +EV play and it worked out. Keep making these decisions.",
+      message: "You made the right play and it paid off. Keep trusting the process.",
     },
     lost: {
       icon: "📊",
@@ -3368,7 +3368,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       bg: "rgba(255,82,82,0.06)",
       border: "rgba(255,82,82,0.15)",
       title: "Correct Play — Variance",
-      message: "Variance means you'll lose some +EV spots. Over hundreds of hands, correct decisions add up to significant profit.",
+      message: "You played this right. Losing with the right play happens — it's part of the game. Over hundreds of hands, these decisions add up to profit.",
     },
     folded: {
       icon: "🛡️",
@@ -3376,7 +3376,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       bg: "rgba(255,255,255,0.02)",
       border: "rgba(255,255,255,0.06)",
       title: "Good Fold — Money Saved",
-      message: "Every -EV call you avoid is money in your pocket. The best players fold more than recreational players.",
+      message: "Every bad call you avoid is money saved. Discipline is the edge.",
     },
   }
 

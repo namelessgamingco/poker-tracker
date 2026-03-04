@@ -1000,17 +1000,16 @@ def render_outcome_modal(data: dict) -> bool:
     # ── Standard outcome modal ──
     if outcome == "folded":
         icon, title = "🛡️", "Good Fold — Money Saved"
-        message = ("Every -EV call you avoid is money in your pocket. "
-                   "The best players fold more than recreational players — that's why they win.")
+        message = ("Every bad call you avoid is money saved. "
+                   "Discipline is the edge — this fold protects your bankroll.")
     elif outcome == "won":
-        icon, title = "✅", "Correct Play + Win"
-        message = ("You made the +EV play and it worked out. "
-                   "Keep making these decisions and the results will keep coming.")
+        icon, title = "✅", "Good Play + Win"
+        message = ("You made the right play and it paid off. "
+                   "Keep trusting the process — these decisions compound over time.")
     else:
         icon, title = "📊", "Correct Play — Variance"
-        message = ("This is exactly how winning players play. "
-                   "Variance means you'll lose some +EV spots. Over hundreds of hands, "
-                   "these mathematically correct decisions add up to significant profit.")
+        message = ("You played this right. Losing with the right play happens — it's part of the game. "
+                   "Over hundreds of hands, these decisions add up to significant profit.")
 
     # Build detail + math sections
     detail_html = ""
@@ -1058,17 +1057,15 @@ def render_bluff_outcome_modal(bluff_ctx: dict, data: dict) -> bool:
     elif bluff_outcome == "call_lost":
         works_out_of_10 = fold_pct * 10
         icon, title = "📊", "They Called — Didn't Work This Time"
-        message = (f"This bet works about {works_out_of_10:.0f} out of 10 times. "
-                   f"The math is still in your favor over time. "
-                   f"It feels bad to get caught. But players who stop bluffing after "
-                   f"getting caught leave money on the table. Your opponents don't remember "
-                   f"this hand — they'll fold to your next bet just as often.")
-        stat_html = f'<div class="outcome-stat-row"><div class="outcome-stat"><div class="outcome-stat-num pl-negative">-${abs(profit_loss):.0f}</div><div class="outcome-stat-lbl">This Hand</div></div><div class="outcome-stat"><div class="outcome-stat-num" style="color: #69F0AE;">+${ev_of_bet:.2f}</div><div class="outcome-stat-lbl">Long-Term EV/Attempt</div></div></div>'
+        message = (f"This bet works about {works_out_of_10:.0f} out of 10 times — the math is in your favor. "
+                   f"Getting caught feels bad, but don't stop bluffing. "
+                   f"Your opponents won't remember this hand — they'll fold to your next bet just as often.")
+        stat_html = f'<div class="outcome-stat-row"><div class="outcome-stat"><div class="outcome-stat-num pl-negative">-${abs(profit_loss):.0f}</div><div class="outcome-stat-lbl">This Hand</div></div><div class="outcome-stat"><div class="outcome-stat-num" style="color: #69F0AE;">+${ev_of_bet:.2f}</div><div class="outcome-stat-lbl">Avg. Profit Per Bluff</div></div></div>'
 
     elif bluff_outcome == "checked":
         icon, title = "✋", "You Checked — Hand Over"
-        message = (f"Checking is fine. Over time, betting in this spot "
-                   f"averages +${ev_of_bet:.2f} per attempt. Something to try when you're ready.")
+        message = (f"Checking is fine here. Over time, betting this spot "
+                   f"makes about +${ev_of_bet:.2f} per attempt — something to consider when you're comfortable.")
         stat_html = ""
 
     else:  # call_won
