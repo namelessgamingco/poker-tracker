@@ -1783,6 +1783,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           facing_bet: 0,
           we_are_aggressor: wasAggressor,
           total_invested: s.total_invested + streetInvestment,
+          hand_strength: null,   // Reset — will be re-detected with new board
+          board_texture: null,   // Reset — will be re-detected with new board
         }
       })
       setBoardEntryIndex(newBoardEntryIndex)
@@ -1801,6 +1803,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           (a) => decision.display.toUpperCase().includes(a)
         ) : false,
         total_invested: gameState.total_invested + (decision?.amount || 0),
+        hand_strength: null,   // Reset — will be re-detected with new board
+        board_texture: null,   // Reset — will be re-detected with new board
       }
       
       const table1GameState = primaryHoldsTable === 1 ? newPrimaryGameState : t2GameState
