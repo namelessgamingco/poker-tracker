@@ -426,9 +426,9 @@ if is_new_user:
     completed = sum(1 for s in steps if s["done"])
 
     # Trial urgency banner
-    is_trial = st.session_state.get("is_trial", False)
+    sub_status = st.session_state.get("subscription_status", "")
     trial_ends_at = st.session_state.get("trial_ends_at")
-    if is_trial and trial_ends_at:
+    if sub_status == "trial" and trial_ends_at:
         try:
             from datetime import datetime, timezone
             if isinstance(trial_ends_at, str):
