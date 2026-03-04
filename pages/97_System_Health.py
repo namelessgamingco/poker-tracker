@@ -165,17 +165,19 @@ except Exception as e:
     sb_status = "ERROR"
     sb_error = repr(e)
 
-# 2) Auth session
-if sb is not None and sb_status == "OK":
-    try:
-        got = sb.auth.get_user()
-        if getattr(got, "user", None) is not None:
-            auth_status = "OK"
-        else:
-            auth_status = "WARN"
-    except Exception as e:
-        auth_status = "ERROR"
-        auth_error = repr(e)
+# 2) Auth session (check Streamlit session state, not anon client)
+try:
+    auth_id = st.session_state.get("user_db_id") or st.session_state.get("auth_id")
+    auth_email = st.session_state.get("user_email")
+    if auth_id and auth_email:
+        auth_status = "OK"
+        auth_detail_msg = auth_email
+    else:
+        auth_status = "WARN"
+        auth_detail_msg = "No user in session state"
+except Exception as e:
+    auth_status = "ERROR"
+    auth_error = repr(e)
 
 # 3) Service-role client
 service_role_key_present = bool(
@@ -249,18 +251,41 @@ st.markdown(f"""
 # ENVIRONMENT VARIABLES
 # =============================================================================
 
-env_vars = [
-    "APP_ENV",
-    "SUPABASE_URL_DEV", "SUPABASE_URL_PROD",
-    "SUPABASE_ANON_KEY_DEV", "SUPABASE_ANON_KEY_PROD",
-    "SUPABASE_SERVICE_ROLE_KEY",
-    "RADOM_PAYMENT_LINK_BASE",
-    "RADOM_WEBHOOK_KEY",
-]
+env_vars_to_check = {
+    "APP_ENV": "always",
+    "SUPABASE_URL_DEV": "dev",
+    "SUPABASE_URL_PROD": "prod",
+    "SUPABASE_ANON_KEY_DEV": "dev",
+    "SUPABASE_ANON_KEY_PROD": "prod",
+    "SUPABASE_SERVICE_ROLE_KEY": "always",
+    "RADOM_PAYMENT_LINK_BASE": "always",
+    "RADOM_WEBHOOK_KEY": "webhook",
+}
 
+app_env = os.getenv("APP_ENV", "dev")
 env_html = ""
-for name in env_vars:
+for name, required_in in env_vars_to_check.items():
     val = os.getenv(name)
+    # Skip vars not needed in this environment
+    if required_in == "dev" and app_env == "prod":
+        continue
+    if required_in == "prod" and app_env == "dev":
+        continue
+    if required_in == "webhook" and app_env != "webhook":
+        # Show as optional, not missing
+        if val:
+            status_color = "#69F0AE"
+            status_text = "SET"
+        else:
+            status_color = "rgba(255,255,255,0.25)"
+            status_text = "N/A"
+        env_html += f"""
+        <div class="env-item">
+            <div class="env-name">{name}</div>
+            <div class="env-status" style="color:{status_color}">{status_text}</div>
+        </div>"""
+        continue
+
     if val:
         status_color = "#69F0AE"
         status_text = "SET"

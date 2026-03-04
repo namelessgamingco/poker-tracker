@@ -208,13 +208,11 @@ if st.button("🚀 Run All Tests", type="primary", use_container_width=True):
         profiles = []
         qa.test("Database", "Service role client works", False, str(e)[:80])
 
-    # Auth session
-    try:
-        got = sb.auth.get_user() if sb else None
-        has_user = getattr(got, "user", None) is not None if got else False
-        qa.test("Database", "Auth session valid", has_user)
-    except Exception as e:
-        qa.test("Database", "Auth session valid", False, str(e)[:80])
+    # Auth session (check Streamlit session state)
+    auth_id = st.session_state.get("user_db_id") or st.session_state.get("auth_id")
+    auth_email = st.session_state.get("user_email")
+    qa.test("Database", "Auth session valid", bool(auth_id and auth_email),
+            auth_email if auth_email else "No user in session state")
 
     # ── 3. Core Tables ──
 
@@ -307,38 +305,43 @@ if st.button("🚀 Run All Tests", type="primary", use_container_width=True):
     try:
         # Test a basic preflop decision
         result = get_decision(
-            hole_cards="AhKs",
-            position="BTN",
-            street="preflop",
+            stakes="$1/$2",
+            our_stack=200.0,
+            villain_stack=200.0,
             pot_size=3.0,
-            stack_size=200.0,
-            bb_size=2.0,
+            facing_bet=0.0,
+            our_position="BTN",
+            villain_position="BB",
+            street="preflop",
+            our_hand="AhKs",
+            hand_strength="premium",
             num_players=6,
-            action_history=[],
-            board_cards="",
         )
-        has_action = "action" in result or "recommendation" in result or "decision" in result
-        qa.test("Engine", "Preflop decision returns result", has_action,
-                str(result.get("action") or result.get("recommendation") or result.get("decision", ""))[:60])
+        has_result = result is not None and hasattr(result, "action")
+        qa.test("Engine", "Preflop decision returns result", has_result,
+                str(getattr(result, "action", ""))[:60])
     except Exception as e:
         qa.test("Engine", "Preflop decision returns result", False, str(e)[:80])
 
     try:
         # Test a postflop decision
         result = get_decision(
-            hole_cards="AhKs",
-            position="BTN",
-            street="flop",
+            stakes="$1/$2",
+            our_stack=185.0,
+            villain_stack=185.0,
             pot_size=15.0,
-            stack_size=185.0,
-            bb_size=2.0,
-            num_players=2,
-            action_history=[],
-            board_cards="As7h2d",
+            facing_bet=0.0,
+            our_position="BTN",
+            villain_position="BB",
+            street="flop",
+            our_hand="AhKs",
+            hand_strength="top_pair",
+            board="As7h2d",
+            board_texture="dry",
         )
-        has_action = "action" in result or "recommendation" in result or "decision" in result
-        qa.test("Engine", "Postflop decision returns result", has_action,
-                str(result.get("action") or result.get("recommendation") or result.get("decision", ""))[:60])
+        has_result = result is not None and hasattr(result, "action")
+        qa.test("Engine", "Postflop decision returns result", has_result,
+                str(getattr(result, "action", ""))[:60])
     except Exception as e:
         qa.test("Engine", "Postflop decision returns result", False, str(e)[:80])
 
