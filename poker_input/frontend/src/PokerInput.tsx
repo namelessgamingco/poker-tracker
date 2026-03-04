@@ -935,7 +935,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       setTimeout(() => amountRef.current?.focus(), 50)
     }
     if (step === "pot_size" && potRef.current) {
-      setTimeout(() => potRef.current?.focus(), 50)
+      setTimeout(() => { potRef.current?.focus(); potRef.current?.select() }, 50)
     }
     // For all other steps, focus the container so keyboard shortcuts work immediately
     if (step !== "amount" && step !== "pot_size" && step !== "limper_count" && containerRef.current) {

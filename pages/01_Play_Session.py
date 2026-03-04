@@ -809,25 +809,22 @@ def render_inline_table_check():
     if not st.session_state.table_check_due:
         return
     
-    # Eye-catching banner to grab attention
-    st.markdown("""
-    <div style="
-        background: linear-gradient(135deg, rgba(255,179,0,0.12), rgba(255,111,0,0.08));
-        border: 2px solid rgba(255,179,0,0.5);
-        border-radius: 12px;
-        padding: 16px 20px;
-        margin: 8px 0 12px 0;
-    ">
-        <div style="font-size: 16px; font-weight: 700; color: #FFB300; margin-bottom: 4px;">
-            🎯 Quick Table Check
+    with st.expander("🎯  Quick Table Check — Rate your table in 30 seconds", expanded=st.session_state.get("table_check_active", False)):
+        st.markdown("""
+        <div style="
+            background: linear-gradient(135deg, rgba(255,179,0,0.08), rgba(255,111,0,0.04));
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin: -8px -16px 16px -16px;
+            border-bottom: 1px solid rgba(255,179,0,0.2);
+        ">
+            <div style="font-size: 13px; color: rgba(255,255,255,0.7); line-height: 1.6;">
+                A good table is worth <strong style="color: #FFB300;">+2-3 BB/100 more</strong> than a tough one — that's 
+                $20-30/hour extra at $1/$2. The best players don't just play well, they pick the right tables.
+                Answer 3 quick questions and we'll tell you if you should stay or move.
+            </div>
         </div>
-        <div style="font-size: 13px; color: rgba(255,255,255,0.6);">
-            Rate your table — 3 quick questions about the last 10 hands
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    with st.expander("Answer 3 questions", expanded=st.session_state.get("table_check_active", False)):
+        """, unsafe_allow_html=True)
         players_to_flop = st.radio("How many players typically see the flop?", ["2-3 (Tight)", "3-4 (Average)", "4-5 (Loose)", "5-6 (Very Loose)"], key="tc_q1", horizontal=True)
         has_limpers = st.radio("Are there limpers?", ["Yes", "No"], key="tc_q2", horizontal=True)
         three_bet_freq = st.radio("Is anyone 3-betting a lot?", ["No (Good)", "Sometimes", "Yes (Reg-heavy)"], key="tc_q3", horizontal=True)
