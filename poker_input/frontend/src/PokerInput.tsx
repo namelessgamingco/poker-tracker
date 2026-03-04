@@ -1509,12 +1509,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           
         case "player_count":
           setGameState((s) => ({ ...s, num_players: 2 }))
-          if (gameState.action_facing === "none" || gameState.action_facing === "") {
-            setPotStr(gameState.pot_size > 0 ? gameState.pot_size.toString() : "")
-            setStep("pot_size")
-          } else {
-            setStep("action")
-          }
+          setStep("action")
           break
           
         case "villain_position":
@@ -1712,6 +1707,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         setAmountContext(null)
         setAmountStr("")
         setStep("player_count")
+      } else if (gameState.street !== "preflop") {
+        // FIX C4: "Checked to Me" postflop — must collect player count for multiway logic
+        setStep("player_count")
       } else {
         setStep("villain_type")
       }
@@ -1740,7 +1738,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     setGameState((s) => ({ ...s, num_players: count }))
     const af = gameState.action_facing
     if (af === "none" || af === "") {
-      setStep("action")
+      // "Checked to Me" — player count collected, now go to villain_type
+      setStep("villain_type")
     } else if (af === "raise" || af === "bet") {
       setStep("villain_position")
     } else {

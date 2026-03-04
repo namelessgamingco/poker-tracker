@@ -260,7 +260,7 @@ OPEN_RANGES = {
     },
     Position.HJ: {
         "AA", "KK", "QQ", "JJ", "TT", "99", "88", "77", "66",
-        "AKs", "AQs", "AJs", "ATs", "A9s", "KQs", "KJs", "KTs", "QJs", "QTs", "JTs",
+        "AKs", "AQs", "AJs", "ATs", "A9s", "KQs", "KJs", "KTs", "QJs", "QTs", "JTs", "T9s",
         "AKo", "AQo", "AJo", "KQo"
     },
     Position.CO: {
@@ -377,11 +377,9 @@ def classify_preflop_hand(hand: str) -> HandStrength:
     if h in STRONG_HANDS:
         return HandStrength.STRONG
     
-    # Pairs 99-22
+    # Pairs 99-22 (AA-TT already caught by PREMIUM_HANDS/STRONG_HANDS above)
     if len(h) == 2 and h[0] == h[1]:
         rank = h[0]
-        if rank in "AKQJT":
-            return HandStrength.STRONG
         if rank in "98765":
             return HandStrength.PLAYABLE
         return HandStrength.MARGINAL
@@ -402,6 +400,17 @@ def classify_preflop_hand(hand: str) -> HandStrength:
     # Broadway cards
     if h[0] in "AKQJT" and h[1] in "AKQJT":
         return HandStrength.PLAYABLE
+    
+    # Offsuit connectors (87o, 98o, T9o, etc.) — marginal implied odds hands
+    # Good enough to limp behind on BTN but not strong enough to open-raise
+    if len(h) == 3 and h[2] == 'o':
+        rank_order = "AKQJT98765432"
+        r1 = rank_order.index(h[0])
+        r2 = rank_order.index(h[1])
+        gap = abs(r1 - r2)
+        # Only connected (gap=1) offsuit with at least one card 5+ (not 32o, 43o)
+        if gap == 1 and r1 <= 8:  # T9o through 54o
+            return HandStrength.MARGINAL
     
     return HandStrength.TRASH
 
@@ -519,7 +528,8 @@ def calculate_value_bet_size(
     pot_size: float, 
     street: Street, 
     hand_strength: HandStrength,
-    villain_is_fish: bool = False
+    villain_is_fish: bool = False,
+    board_texture: Optional[BoardTexture] = None
 ) -> Tuple[float, float]:
     """
     Calculate value bet size.
@@ -530,6 +540,11 @@ def calculate_value_bet_size(
         Turn: 66-75% pot for monsters, 50-66% for top pair
         River: 66-100% pot for value
         vs Fish: +20% sizing (TIER1-FIX)
+        
+    Board texture adjustment:
+        Wet boards: +10% pot (charge draws, protect equity)
+        Dry boards: -10% pot (only better hands call big bets)
+        Paired boards: -5% pot (fewer combos call)
     """
     if street == Street.RIVER:
         if hand_strength in [HandStrength.NUTS, HandStrength.MONSTER]:
@@ -545,6 +560,14 @@ def calculate_value_bet_size(
             pct = 0.60
         else:
             pct = 0.50
+    
+    # Board texture adjustment — size up on wet boards, down on dry
+    if board_texture == BoardTexture.WET:
+        pct = min(pct + 0.10, 1.25)  # Charge draws heavily
+    elif board_texture == BoardTexture.DRY:
+        pct = max(pct - 0.10, 0.33)  # Smaller on dry — only better calls big
+    elif board_texture == BoardTexture.PAIRED:
+        pct = max(pct - 0.05, 0.33)  # Slightly smaller on paired boards
     
     # TIER1-FIX: Larger sizing vs fish — they call too wide
     if villain_is_fish:
@@ -846,6 +869,37 @@ def adjust_hand_strength_for_board(
             if hand_strength in [HandStrength.NUTS, HandStrength.MONSTER]:
                 downgrades += 1
     
+    # Board-pair counterfeit detection:
+    # When board has a high pair (e.g. AA on board) and we have "two pair",
+    # our two pair is effectively just one pair + board pair — much weaker.
+    # Example: We have KJ, board is K-J-A-A → our "two pair" is AA+KK but any Ax crushes us.
+    if hand_strength == HandStrength.TWO_PAIR and our_hand and len(board_cards) >= 4:
+        board_ranks = [RANK_VALUES.get(c[0], 0) for c in board_cards]
+        from collections import Counter
+        board_rank_counts = Counter(board_ranks)
+        board_pairs = [r for r, cnt in board_rank_counts.items() if cnt >= 2]
+        
+        if board_pairs:
+            # Parse our hole cards
+            hand_clean = our_hand.strip().replace(" ", "")
+            hole_ranks = []
+            hi = 0
+            while hi < len(hand_clean) - 1:
+                r = hand_clean[hi].upper()
+                s = hand_clean[hi+1].lower()
+                if r in RANK_VALUES and s in "hdcs":
+                    hole_ranks.append(RANK_VALUES[r])
+                    hi += 2
+                else:
+                    hi += 1
+            
+            if len(hole_ranks) >= 2:
+                # If board pair is higher than both our hole cards, our two pair is counterfeited
+                # (board pair dominates — anyone with a card matching the board pair has trips+)
+                max_board_pair = max(board_pairs)
+                if max_board_pair > max(hole_ranks):
+                    downgrades += 1  # Downgrade TWO_PAIR → OVERPAIR tier
+    
     # Apply downgrades
     result = hand_strength
     for _ in range(downgrades):
@@ -1070,9 +1124,19 @@ class PokerDecisionEngine:
                     calculation=f"Iso-raise sized for {state.num_limpers} limper{"s" if state.num_limpers > 1 else ""}",
                     confidence=0.80
                 )
+            elif state.our_position in [Position.BTN, Position.CO, Position.HJ]:
+                # Playable hand but not in our open range — limp behind for implied odds
+                return Decision(
+                    action=Action.CALL,
+                    amount=state.bb_size,
+                    display=f"CALL ${state.bb_size:.2f}",
+                    explanation=f"Limp behind with {hand}. Cheap flop in a multiway pot — play for a big hand.",
+                    calculation="Limp behind — implied odds in position",
+                    confidence=0.70
+                )
         
-        # Marginal hands - limp behind from button only
-        if hand_strength == HandStrength.MARGINAL and state.our_position == Position.BTN:
+        # Marginal hands - limp behind from button or cutoff
+        if hand_strength == HandStrength.MARGINAL and state.our_position in [Position.BTN, Position.CO]:
             return Decision(
                 action=Action.CALL,
                 amount=state.bb_size,
@@ -1224,8 +1288,8 @@ class PokerDecisionEngine:
     ) -> Decision:
         """BB defense vs open raise."""
         
-        # Get 3-bet range for this position
-        three_bet_range = BB_DEFENSE_3BET.get(villain_pos, set())
+        # Get 3-bet range for this position (default to widest range if villain position unknown)
+        three_bet_range = BB_DEFENSE_3BET.get(villain_pos, BB_DEFENSE_3BET.get(Position.BTN, set()))
         
         # 3-bet with value hands
         if hand in three_bet_range:
@@ -1304,18 +1368,50 @@ class PokerDecisionEngine:
                 confidence=0.90
             )
         
-        # Call with JJ, TT, AQs if deep enough
+        # Call with JJ, TT, AQs if deep enough and in position
         if hand in CALL_FOUR_BET or hand in ["JJ", "TT"]:
+            we_have_position = self._have_position(state.our_position, state.villain_position)
             # Need sufficient stack depth
             if state.effective_stack_bb >= 80:
-                return Decision(
-                    action=Action.CALL,
-                    amount=state.facing_bet,
-                    display=f"CALL ${state.facing_bet:.2f}",
-                    explanation=f"Call the 3-bet with {hand}. Play the flop in position.",
-                    calculation="Calling the 3-bet in position",
-                    confidence=0.80
-                )
+                if we_have_position:
+                    return Decision(
+                        action=Action.CALL,
+                        amount=state.facing_bet,
+                        display=f"CALL ${state.facing_bet:.2f}",
+                        explanation=f"Call the 3-bet with {hand}. Play the flop in position.",
+                        calculation="Calling the 3-bet in position",
+                        confidence=0.80
+                    )
+                elif hand in ["JJ", "TT"]:
+                    # OOP with JJ/TT — tighter: only call JJ, fold TT
+                    if hand == "JJ":
+                        return Decision(
+                            action=Action.CALL,
+                            amount=state.facing_bet,
+                            display=f"CALL ${state.facing_bet:.2f}",
+                            explanation=f"Call the 3-bet with {hand}. Strong enough to play OOP but proceed carefully.",
+                            calculation="Calling 3-bet OOP — reassess on flop",
+                            confidence=0.72
+                        )
+                    else:
+                        return Decision(
+                            action=Action.FOLD,
+                            amount=None,
+                            display="FOLD",
+                            explanation=f"Fold {hand}. OOP vs a 3-bet with tens is a losing spot long-term.",
+                            calculation="TT folds OOP vs 3-bet",
+                            confidence=0.78
+                        )
+                else:
+                    # AQs OOP — fold (per M4: AQs only flats in position)
+                    return Decision(
+                        action=Action.FOLD,
+                        amount=None,
+                        display="FOLD",
+                        explanation=f"Fold {hand}. Out of position vs a 3-bet — hard to realize equity.",
+                        calculation="Fold OOP vs 3-bet",
+                        confidence=0.80
+                    )
         
         # Fold everything else (including our 3-bet bluffs)
         return Decision(
@@ -1815,11 +1911,14 @@ class PokerDecisionEngine:
                 )
             if hand_strength == HandStrength.TWO_PAIR:
                 amount = round(state.pot_size * 0.66, 2)
+                two_pair_expl = ("Bet with two pair for value — extract from worse hands." 
+                                 if state.street == Street.RIVER 
+                                 else "Bet with two pair for value and protection against multiple opponents.")
                 return Decision(
                     action=Action.BET,
                     amount=amount,
                     display=f"BET ${amount:.2f}",
-                    explanation=f"Bet with two pair for value and protection against multiple opponents.",
+                    explanation=two_pair_expl,
                     calculation="Multiway value bet — 66% pot",
                     confidence=0.85
                 )
@@ -1862,7 +1961,7 @@ class PokerDecisionEngine:
         # Value hands - keep betting (size up vs fish)
         if hand_strength in [HandStrength.NUTS, HandStrength.MONSTER, HandStrength.TWO_PAIR,
                             HandStrength.OVERPAIR, HandStrength.TOP_PAIR_TOP_KICKER]:
-            amount, pct = calculate_value_bet_size(state.pot_size, state.street, hand_strength, fish)  # TIER1-FIX: pass fish
+            amount, pct = calculate_value_bet_size(state.pot_size, state.street, hand_strength, fish, state.board_texture)  # TIER1-FIX: pass fish
             return Decision(
                 action=Action.BET,
                 amount=amount,
@@ -1874,7 +1973,7 @@ class PokerDecisionEngine:
         
         # Top pair on turn - bet for protection/value (size up vs fish)
         if hand_strength == HandStrength.TOP_PAIR and state.street == Street.TURN:
-            amount, pct = calculate_value_bet_size(state.pot_size, state.street, hand_strength, fish)  # TIER1-FIX: pass fish
+            amount, pct = calculate_value_bet_size(state.pot_size, state.street, hand_strength, fish, state.board_texture)  # TIER1-FIX: pass fish
             return Decision(
                 action=Action.BET,
                 amount=amount,
@@ -1887,7 +1986,7 @@ class PokerDecisionEngine:
         # River with top pair — TIER1-FIX: thin value bet vs fish, check vs reg
         if hand_strength == HandStrength.TOP_PAIR and state.street == Street.RIVER:
             if fish:
-                amount, pct = calculate_value_bet_size(state.pot_size, state.street, hand_strength, True)
+                amount, pct = calculate_value_bet_size(state.pot_size, state.street, hand_strength, True, state.board_texture)
                 return Decision(
                     action=Action.BET,
                     amount=amount,
@@ -2095,11 +2194,14 @@ class PokerDecisionEngine:
                 )
             if hand_strength == HandStrength.TWO_PAIR:
                 amount = round(state.pot_size * 0.60, 2)
+                two_pair_expl = ("Bet with two pair for value — extract from worse hands." 
+                                 if state.street == Street.RIVER 
+                                 else "Bet with two pair. Protect against draws with this many opponents.")
                 return Decision(
                     action=Action.BET,
                     amount=amount,
                     display=f"BET ${amount:.2f}",
-                    explanation=f"Bet with two pair. Protect against draws with this many opponents.",
+                    explanation=two_pair_expl,
                     calculation="Multiway value bet — 60% pot",
                     confidence=0.82
                 )
@@ -2115,7 +2217,7 @@ class PokerDecisionEngine:
         # ── FIX 2.3: DEFENDER VALUE BETTING ──
         # Monsters vs fish — just bet, they'll call with worse
         if hand_strength in [HandStrength.NUTS, HandStrength.MONSTER]:
-            amount, pct = calculate_value_bet_size(state.pot_size, state.street, hand_strength, fish)
+            amount, pct = calculate_value_bet_size(state.pot_size, state.street, hand_strength, fish, state.board_texture)
             return Decision(
                 action=Action.BET,
                 amount=amount,
@@ -2127,7 +2229,7 @@ class PokerDecisionEngine:
         
         # Two pair on dry boards or vs fish — bet for value
         if hand_strength == HandStrength.TWO_PAIR:
-            amount, pct = calculate_value_bet_size(state.pot_size, state.street, hand_strength, fish)
+            amount, pct = calculate_value_bet_size(state.pot_size, state.street, hand_strength, fish, state.board_texture)
             return Decision(
                 action=Action.BET,
                 amount=amount,
@@ -2140,7 +2242,7 @@ class PokerDecisionEngine:
         # Overpair / TPTK on flop/turn — bet for value and protection
         if hand_strength in [HandStrength.OVERPAIR, HandStrength.TOP_PAIR_TOP_KICKER]:
             if state.street in [Street.FLOP, Street.TURN]:
-                amount, pct = calculate_value_bet_size(state.pot_size, state.street, hand_strength, fish)
+                amount, pct = calculate_value_bet_size(state.pot_size, state.street, hand_strength, fish, state.board_texture)
                 return Decision(
                     action=Action.BET,
                     amount=amount,
@@ -3182,8 +3284,8 @@ def create_game_state(
         st = Street.PREFLOP
     
     hs_key = (hand_strength or "playable").upper().replace(" ", "_")
-    hs_key = {"TPTK": "TOP_PAIR_TOP_KICKER", "SET": "MONSTER", "TRIPS": "TWO_PAIR",
-              "BOTTOM_PAIR": "MIDDLE_PAIR", "NOTHING": "AIR", "HIGH_CARD": "AIR"}.get(hs_key, hs_key)
+    hs_key = {"TPTK": "TOP_PAIR_TOP_KICKER", "SET": "MONSTER", "TRIPS": "MONSTER",
+              "NOTHING": "AIR", "HIGH_CARD": "AIR"}.get(hs_key, hs_key)
     try:
         hs = HandStrength[hs_key]
     except (KeyError, AttributeError):
@@ -3195,10 +3297,15 @@ def create_game_state(
         bt = None
     
     af_raw = (action_facing or "none").upper().replace("-", "_")
-    af_raw = af_raw.replace("3", "THREE_").replace("4", "FOUR_")
-    # Map common variants
-    af_map = {"CHECKED": "NONE", "CHECK": "NONE", "NONE": "NONE", "CALL": "NONE",
-              "OPEN": "RAISE", "LIMP": "LIMP"}
+    # Explicit mapping for all known action_facing values (safe, no global string replace)
+    af_map = {
+        "CHECKED": "NONE", "CHECK": "NONE", "NONE": "NONE", "CALL": "NONE",
+        "OPEN": "RAISE", "LIMP": "LIMP",
+        "BET": "BET", "RAISE": "RAISE",
+        "3BET": "THREE_BET", "3_BET": "THREE_BET", "THREE_BET": "THREE_BET",
+        "4BET": "FOUR_BET", "4_BET": "FOUR_BET", "FOUR_BET": "FOUR_BET",
+        "CHECK_RAISE": "CHECK_RAISE",
+    }
     af_raw = af_map.get(af_raw, af_raw)
     try:
         af = ActionFacing[af_raw]
