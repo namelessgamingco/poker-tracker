@@ -1100,6 +1100,9 @@ def record_hand_outcome(
     recommendation_given: str = None,
     we_were_aggressor: bool = False,
     bluff_context: dict = None,
+    hand_strength: str = None,
+    decision_explanation: str = None,
+    decision_calculation: str = None,
 ) -> Optional[dict]:
     if not session_id or not user_id:
         return None
@@ -1120,13 +1123,16 @@ def record_hand_outcome(
             "hand_number": hand_number,
             "outcome": outcome,
             "action_taken": action_taken,
+            "action_amount": profit_loss,
             "pot_size": pot_size,
             "our_position": our_position,
             "street": street_reached,
             "our_hand": our_hand,
             "board": board,
+            "hand_strength": hand_strength,
             "decision_display": action_taken,
-            "decision_explanation": recommendation_given,
+            "decision_explanation": decision_explanation,
+            "decision_calculation": decision_calculation,
             "bluff_context": bluff_context,
         }
         
@@ -1161,6 +1167,51 @@ def get_session_hands(session_id: str) -> List[dict]:
     except Exception as e:
         print(f"[db] get_session_hands error: {e}")
         return []
+
+
+def get_session_hand_log(session_id: str) -> List[dict]:
+    """
+    Load hands from DB and convert to hand_log_entries format for React component.
+    
+    Call this on session resume to restore the hand log after page refresh/navigation.
+    """
+    hands = get_session_hands(session_id)
+    if not hands:
+        return []
+    
+    entries = []
+    for h in hands:
+        # Convert bluff_context from DB (jsonb) back to dict for React
+        bluff_data = h.get("bluff_context")
+        if bluff_data and isinstance(bluff_data, dict):
+            # Ensure all expected keys exist with defaults
+            bluff_data = {
+                "spot_type": bluff_data.get("spot_type", ""),
+                "pot_size": float(bluff_data.get("pot_size", 0)),
+                "bet_amount": float(bluff_data.get("bet_amount", 0)),
+                "break_even_pct": float(bluff_data.get("break_even_pct", 0)),
+                "estimated_fold_pct": float(bluff_data.get("estimated_fold_pct", 0)),
+                "ev_of_bet": float(bluff_data.get("ev_of_bet", 0)),
+            }
+        else:
+            bluff_data = None
+        
+        entries.append({
+            "id": h.get("hand_number", len(entries) + 1),
+            "outcome": h.get("outcome", "folded"),
+            "profit_loss": float(h.get("action_amount", 0) or 0),
+            "position": h.get("our_position", ""),
+            "cards": h.get("our_hand", "") or "",
+            "board": h.get("board", "") or "",
+            "street": h.get("street", "preflop"),
+            "action_taken": h.get("action_taken", "") or "",
+            "explanation": h.get("decision_explanation", "") or "",
+            "calculation": h.get("decision_calculation", "") or "",
+            "hand_strength": h.get("hand_strength", "") or "",
+            "bluff_data": bluff_data,
+        })
+    
+    return entries
 
 
 def get_session_outcome_summary(session_id: str) -> dict:

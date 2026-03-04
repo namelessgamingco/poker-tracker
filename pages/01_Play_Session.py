@@ -27,6 +27,7 @@ from db import (
     get_stakes_options,
     get_stakes_info,
     record_hand_outcome,
+    get_session_hand_log,
     get_session_outcome_summary,
     update_session_bluff_stats,
     get_session_bluff_stats,
@@ -1375,6 +1376,8 @@ def render_setup_mode():
                 )
                 st.session_state.session_pl = float(active_session.get("profit_loss", 0) or 0)
                 st.session_state.hands_played = int(active_session.get("hands_played", 0) or 0)
+                # Restore hand log from database
+                st.session_state.hand_log_entries = get_session_hand_log(active_session["id"])
                 update_sidebar_session_info(active_session, st.session_state.session_pl)
                 st.rerun()
         with col2:
@@ -1790,6 +1793,9 @@ def handle_hand_complete(component_value: dict, session: dict):
             recommendation_given=action_taken,
             we_were_aggressor=hand_context.get("we_are_aggressor", False),
             bluff_context=bluff_data,
+            hand_strength=hand_context.get("hand_strength", ""),
+            decision_explanation=decision_explanation,
+            decision_calculation=decision_calculation,
         )
         increment_session_stats(session_id, hands=1, decisions=0)
         update_session_outcome(session_id, outcome)
