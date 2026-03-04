@@ -350,6 +350,28 @@ with tabs[0]:
 
     mrr = len(active_subs) * 299
 
+    # Lifetime revenue calculation
+    total_lifetime_revenue = 0
+    avg_customer_months = 0
+    paying_count = 0
+    for p in all_profiles:
+        sub_started = p.get("subscription_started_at")
+        if sub_started and p.get("subscription_status") in ("active", "cancelled", "expired", "overdue"):
+            try:
+                start_dt = datetime.fromisoformat(str(sub_started).replace("Z", "+00:00"))
+                months = max(1, round((datetime.now(timezone.utc) - start_dt).days / 30))
+                total_lifetime_revenue += months * 299
+                avg_customer_months += months
+                paying_count += 1
+            except Exception:
+                pass
+    avg_customer_months = (avg_customer_months / paying_count) if paying_count > 0 else 0
+
+    # Conversion rate: users who went from trial/pending to active
+    ever_paid = len([p for p in all_profiles if p.get("subscription_status") in ("active", "cancelled", "expired", "overdue") or p.get("subscription_started_at")])
+    non_admin_users = len([p for p in all_profiles if p.get("role") != "admin"])
+    conversion_rate = (ever_paid / non_admin_users * 100) if non_admin_users > 0 else 0
+
     trials_expiring_soon = []
     for p in trial_users:
         trial_ends = p.get("trial_ends_at")
@@ -357,6 +379,7 @@ with tabs[0]:
             trials_expiring_soon.append(p)
 
     # Revenue stats
+    rev_color = "#69F0AE" if total_lifetime_revenue > 0 else "rgba(255,255,255,0.2)"
     st.markdown(f"""
     <div class="stat-grid">
         <div class="stat-card">
@@ -364,12 +387,12 @@ with tabs[0]:
             <div class="stat-label">Monthly Revenue (MRR)</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value">{len(active_subs)}</div>
-            <div class="stat-label">Active Subscribers</div>
+            <div class="stat-value" style="color: {rev_color};">{_fmt_currency(total_lifetime_revenue)}</div>
+            <div class="stat-label">Lifetime Revenue</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value" style="color: #4BA3FF;">{len(trial_users)}</div>
-            <div class="stat-label">Trial Users</div>
+            <div class="stat-value">{len(active_subs)}</div>
+            <div class="stat-label">Active Subscribers</div>
         </div>
         <div class="stat-card">
             <div class="stat-value">{total_users}</div>
@@ -381,16 +404,16 @@ with tabs[0]:
     st.markdown(f"""
     <div class="stat-grid">
         <div class="stat-card">
+            <div class="stat-value" style="color: #4BA3FF;">{len(trial_users)}</div>
+            <div class="stat-label">Trial Users</div>
+        </div>
+        <div class="stat-card">
             <div class="stat-value">{len(pending_users)}</div>
             <div class="stat-label">Pending Signup</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value">{len(cancelled_users)}</div>
-            <div class="stat-label">Cancelled / Expired</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value">{len(override_users)}</div>
-            <div class="stat-label">Free Access (Override)</div>
+            <div class="stat-value">{avg_customer_months:.1f}</div>
+            <div class="stat-label">Avg Customer Tenure (mo)</div>
         </div>
         <div class="stat-card">
             <div class="stat-value" style="color: {'#FFB300' if trials_expiring_soon else 'rgba(255,255,255,0.2)'};">{len(trials_expiring_soon)}</div>
@@ -446,9 +469,15 @@ with tabs[0]:
 
     activity_display = []
     for a in recent_activity[:10]:
+        # Find the profile to check override
+        prof = next((p for p in all_profiles if p.get("email") == a["email"]), {})
+        if prof.get("admin_override_active"):
+            display_status = "🎁 free access"
+        else:
+            display_status = f"{_status_emoji(a['status'])} {a['status']}"
         activity_display.append({
             "Email": a["email"],
-            "Status": f"{_status_emoji(a['status'])} {a['status']}",
+            "Status": display_status,
             "Last Active": _fmt_date(a["last_active"]),
             "Days Ago": a["days_ago"],
         })
@@ -593,13 +622,16 @@ with tabs[1]:
         table = []
         for p in all_profiles:
             status = p.get("subscription_status", "unknown")
-            override = "✓" if p.get("admin_override_active") else ""
+            override = p.get("admin_override_active", False)
+            if override:
+                display_status = "🎁 free access"
+            else:
+                display_status = f"{_status_emoji(status)} {status}"
             table.append({
                 "Email": p.get("email"),
-                "Status": f"{_status_emoji(status)} {status}",
+                "Status": display_status,
                 "Role": p.get("role", "player"),
                 "Active": "✓" if p.get("is_active") else "✗",
-                "Override": override,
                 "Created": _fmt_date(p.get("created_at")),
             })
 
@@ -845,11 +877,31 @@ with tabs[3]:
             override = sel_profile.get("admin_override_active", False)
             created = sel_profile.get("created_at")
 
+            # Calculate subscription value
+            sub_started = sel_profile.get("subscription_started_at")
+            months_subscribed = 0
+            user_revenue = 0
+            if sub_started:
+                try:
+                    start_dt = datetime.fromisoformat(str(sub_started).replace("Z", "+00:00"))
+                    delta = datetime.now(timezone.utc) - start_dt
+                    months_subscribed = max(1, round(delta.days / 30))
+                    user_revenue = months_subscribed * 299
+                except Exception:
+                    pass
+
+            if override:
+                display_status = "🎁 free access"
+            else:
+                display_status = f"{_status_emoji(status)} {status}"
+
+            rev_color = "#69F0AE" if user_revenue > 0 else "rgba(255,255,255,0.2)"
+
             st.markdown(f"""
             <div class="info-row" style="margin-top: 16px;">
                 <div class="info-item">
                     <div class="info-label">Status</div>
-                    <div class="info-value">{_status_emoji(status)} {status}</div>
+                    <div class="info-value">{display_status}</div>
                 </div>
                 <div class="info-item">
                     <div class="info-label">Active</div>
@@ -860,8 +912,16 @@ with tabs[3]:
                     <div class="info-value">{_fmt_date(created)}</div>
                 </div>
                 <div class="info-item">
-                    <div class="info-label">Free Access</div>
-                    <div class="info-value">{"✅" if override else "—"}</div>
+                    <div class="info-label">Role</div>
+                    <div class="info-value">{sel_profile.get("role", "player")}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Months Subscribed</div>
+                    <div class="info-value">{months_subscribed if months_subscribed > 0 else "—"}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Total Revenue</div>
+                    <div class="info-value" style="color:{rev_color}">{_fmt_currency(user_revenue) if user_revenue > 0 else "—"}</div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -896,26 +956,67 @@ with tabs[3]:
             </div>
             """, unsafe_allow_html=True)
 
-            # Stats
+            # Load sessions for detailed stats
             st.markdown('<div class="section-title">Statistics</div>', unsafe_allow_html=True)
 
             try:
-                stats = get_player_stats(sel_user_id)
+                sessions_list = get_recent_sessions_for_user_admin(sel_user_id, limit=100)
             except Exception as e:
-                st.error(f"Could not load stats: {e!r}")
-                stats = {}
+                st.error(f"Could not load sessions: {e!r}")
+                sessions_list = []
 
-            sessions_count = stats.get("total_sessions", 0)
-            hands = stats.get("total_hands", 0)
-            hours = stats.get("total_hours", 0)
-            profit = stats.get("total_profit_loss", 0)
-            win_rate = stats.get("win_rate_bb_100", 0)
-            winning = stats.get("winning_sessions", 0)
-            losing = stats.get("losing_sessions", 0)
-            win_pct = (winning / sessions_count * 100) if sessions_count > 0 else 0
+            # Calculate stats from raw sessions
+            completed = [s for s in sessions_list if s.get("status") == "completed"]
+            total_sessions = len(completed)
+            total_hands = sum(int(s.get("hands_played") or 0) for s in completed)
+            total_decisions = sum(int(s.get("decisions_requested") or 0) for s in completed)
+            total_duration_min = sum(int(s.get("duration_minutes") or 0) for s in completed)
+            total_hours = total_duration_min / 60 if total_duration_min > 0 else 0
 
-            profit_color = "#69F0AE" if profit >= 0 else "#FF5252"
-            profit_sign = "+" if profit >= 0 else ""
+            profits = [_safe_float(s.get("profit_loss", 0)) for s in completed]
+            total_profit = sum(profits)
+            winning_sessions = sum(1 for pl in profits if pl > 0)
+            losing_sessions = sum(1 for pl in profits if pl < 0)
+            breakeven_sessions = sum(1 for pl in profits if pl == 0)
+            win_pct = (winning_sessions / total_sessions * 100) if total_sessions > 0 else 0
+
+            biggest_win = max(profits) if profits else 0
+            biggest_loss = min(profits) if profits else 0
+
+            avg_session_min = (total_duration_min / total_sessions) if total_sessions > 0 else 0
+            avg_hands_per_session = (total_hands / total_sessions) if total_sessions > 0 else 0
+
+            # BB/100 from raw data
+            total_bb_won = sum(_safe_float(s.get("profit_loss_bb", 0)) for s in completed)
+            bb_per_100 = (total_bb_won / total_hands * 100) if total_hands > 0 else 0
+
+            # Win/loss outcomes
+            total_won = sum(int(s.get("outcomes_won") or 0) for s in completed)
+            total_lost = sum(int(s.get("outcomes_lost") or 0) for s in completed)
+            total_folded = sum(int(s.get("outcomes_folded") or 0) for s in completed)
+            total_outcomes = total_won + total_lost + total_folded
+            fold_pct = (total_folded / total_outcomes * 100) if total_outcomes > 0 else 0
+            win_at_showdown = (total_won / (total_won + total_lost) * 100) if (total_won + total_lost) > 0 else 0
+
+            # Last active
+            last_session = completed[0] if completed else None
+            last_active_date = _fmt_date(last_session.get("started_at")) if last_session else "Never"
+            days_since_active = _days_ago(last_session.get("started_at")) if last_session else 999
+
+            # Current streak
+            streak = 0
+            streak_type = ""
+            for pl in profits:
+                if streak == 0:
+                    streak_type = "W" if pl > 0 else ("L" if pl < 0 else "")
+                    streak = 1 if streak_type else 0
+                elif (streak_type == "W" and pl > 0) or (streak_type == "L" and pl < 0):
+                    streak += 1
+                else:
+                    break
+
+            streak_display = f"{streak}{streak_type}" if streak > 0 else "—"
+            streak_color = "#69F0AE" if streak_type == "W" else "#FF5252" if streak_type == "L" else "#E0E0E0"
 
             # Player tier
             PROFIT_TIERS = [
@@ -928,36 +1029,85 @@ with tabs[3]:
             ]
             tier = PROFIT_TIERS[0]
             for t in PROFIT_TIERS:
-                if profit >= t["min"]:
+                if total_profit >= t["min"]:
                     tier = t
 
+            # Tier card
             st.markdown(f"""
             <div style="background:linear-gradient(135deg,#0F0F1A 0%,#151520 100%);border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:16px;">
                 <div style="font-size:36px;">{tier['emoji']}</div>
                 <div>
                     <div style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:{tier['color']}">{tier['name']}</div>
-                    <div style="font-size:12px;color:rgba(255,255,255,0.35);">Based on {_fmt_currency(profit)} lifetime profit</div>
+                    <div style="font-size:12px;color:rgba(255,255,255,0.35);">Based on {_fmt_currency(total_profit)} lifetime profit</div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
 
+            # Main stats
+            profit_color = "#69F0AE" if total_profit >= 0 else "#FF5252"
+            profit_sign = "+" if total_profit >= 0 else ""
+
             st.markdown(f"""
             <div class="stat-grid">
                 <div class="stat-card">
-                    <div class="stat-value" style="color: {profit_color}">{profit_sign}{_fmt_currency(profit)}</div>
+                    <div class="stat-value" style="color: {profit_color}">{profit_sign}{_fmt_currency(total_profit)}</div>
                     <div class="stat-label">Total Profit/Loss</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-value">{win_rate:+.2f}</div>
+                    <div class="stat-value">{bb_per_100:+.1f}</div>
                     <div class="stat-label">BB/100</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-value">{sessions_count}</div>
+                    <div class="stat-value">{total_sessions}</div>
                     <div class="stat-label">Sessions ({win_pct:.0f}% win)</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-value">{hands:,}</div>
-                    <div class="stat-label">Total Hands · {hours:.1f}h</div>
+                    <div class="stat-value">{total_hands:,}</div>
+                    <div class="stat-label">Hands · {total_hours:.1f}h played</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Engagement & performance row
+            st.markdown(f"""
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <div class="stat-value" style="color:{'#69F0AE' if days_since_active <= 3 else '#FFB300' if days_since_active <= 7 else '#FF5252'}">{last_active_date}</div>
+                    <div class="stat-label">Last Active · {days_since_active}d ago</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" style="color:{streak_color}">{streak_display}</div>
+                    <div class="stat-label">Current Streak</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" style="color:#69F0AE">{_fmt_currency(biggest_win)}</div>
+                    <div class="stat-label">Biggest Win</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" style="color:#FF5252">{_fmt_currency(biggest_loss)}</div>
+                    <div class="stat-label">Biggest Loss</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Detailed stats
+            st.markdown(f"""
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <div class="stat-value">{avg_session_min:.0f}m</div>
+                    <div class="stat-label">Avg Session Length</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{avg_hands_per_session:.0f}</div>
+                    <div class="stat-label">Avg Hands / Session</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{total_decisions:,}</div>
+                    <div class="stat-label">Decisions Requested</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{fold_pct:.0f}%</div>
+                    <div class="stat-label">Fold Rate · {win_at_showdown:.0f}% W@SD</div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -965,28 +1115,24 @@ with tabs[3]:
             # Recent sessions
             st.markdown('<div class="section-title">Recent Sessions</div>', unsafe_allow_html=True)
 
-            try:
-                sessions_list = get_recent_sessions_for_user_admin(sel_user_id, limit=20)
-            except Exception as e:
-                st.error(f"Could not load sessions: {e!r}")
-                sessions_list = []
-
             if not sessions_list:
                 st.caption("No sessions recorded yet.")
             else:
                 sess_rows = []
-                for s in sessions_list:
+                for s in sessions_list[:20]:
                     pl = _safe_float(s.get("profit_loss", 0))
                     pl_str = f"+${pl:.2f}" if pl >= 0 else f"-${abs(pl):.2f}"
+                    dur = int(s.get("duration_minutes") or 0)
+                    dur_str = f"{dur // 60}h {dur % 60}m" if dur >= 60 else f"{dur}m"
 
                     sess_rows.append({
                         "Date": _fmt_date(s.get("started_at")),
                         "Stakes": s.get("stakes", "—"),
-                        "Duration": f"{s.get('duration_minutes', 0) or 0}m",
+                        "Duration": dur_str,
                         "Hands": s.get("hands_played", 0) or 0,
                         "P/L": pl_str,
-                        "BB/100": f"{_safe_float(s.get('profit_loss_bb', 0)):+.1f}",
-                        "End": s.get("end_reason", "—"),
+                        "W/L/F": f"{s.get('outcomes_won', 0)}/{s.get('outcomes_lost', 0)}/{s.get('outcomes_folded', 0)}",
+                        "End": s.get("end_reason", "—") or "—",
                     })
 
                 st.dataframe(sess_rows, use_container_width=True, hide_index=True, height=400)
