@@ -28,13 +28,22 @@ def render_sidebar():
         """, unsafe_allow_html=True)
         is_admin = st.session_state.get("is_admin", False)
 
-        # ── Subscription Warning ──
+        # ── Subscription Status ──
         subscription_status = st.session_state.get("subscription_status", "active")
+        payment_link = st.session_state.get("payment_link_url")
 
         if subscription_status == "grace_period":
-            st.warning("⚠️ Payment overdue")
+            st.markdown("""<div style="padding: 8px 0;">
+<div style="font-size: 13px; color: rgba(255,255,255,0.4); font-weight: 600; margin-bottom: 6px;">⚠️ PAYMENT OVERDUE</div>
+<div style="font-size: 13px; color: #FF5252; font-family: 'JetBrains Mono', monospace; font-weight: 600;">Update payment to keep access</div>
+</div>""", unsafe_allow_html=True)
+            if payment_link:
+                st.link_button("💳 Update Payment", payment_link, use_container_width=True)
+            st.markdown("---")
+
         elif subscription_status == "trial":
             trial_ends = st.session_state.get("trial_ends_at")
+            days_left = None
             if trial_ends:
                 try:
                     from datetime import datetime, timezone
@@ -44,18 +53,43 @@ def render_sidebar():
                         trial_end = trial_ends
                     now = datetime.now(timezone.utc)
                     days_left = max(0, (trial_end - now).days)
-                    if days_left <= 1:
-                        st.warning(f"⏰ Trial ends today!")
-                    elif days_left <= 3:
-                        st.warning(f"⏰ {days_left} days left in trial")
-                    else:
-                        st.info(f"🎁 {days_left} days left in trial")
                 except Exception:
-                    st.info("🎁 Free trial active")
-            else:
-                st.info("🎁 Free trial active")
+                    days_left = None
 
-        st.markdown("---")
+            if days_left is not None and days_left <= 3:
+                # Urgent — red/amber styling
+                if days_left <= 1:
+                    label = "TRIAL ENDS TODAY"
+                    color = "#FF5252"
+                    sub = "Subscribe now to keep your edge"
+                else:
+                    label = f"TRIAL · {days_left} DAYS LEFT"
+                    color = "#FFB300"
+                    sub = "Subscribe before your trial expires"
+
+                st.markdown(f"""<div style="padding: 8px 0;">
+<div style="font-size: 13px; color: rgba(255,255,255,0.4); font-weight: 600; margin-bottom: 6px;">⏰ {label}</div>
+<div style="font-size: 13px; color: {color}; font-family: 'JetBrains Mono', monospace; font-weight: 600;">{sub}</div>
+</div>""", unsafe_allow_html=True)
+                if payment_link:
+                    st.link_button("💳 Subscribe — $299/mo", payment_link, use_container_width=True)
+                st.markdown("---")
+
+            else:
+                # Calm — subtle styling
+                days_display = f"{days_left} days left" if days_left is not None else "Active"
+                st.markdown(f"""<div style="padding: 8px 0;">
+<div style="font-size: 13px; color: rgba(255,255,255,0.4); font-weight: 600; margin-bottom: 6px;">🎁 FREE TRIAL</div>
+<div style="font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 700; color: #4BA3FF;">{days_display}</div>
+</div>""", unsafe_allow_html=True)
+                st.markdown("---")
+
+        elif subscription_status == "active":
+            # Active subscribers — clean, no clutter
+            st.markdown("---")
+
+        else:
+            st.markdown("---")
 
         # ── Active Session ──
         active_session = st.session_state.get("active_session")
