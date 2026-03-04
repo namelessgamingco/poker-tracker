@@ -836,8 +836,14 @@ def adjust_hand_strength_for_board(
     Only applies to strong made hands (NUTS through TWO_PAIR).
     Draws and weak hands are not affected.
     """
-    # Only adjust strong made hands
-    if hand_strength not in STRENGTH_DOWNGRADE:
+    # Only adjust strong made hands (NUTS through TWO_PAIR)
+    # Weaker hands (top pair, middle pair, etc.) don't need board-danger adjustments
+    # because they're already played cautiously
+    ADJUSTABLE_HANDS = {
+        HandStrength.NUTS, HandStrength.MONSTER, HandStrength.TWO_PAIR,
+        HandStrength.OVERPAIR, HandStrength.TOP_PAIR_TOP_KICKER,
+    }
+    if hand_strength not in ADJUSTABLE_HANDS:
         return hand_strength
     
     if not board:
@@ -850,8 +856,11 @@ def adjust_hand_strength_for_board(
     downgrades = 0
     
     # Check for four-to-a-straight
+    # BUT: Don't downgrade MONSTER/NUTS for this — if we're MONSTER, we likely
+    # HAVE the straight (or a set/flush that beats it). Only downgrade weaker hands.
     if _has_four_to_straight(board_cards):
-        downgrades += 1
+        if hand_strength not in [HandStrength.NUTS, HandStrength.MONSTER]:
+            downgrades += 1
     
     # Check for flush danger
     flush_suit = _get_board_flush_suit(board_cards)
@@ -861,13 +870,16 @@ def adjust_hand_strength_for_board(
         # Four-to-a-flush or completed flush on board
         we_have_flush = our_hand and flush_suit and _hand_has_suit(our_hand, flush_suit)
         if not we_have_flush:
-            downgrades += 1
+            # MONSTER (set/trips) on 4-flush: still strong (can fill up), don't downgrade
+            # Only downgrade weaker hands (two pair, overpair, etc.)
+            if hand_strength not in [HandStrength.NUTS, HandStrength.MONSTER]:
+                downgrades += 1
     elif flush_count >= 3:
         # Monotone board — mild danger
         we_have_suit = our_hand and flush_suit and _hand_has_suit(our_hand, flush_suit)
         if not we_have_suit:
-            # Only downgrade monster+ on 3-flush (not as severe)
-            if hand_strength in [HandStrength.NUTS, HandStrength.MONSTER]:
+            # Only downgrade below-monster hands on 3-flush
+            if hand_strength not in [HandStrength.NUTS, HandStrength.MONSTER]:
                 downgrades += 1
     
     # Board-pair counterfeit detection:
