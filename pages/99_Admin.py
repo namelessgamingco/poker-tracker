@@ -917,6 +917,30 @@ with tabs[3]:
             profit_color = "#69F0AE" if profit >= 0 else "#FF5252"
             profit_sign = "+" if profit >= 0 else ""
 
+            # Player tier
+            PROFIT_TIERS = [
+                {"name": "Grinder",         "emoji": "🌱", "min": 0,     "color": "#6b7280"},
+                {"name": "Winning Player",  "emoji": "📈", "min": 1000,  "color": "#22c55e"},
+                {"name": "Shark",           "emoji": "🎯", "min": 5000,  "color": "#3b82f6"},
+                {"name": "High Roller",     "emoji": "💰", "min": 15000, "color": "#f59e0b"},
+                {"name": "Diamond Crusher", "emoji": "💎", "min": 35000, "color": "#8b5cf6"},
+                {"name": "Poker Royalty",   "emoji": "👑", "min": 75000, "color": "#ec4899"},
+            ]
+            tier = PROFIT_TIERS[0]
+            for t in PROFIT_TIERS:
+                if profit >= t["min"]:
+                    tier = t
+
+            st.markdown(f"""
+            <div style="background:linear-gradient(135deg,#0F0F1A 0%,#151520 100%);border:1px solid rgba(255,255,255,0.06);border-radius:12px;padding:16px 20px;margin-bottom:16px;display:flex;align-items:center;gap:16px;">
+                <div style="font-size:36px;">{tier['emoji']}</div>
+                <div>
+                    <div style="font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;color:{tier['color']}">{tier['name']}</div>
+                    <div style="font-size:12px;color:rgba(255,255,255,0.35);">Based on {_fmt_currency(profit)} lifetime profit</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
             st.markdown(f"""
             <div class="stat-grid">
                 <div class="stat-card">
