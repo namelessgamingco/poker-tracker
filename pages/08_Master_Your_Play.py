@@ -509,6 +509,8 @@ def main():
                     <tr><td>$1/$2</td><td>$2,600</td><td>$4,000</td></tr>
                     <tr><td>$2/$5</td><td>$6,500</td><td>$10,000</td></tr>
                     <tr><td>$5/$10</td><td>$13,000</td><td>$20,000</td></tr>
+                    <tr><td>$10/$20</td><td>$26,000</td><td>$40,000</td></tr>
+                    <tr><td>$25/$50</td><td>$65,000</td><td>$100,000</td></tr>
                 </tbody>
             </table>
         """, unsafe_allow_html=True)
@@ -542,10 +544,11 @@ def main():
             <div class="wbox">
                 <h4>⚠️ Higher Stakes = Tougher Competition</h4>
                 <p>
-                    At $2/$5 and $5/$10, you face more regulars and fewer recreational players.
-                    Your BB/100 win rate will be lower even with perfect play. The dollar profit
+                    At $2/$5 and above, you face more regulars and fewer recreational players.
+                    Your BB/100 win rate will be lower even with perfect play — at $10/$20 and $25/$50
+                    expect +3 to +5 BB/100 compared to +5 to +8 at $1/$2. The dollar profit
                     still increases because the stakes are bigger, but don't expect the same
-                    edge you have at $1/$2. Move up for the right reasons — bankroll, not ego.
+                    edge you have at lower stakes. Move up for the right reasons — bankroll, not ego.
                 </p>
             </div>
         """, unsafe_allow_html=True)

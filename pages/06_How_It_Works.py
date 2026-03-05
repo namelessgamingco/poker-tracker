@@ -303,18 +303,28 @@ def main():
                 <div style="font-size:14px;opacity:0.9;">Annual gross at $2/$5</div>
                 <div style="font-size:13px;opacity:0.75;margin-top:4px;">$30,012/yr after subscription</div>
             </div>
-            <div style="background:linear-gradient(135deg,#8b5cf6 0%,#6366f1 100%);border-radius:14px;padding:28px;text-align:center;color:white;">
+            <div style="background:linear-gradient(135deg,#8b5cf6 0%,#6366f1 100%);border-radius:14px;padding:28px;text-align:center;color:white;margin-bottom:14px;">
                 <div style="font-size:36px;font-weight:700;margin-bottom:4px;">$57,600</div>
                 <div style="font-size:14px;opacity:0.9;">Annual gross at $5/$10</div>
                 <div style="font-size:13px;opacity:0.75;margin-top:4px;">$54,012/yr after subscription</div>
+            </div>
+            <div style="background:linear-gradient(135deg,#8b5cf6 0%,#6366f1 100%);border-radius:14px;padding:28px;text-align:center;color:white;margin-bottom:14px;">
+                <div style="font-size:36px;font-weight:700;margin-bottom:4px;">$96,000</div>
+                <div style="font-size:14px;opacity:0.9;">Annual gross at $10/$20</div>
+                <div style="font-size:13px;opacity:0.75;margin-top:4px;">$92,412/yr after subscription</div>
+            </div>
+            <div style="background:linear-gradient(135deg,#8b5cf6 0%,#6366f1 100%);border-radius:14px;padding:28px;text-align:center;color:white;">
+                <div style="font-size:36px;font-weight:700;margin-bottom:4px;">$192,000</div>
+                <div style="font-size:14px;opacity:0.9;">Annual gross at $25/$50</div>
+                <div style="font-size:13px;opacity:0.75;margin-top:4px;">$188,412/yr after subscription</div>
             </div>
         """, unsafe_allow_html=True)
 
     st.markdown("""
         <div style="background:linear-gradient(135deg,#22c55e 0%,#16a34a 100%);border-radius:14px;padding:28px;text-align:center;color:white;margin-top:16px;">
             <div style="font-size:14px;opacity:0.85;margin-bottom:8px;">Subscription: $299/month · The app covers its cost in 11 sessions at $1/$2 — or just 4 sessions at $2/$5</div>
-            <div style="font-size:24px;font-weight:700;">4× to 16× return on investment depending on stakes</div>
-            <div style="font-size:14px;opacity:0.85;margin-top:8px;">Every dollar you spend on this app should return $4–$16 in poker profit</div>
+            <div style="font-size:24px;font-weight:700;">4× to 53× return on investment depending on stakes</div>
+            <div style="font-size:14px;opacity:0.85;margin-top:8px;">Every dollar you spend on this app should return $4–$53 in poker profit</div>
         </div>
     """, unsafe_allow_html=True)
 
