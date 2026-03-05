@@ -710,6 +710,113 @@ function detectHandStrength(
   return "air"
 }
 
+
+// =============================================================================
+// NUT DETECTION — Is this the best possible hand?
+// =============================================================================
+
+function detectIsNuts(
+  card1: CardData | null,
+  card2: CardData | null,
+  boardCards: (CardData | null)[],
+  handType: string
+): boolean {
+  if (!card1 || !card2) return false
+  const board = boardCards.filter((c): c is CardData => c !== null)
+  if (board.length < 3) return false
+
+  // Royal flush and straight flush are always nuts
+  if (handType === "royal_flush") return true
+  if (handType === "straight_flush") return true
+  // Quads are effectively always the nuts
+  if (handType === "quads") return true
+
+  const holeRanks = [RANK_VALUES[card1.rank] || 0, RANK_VALUES[card2.rank] || 0].sort((a, b) => b - a)
+  const boardRanks = board.map((c) => RANK_VALUES[c.rank] || 0).sort((a, b) => b - a)
+  const allCards = [card1, card2, ...board]
+
+  // Nut flush: we hold the Ace of the flush suit
+  if (handType === "flush") {
+    const suitCounts = new Map<string, number>()
+    allCards.forEach((c) => suitCounts.set(c.suit, (suitCounts.get(c.suit) || 0) + 1))
+    for (const [suit, count] of suitCounts) {
+      if (count >= 5) {
+        // Check if we have the Ace of this suit
+        if ((card1.rank === "A" && card1.suit === suit) ||
+            (card2.rank === "A" && card2.suit === suit)) {
+          // Also verify no straight flush is possible for opponents
+          // (simplified: just check we have the ace — good enough for coaching)
+          return true
+        }
+      }
+    }
+    return false
+  }
+
+  // Top set: our pocket pair matches the highest board card
+  if (handType === "set") {
+    if (holeRanks[0] === holeRanks[1] && holeRanks[0] === boardRanks[0]) return true
+    return false
+  }
+
+  // Top full house: our trips rank is the highest rank with 3+ occurrences
+  if (handType === "full_house") {
+    const rankCounts = new Map<number, number>()
+    allCards.forEach((c) => {
+      const r = RANK_VALUES[c.rank] || 0
+      rankCounts.set(r, (rankCounts.get(r) || 0) + 1)
+    })
+    let highestTrips = 0
+    for (const [rank, count] of rankCounts) {
+      if (count >= 3 && rank > highestTrips) highestTrips = rank
+    }
+    // If our hole cards contribute to the highest trips
+    if (holeRanks.includes(highestTrips)) return true
+    return false
+  }
+
+  // Nut straight: our straight is the highest possible
+  if (handType === "straight") {
+    const allRanks = [...holeRanks, ...boardRanks]
+    const unique = [...new Set(allRanks)].sort((a, b) => a - b)
+    if (unique.includes(14)) unique.unshift(1) // wheel
+    
+    // Find OUR straight (highest one we make)
+    let ourHighest = 0
+    for (let i = unique.length - 5; i >= 0; i--) {
+      if (unique[i + 4] - unique[i] === 4) {
+        const straightRanks = unique.slice(i, i + 5)
+        const holeR1 = holeRanks[0] === 14 ? [14, 1] : [holeRanks[0]]
+        const holeR2 = holeRanks[1] === 14 ? [14, 1] : [holeRanks[1]]
+        if (holeR1.some((r) => straightRanks.includes(r)) || holeR2.some((r) => straightRanks.includes(r))) {
+          ourHighest = Math.max(ourHighest, unique[i + 4])
+        }
+      }
+    }
+    
+    // Find the HIGHEST possible straight anyone could make with this board
+    // (board + any two cards from remaining deck)
+    // Simplified: check if a higher 5-card run exists using board cards + any 2 ranks
+    // If our straight tops out at Ace, it's the nuts
+    if (ourHighest === 14) return true
+    
+    // Check if board allows a higher straight
+    const boardUnique = [...new Set(boardRanks)].sort((a, b) => a - b)
+    if (boardUnique.includes(14)) boardUnique.unshift(1)
+    // For each straight window higher than ours, check if board provides 3+ cards
+    for (let low = 1; low <= 10; low++) {
+      const windowHigh = low + 4
+      if (windowHigh <= ourHighest) continue // not higher
+      const window = [low, low + 1, low + 2, low + 3, low + 4]
+      const boardHits = window.filter((r) => boardUnique.includes(r))
+      if (boardHits.length >= 3) return false // someone could have the higher straight
+    }
+    return true // no higher straight possible
+  }
+
+  return false
+}
+
 // =============================================================================
 // MAIN COMPONENT
 // =============================================================================
@@ -1178,10 +1285,14 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     const autoStrength = gs.street !== "preflop"
       ? detectHandStrength(gs.card1, gs.card2, gs.board_cards)
       : null
+    const resolvedStrength = gs.hand_strength || autoStrength
+    const autoNuts = gs.street !== "preflop" && resolvedStrength
+      ? detectIsNuts(gs.card1, gs.card2, gs.board_cards, resolvedStrength)
+      : false
 
     // DEBUG: Log hand strength detection
     const boardCardsStr = gs.board_cards.filter(c => c !== null).map(c => `${c.rank}${c.suit}`).join(" ")
-    console.log(`[HAND_STRENGTH_DEBUG] street=${gs.street} hand=${handStr} board=[${boardCardsStr}] gs.hand_strength=${gs.hand_strength} autoStrength=${autoStrength} SENT=${gs.hand_strength || autoStrength}`)
+    console.log(`[HAND_STRENGTH_DEBUG] street=${gs.street} hand=${handStr} board=[${boardCardsStr}] gs.hand_strength=${gs.hand_strength} autoStrength=${autoStrength} is_nuts=${autoNuts} SENT=${resolvedStrength}`)
 
     // Determine which state holds which table's data
     const table1GameState = primaryHoldsTable === 1 ? gameState : t2GameState
@@ -1213,7 +1324,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         .join(""),
       pot_size: gs.pot_size,
       board_texture: gs.board_texture || autoTexture,
-      hand_strength: gs.hand_strength || autoStrength,
+      hand_strength: resolvedStrength,
+      is_nuts: autoNuts,
       villain_type: gs.villain_type,
       we_are_aggressor: gs.we_are_aggressor,
       show_second_table: showSecondTable,
@@ -2711,22 +2823,31 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             {roundBetDisplay(decision.display)}
           </div>
           {/* Hand strength badge — color-coded, shows specific hand type */}
-          {gameState.hand_strength && !["air", "premium", "strong", "playable", "marginal", "trash"].includes(gameState.hand_strength) && (
-            <div style={{
-              fontSize: 10,
-              fontWeight: 700,
-              textTransform: "uppercase" as const,
-              letterSpacing: "0.1em",
-              marginTop: 6,
-              color: ["quads","full_house","flush","straight","set","trips","royal_flush","straight_flush","monster","nuts"]
-                .includes(gameState.hand_strength) ? "#66BB6A"
-                : ["two_pair","overpair","tptk"].includes(gameState.hand_strength) ? "#42A5F5"
-                : ["combo_draw","flush_draw","oesd"].includes(gameState.hand_strength) ? theme.amber
-                : "rgba(255,255,255,0.4)",
-            }}>
-              {HAND_STRENGTH_DISPLAY[gameState.hand_strength] || gameState.hand_strength}
-            </div>
-          )}
+          {gameState.hand_strength && !["air", "premium", "strong", "playable", "marginal", "trash"].includes(gameState.hand_strength) && (() => {
+            const isMonster = ["quads","full_house","flush","straight","set","trips","royal_flush","straight_flush","monster","nuts"]
+              .includes(gameState.hand_strength)
+            const isDraw = ["combo_draw","flush_draw","oesd"].includes(gameState.hand_strength)
+            const isStrong = ["two_pair","overpair","tptk"].includes(gameState.hand_strength)
+            const color = isMonster ? "#66BB6A" : isStrong ? "#42A5F5" : isDraw ? theme.amber : "rgba(255,255,255,0.4)"
+            // Check if we detected nuts for this hand
+            const resolvedHS = gameState.hand_strength
+            const nutsDetected = resolvedHS ? detectIsNuts(gameState.card1, gameState.card2, gameState.board_cards, resolvedHS) : false
+            const label = nutsDetected
+              ? `${HAND_STRENGTH_DISPLAY[gameState.hand_strength] || gameState.hand_strength} — THE NUTS`
+              : HAND_STRENGTH_DISPLAY[gameState.hand_strength] || gameState.hand_strength
+            return (
+              <div style={{
+                fontSize: 10,
+                fontWeight: 700,
+                textTransform: "uppercase" as const,
+                letterSpacing: "0.1em",
+                marginTop: 6,
+                color: nutsDetected ? "#FFD54F" : color,
+              }}>
+                {label}
+              </div>
+            )
+          })()}
           {decision.explanation && (
             <div style={{ fontSize: 13, color: textColor, opacity: 0.8, marginTop: 6 }}>
               {humanizeExplanation(decision.explanation)}

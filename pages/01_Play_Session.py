@@ -1707,6 +1707,7 @@ def handle_decision_request(game_state: dict, session: dict):
         board = game_state.get("board", None)
         board_texture = game_state.get("board_texture", None)
         hand_strength = game_state.get("hand_strength", None)
+        is_nuts = bool(game_state.get("is_nuts", False))
         villain_type = game_state.get("villain_type", "unknown")
         we_are_aggressor = game_state.get("we_are_aggressor", False)
         num_limpers = int(game_state.get("num_limpers", 0))
@@ -1738,6 +1739,7 @@ def handle_decision_request(game_state: dict, session: dict):
             we_are_aggressor=we_are_aggressor,
             action_facing=action_facing,
             villain_type=villain_type,
+            is_nuts=is_nuts,
         )
 
         # Serialize for React (includes bluff_context + alternative)
