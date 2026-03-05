@@ -271,8 +271,19 @@ const HAND_STRENGTH_DISPLAY: Record<string, string> = {
   "two_pair": "Two Pair",
   "monster": "Very Strong Hand",
   "nuts": "The Nuts",
+  // Specific monster subtypes
+  "royal_flush": "Royal Flush",
+  "straight_flush": "Straight Flush",
+  "quads": "Four of a Kind",
+  "full_house": "Full House",
+  "flush": "Flush",
+  "straight": "Straight",
+  "set": "Set",
+  "trips": "Trips",
+  // Standard types
   "middle_pair": "Middle Pair",
   "bottom_pair": "Bottom Pair",
+  "underpair": "Underpair",
   "combo_draw": "Combo Draw",
   "flush_draw": "Flush Draw",
   "oesd": "Straight Draw",
@@ -288,7 +299,9 @@ const HAND_STRENGTH_DISPLAY: Record<string, string> = {
 
 function humanizeExplanation(text: string): string {
   if (!text) return ""
-  // Engine sends clean readable text — just ensure first letter is capitalized
+  // Engine sends clean readable text — just capitalize first letter.
+  // Do NOT regex-replace hand strength keys (e.g. "set", "flush", "straight")
+  // as they collide with common English words in explanation prose.
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
@@ -488,7 +501,7 @@ function detectHandStrength(
 
   // Four of a kind
   for (const [rank, count] of rankCounts) {
-    if (count >= 4 && holeInvolved(rank)) return "monster"
+    if (count >= 4 && holeInvolved(rank)) return "quads"
   }
 
   // Full house: three of a kind + pair, with hole cards involved
@@ -500,13 +513,29 @@ function detectHandStrength(
   }
   if (trips.length > 0 && (pairs.length > 0 || trips.length > 1)) {
     if (trips.some((r) => holeInvolved(r)) || pairs.some((r) => holeInvolved(r))) {
-      return "monster"
+      return "full_house"
     }
   }
 
   // Flush: 5+ cards same suit with at least one hole card
+  // Also detects straight flush and royal flush
   for (const [suit, count] of suitCounts) {
-    if (count >= 5 && holeSuits.includes(suit)) return "monster"
+    if (count >= 5 && holeSuits.includes(suit)) {
+      // Check for straight flush / royal flush within the suited cards
+      const flushRanks = allCards
+        .filter((c) => c.suit === suit)
+        .map((c) => RANK_VALUES[c.rank] || 0)
+      const uniqueFlush = [...new Set(flushRanks)].sort((a, b) => a - b)
+      if (uniqueFlush.includes(14)) uniqueFlush.unshift(1) // wheel ace
+      for (let fi = 0; fi <= uniqueFlush.length - 5; fi++) {
+        if (uniqueFlush[fi + 4] - uniqueFlush[fi] === 4) {
+          const high = uniqueFlush[fi + 4]
+          if (high === 14 && uniqueFlush[fi] === 10) return "royal_flush"
+          return "straight_flush"
+        }
+      }
+      return "flush"
+    }
   }
 
   // Straight: 5 consecutive ranks with hole card involvement
@@ -520,7 +549,7 @@ function detectHandStrength(
       const holeR1 = holeRanks[0] === 14 ? [14, 1] : [holeRanks[0]]
       const holeR2 = holeRanks[1] === 14 ? [14, 1] : [holeRanks[1]]
       if (holeR1.some((r) => straightRanks.includes(r)) || holeR2.some((r) => straightRanks.includes(r))) {
-        return "monster"
+        return "straight"
       }
     }
   }
@@ -529,8 +558,8 @@ function detectHandStrength(
   if (trips.length > 0 && trips.some((r) => holeInvolved(r))) {
     // Set: pocket pair hit the board
     const isPocketPair = holeRanks[0] === holeRanks[1]
-    if (isPocketPair && trips.includes(holeRanks[0])) return "monster" // set
-    return "monster" // trips (one hole card + board pair) — strong hand, play aggressively
+    if (isPocketPair && trips.includes(holeRanks[0])) return "set"
+    return "trips"
   }
 
 // Two pair with hole cards
@@ -553,6 +582,10 @@ function detectHandStrength(
   // Example: We have 77, board is Jc Js 8d 3h → 77 + JJ = two pair
   const isPocketPair = holeRanks[0] === holeRanks[1]
   if (isPocketPair && boardPairRanks.length > 0 && !boardPairRanks.includes(holeRanks[0])) {
+    // If board already has 2+ pairs and our PP is below both, board dominates
+    if (boardPairRanks.length >= 2 && holeRanks[0] < Math.min(...boardPairRanks)) {
+      return "bottom_pair"
+    }
     return "two_pair"
   }
 
@@ -588,7 +621,9 @@ function detectHandStrength(
 
   // Overpair: pocket pair above all board cards (no board match needed since it's a pair in hand)
   if (holeRanks[0] === holeRanks[1] && holeRanks[0] > boardRanks[0]) return "overpair"
-  // Underpair (pocket pair below board) — treat as bottom_pair
+  // Underpair: pocket pair below ALL board cards (e.g. 55 on K-Q-J)
+  if (holeRanks[0] === holeRanks[1] && holeRanks[0] < boardRanks[boardRanks.length - 1]) return "underpair"
+  // Pocket pair between board ranks — similar to bottom pair in practice
   if (holeRanks[0] === holeRanks[1]) return "bottom_pair"
 
   // === DRAWS (skip on river — no cards left to draw to) ===
@@ -2675,6 +2710,23 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           >
             {roundBetDisplay(decision.display)}
           </div>
+          {/* Hand strength badge — color-coded, shows specific hand type */}
+          {gameState.hand_strength && !["air", "premium", "strong", "playable", "marginal", "trash"].includes(gameState.hand_strength) && (
+            <div style={{
+              fontSize: 10,
+              fontWeight: 700,
+              textTransform: "uppercase" as const,
+              letterSpacing: "0.1em",
+              marginTop: 6,
+              color: ["quads","full_house","flush","straight","set","trips","royal_flush","straight_flush","monster","nuts"]
+                .includes(gameState.hand_strength) ? "#66BB6A"
+                : ["two_pair","overpair","tptk"].includes(gameState.hand_strength) ? "#42A5F5"
+                : ["combo_draw","flush_draw","oesd"].includes(gameState.hand_strength) ? theme.amber
+                : "rgba(255,255,255,0.4)",
+            }}>
+              {HAND_STRENGTH_DISPLAY[gameState.hand_strength] || gameState.hand_strength}
+            </div>
+          )}
           {decision.explanation && (
             <div style={{ fontSize: 13, color: textColor, opacity: 0.8, marginTop: 6 }}>
               {humanizeExplanation(decision.explanation)}
