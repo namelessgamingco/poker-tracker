@@ -805,109 +805,88 @@ def render_session_header():
 # SESSION ALERTS
 # =============================================================================
 def render_inline_table_check():
-    """Render table check inline as a prominent banner — only between hands."""
+    """Render table check inline — only between hands."""
     if not st.session_state.table_check_due:
         return
     
-    # Custom CSS to style the table check expander — injected BEFORE the expander renders
+    # Prominent banner — fully custom HTML, no Streamlit expander
     st.markdown("""
-    <style>
-    /* Style the table check expander */
-    [data-testid="stExpander"]:last-of-type > details {
-        border: 2px solid rgba(255,179,0,0.45) !important;
-        border-radius: 12px !important;
-        background: linear-gradient(135deg, rgba(255,179,0,0.06), rgba(255,111,0,0.03)) !important;
-    }
-    [data-testid="stExpander"]:last-of-type > details > summary {
-        color: #FFB300 !important;
-        font-weight: 700 !important;
-        font-size: 15px !important;
-        padding: 14px 16px !important;
-    }
-    [data-testid="stExpander"]:last-of-type > details > summary:hover {
-        background: rgba(255,179,0,0.08) !important;
-    }
-    [data-testid="stExpander"]:last-of-type > details > summary svg {
-        color: #FFB300 !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    with st.expander("🎯  Quick Table Check — Rate your table in 30 seconds", expanded=st.session_state.get("table_check_active", False)):
-        st.markdown("""
-        <div style="
-            background: linear-gradient(135deg, rgba(255,179,0,0.08), rgba(255,111,0,0.04));
-            border-radius: 8px;
-            padding: 12px 16px;
-            margin: -8px -16px 16px -16px;
-            border-bottom: 1px solid rgba(255,179,0,0.2);
-        ">
-            <div style="font-size: 13px; color: rgba(255,255,255,0.7); line-height: 1.6;">
-                A good table is worth <strong style="color: #FFB300;">+2-3 BB/100 more</strong> than a tough one — that's 
-                $20-30/hour extra at $1/$2. The best players don't just play well, they pick the right tables.
-                Answer 3 quick questions and we'll tell you if you should stay or move.
-            </div>
+    <div style="
+        border: 2px solid rgba(255,179,0,0.45);
+        border-radius: 12px;
+        background: linear-gradient(135deg, rgba(255,179,0,0.08), rgba(255,111,0,0.04));
+        padding: 16px 20px;
+        margin: 8px 0 4px 0;
+    ">
+        <div style="font-size: 16px; font-weight: 700; color: #FFB300; margin-bottom: 6px;">
+            🎯 Quick Table Check
         </div>
-        """, unsafe_allow_html=True)
-        players_to_flop = st.radio("How many players typically see the flop?", ["2-3 (Tight)", "3-4 (Average)", "4-5 (Loose)", "5-6 (Very Loose)"], key="tc_q1", horizontal=True)
-        has_limpers = st.radio("Are there limpers?", ["Yes", "No"], key="tc_q2", horizontal=True)
-        three_bet_freq = st.radio("Is anyone 3-betting a lot?", ["No (Good)", "Sometimes", "Yes (Reg-heavy)"], key="tc_q3", horizontal=True)
-        
-        score = 50
-        if "5-6" in players_to_flop: score += 30
-        elif "4-5" in players_to_flop: score += 20
-        elif "3-4" in players_to_flop: score += 10
-        else: score -= 10
-        score += 15 if has_limpers == "Yes" else -5
-        if "No" in three_bet_freq: score += 15
-        elif "Yes" in three_bet_freq: score -= 15
-        score = max(0, min(100, score))
-        
-        tips = []
-        if "5-6" in players_to_flop:
-            tips.append("Lots of multiway pots — your big hands get paid off more. Raise larger preflop (4-5x) to thin the field when you want to.")
-        elif "4-5" in players_to_flop:
-            tips.append("Good action. Size up your value bets — these players are calling too much postflop.")
-        elif "3-4" in players_to_flop:
-            tips.append("Standard table. Play your normal ranges and focus on position.")
-        else:
-            tips.append("Tight table — fewer profitable spots. Open wider from late position to steal blinds, but be ready to fold to 3-bets.")
-        if has_limpers == "Yes":
-            tips.append("Limpers are profit. Iso-raise to 4-5x + 1x per limper from position. You'll often take it down preflop or play heads-up with a range advantage.")
-        else:
-            tips.append("No limpers means tighter, more aware opponents. Respect their opens and tighten your calling ranges.")
-        if "Yes" in three_bet_freq:
-            tips.append("Active 3-bettors at the table. Tighten your opening range from early positions. Consider 4-betting light from the button if the same player keeps 3-betting you.")
-        elif "Sometimes" in three_bet_freq:
-            tips.append("Some 3-betting activity. Pay attention to who is doing it — if it's one player, adjust your opens when they're behind you.")
-        
-        if score >= 70:
-            headline = f"✅ **{score}/100 — Great table, stay and play.**"
-        elif score >= 50:
-            headline = f"👍 **{score}/100 — Good spot, keep playing.**"
-        elif score >= 35:
-            headline = f"⚠️ **{score}/100 — Borderline. Consider a table change.**"
-        else:
-            headline = f"🚨 **{score}/100 — Bad table. Move now.**"
-        
-        st.markdown(headline)
-        for tip in tips:
-            st.markdown(f"- {tip}")
-        
-        last_score = st.session_state.get("last_table_score")
-        if last_score is not None:
-            diff = score - last_score
-            if diff > 10:
-                st.success(f"↑ Table improved since last check (+{diff} points)")
-            elif diff < -10:
-                st.error(f"↓ Table got tougher since last check ({diff} points)")
-        
-        if st.button("✅ Done", type="primary", use_container_width=True, key="tc_done"):
-            st.session_state.last_table_check = datetime.now(timezone.utc)
-            st.session_state.last_table_score = score
-            st.session_state.table_check_due = False
-            st.session_state.table_check_active = False
-            st.rerun()
+        <div style="font-size: 13px; color: rgba(255,255,255,0.65); line-height: 1.6;">
+            A good table is worth <strong style="color: #FFB300;">+2-3 BB/100 more</strong> than a tough one — 
+            that's $20-30/hour extra at $1/$2. The best players don't just play well, they pick the right tables.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    players_to_flop = st.radio("How many players typically see the flop?", ["2-3 (Tight)", "3-4 (Average)", "4-5 (Loose)", "5-6 (Very Loose)"], key="tc_q1", horizontal=True)
+    has_limpers = st.radio("Are there limpers?", ["Yes", "No"], key="tc_q2", horizontal=True)
+    three_bet_freq = st.radio("Is anyone 3-betting a lot?", ["No (Good)", "Sometimes", "Yes (Reg-heavy)"], key="tc_q3", horizontal=True)
+
+    score = 50
+    if "5-6" in players_to_flop: score += 30
+    elif "4-5" in players_to_flop: score += 20
+    elif "3-4" in players_to_flop: score += 10
+    else: score -= 10
+    score += 15 if has_limpers == "Yes" else -5
+    if "No" in three_bet_freq: score += 15
+    elif "Yes" in three_bet_freq: score -= 15
+    score = max(0, min(100, score))
+
+    tips = []
+    if "5-6" in players_to_flop:
+        tips.append("Lots of multiway pots — your big hands get paid off more. Raise larger preflop (4-5x) to thin the field when you want to.")
+    elif "4-5" in players_to_flop:
+        tips.append("Good action. Size up your value bets — these players are calling too much postflop.")
+    elif "3-4" in players_to_flop:
+        tips.append("Standard table. Play your normal ranges and focus on position.")
+    else:
+        tips.append("Tight table — fewer profitable spots. Open wider from late position to steal blinds, but be ready to fold to 3-bets.")
+    if has_limpers == "Yes":
+        tips.append("Limpers are profit. Iso-raise to 4-5x + 1x per limper from position. You'll often take it down preflop or play heads-up with a range advantage.")
+    else:
+        tips.append("No limpers means tighter, more aware opponents. Respect their opens and tighten your calling ranges.")
+    if "Yes" in three_bet_freq:
+        tips.append("Active 3-bettors at the table. Tighten your opening range from early positions. Consider 4-betting light from the button if the same player keeps 3-betting you.")
+    elif "Sometimes" in three_bet_freq:
+        tips.append("Some 3-betting activity. Pay attention to who is doing it — if it's one player, adjust your opens when they're behind you.")
+
+    if score >= 70:
+        headline = f"✅ **{score}/100 — Great table, stay and play.**"
+    elif score >= 50:
+        headline = f"👍 **{score}/100 — Good spot, keep playing.**"
+    elif score >= 35:
+        headline = f"⚠️ **{score}/100 — Borderline. Consider a table change.**"
+    else:
+        headline = f"🚨 **{score}/100 — Bad table. Move now.**"
+
+    st.markdown(headline)
+    for tip in tips:
+        st.markdown(f"- {tip}")
+
+    last_score = st.session_state.get("last_table_score")
+    if last_score is not None:
+        diff = score - last_score
+        if diff > 10:
+            st.success(f"↑ Table improved since last check (+{diff} points)")
+        elif diff < -10:
+            st.error(f"↓ Table got tougher since last check ({diff} points)")
+
+    if st.button("✅ Done", type="primary", use_container_width=True, key="tc_done"):
+        st.session_state.last_table_check = datetime.now(timezone.utc)
+        st.session_state.last_table_score = score
+        st.session_state.table_check_due = False
+        st.session_state.table_check_active = False
+        st.rerun()
 
 def check_session_alerts():
     """Check and display session alerts (time, stop-loss, stop-win, table check)."""
