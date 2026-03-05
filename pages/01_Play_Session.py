@@ -810,6 +810,35 @@ def render_inline_table_check():
         return
     
     with st.expander("🎯  Quick Table Check — Rate your table in 30 seconds", expanded=st.session_state.get("table_check_active", False)):
+        # Custom CSS to style this specific expander
+        st.markdown("""
+        <style>
+        /* Style the table check expander to stand out */
+        [data-testid="stExpander"]:has(summary:has-text("Quick Table Check")) {
+            border: 2px solid rgba(255,179,0,0.5) !important;
+            border-radius: 12px !important;
+            background: linear-gradient(135deg, rgba(255,179,0,0.08), rgba(255,111,0,0.04)) !important;
+        }
+        /* Target the LAST expander on the page (table check is always last before the component) */
+        [data-testid="stExpander"]:last-of-type > details {
+            border: 2px solid rgba(255,179,0,0.45) !important;
+            border-radius: 12px !important;
+            background: linear-gradient(135deg, rgba(255,179,0,0.06), rgba(255,111,0,0.03)) !important;
+        }
+        [data-testid="stExpander"]:last-of-type > details > summary {
+            color: #FFB300 !important;
+            font-weight: 700 !important;
+            font-size: 15px !important;
+            padding: 14px 16px !important;
+        }
+        [data-testid="stExpander"]:last-of-type > details > summary:hover {
+            background: rgba(255,179,0,0.08) !important;
+        }
+        [data-testid="stExpander"]:last-of-type > details > summary svg {
+            color: #FFB300 !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
         st.markdown("""
         <div style="
             background: linear-gradient(135deg, rgba(255,179,0,0.08), rgba(255,111,0,0.04));
