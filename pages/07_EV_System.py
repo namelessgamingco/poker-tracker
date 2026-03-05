@@ -252,6 +252,22 @@ def main():
                     <td class="pos">$57,600</td>
                     <td class="pos">$54,012</td>
                 </tr>
+                <tr>
+                    <td><strong>$10/$20</strong></td>
+                    <td>+3 to +6 BB/100</td>
+                    <td class="pos">$8,000</td>
+                    <td class="pos">$7,701</td>
+                    <td class="pos">$96,000</td>
+                    <td class="pos">$92,412</td>
+                </tr>
+                <tr>
+                    <td><strong>$25/$50</strong></td>
+                    <td>+2 to +5 BB/100</td>
+                    <td class="pos">$16,000</td>
+                    <td class="pos">$15,701</td>
+                    <td class="pos">$192,000</td>
+                    <td class="pos">$188,412</td>
+                </tr>
             </tbody>
         </table>
         <p style="font-size:12px;color:#64748b;margin-top:4px;">
