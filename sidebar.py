@@ -22,6 +22,9 @@ def render_sidebar():
         # ── Branding ──
         st.markdown("""
         <div style="padding: 4px 0 8px 0;">
+            <div style="width: 28px; height: 28px; background: #22c55e; border-radius: 6px; margin-bottom: 8px; display: flex; align-items: center; justify-content: center;">
+                <span style="font-size: 14px; font-weight: 900; color: #0a0f1a; font-family: 'JetBrains Mono', monospace; letter-spacing: -1px;">N</span>
+            </div>
             <div style="font-family: 'JetBrains Mono', monospace; font-size: 15px; font-weight: 700; letter-spacing: 0.05em; color: #E0E0E0;">NAMELESS POKER</div>
             <div style="font-size: 12px; color: rgba(255,255,255,0.35); margin-top: 4px;">""" + (st.session_state.get("email", "")) + ("  ·  🔐 Admin" if st.session_state.get("is_admin", False) else "") + """</div>
         </div>
