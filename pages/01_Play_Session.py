@@ -1811,8 +1811,8 @@ def handle_decision_request(game_state: dict, session: dict):
             "action": "CHECK",
             "amount": 0,
             "display": "CHECK",
-            "explanation": f"Engine error — please try again. ({e})",
-            "calculation": "",
+            "explanation": "Something went wrong calculating this hand. Try entering it again — if the issue persists, start a new hand.",
+            "calculation": f"Error: {e}",
         }
         st.session_state.decision_table_id = game_state.get("table_id", 1)
 
