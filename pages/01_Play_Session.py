@@ -1376,10 +1376,12 @@ def render_session_end_modal(data: dict) -> bool:
     # ── Bankroll update confirmation ──
     bankroll_before = data.get("bankroll_before")
     bankroll_after = data.get("bankroll_after")
-    if bankroll_before and bankroll_after:
+    if bankroll_before is not None and bankroll_after is not None and bankroll_before != bankroll_after:
         br_diff = bankroll_after - bankroll_before
-        br_sign = "+" if br_diff >= 0 else ""
+        br_sign = "+" if br_diff >= 0 else "-"
         br_color = "#69F0AE" if br_diff >= 0 else "#FF5252"
+        # Format bankroll_after correctly (handle negative)
+        br_after_display = f"${bankroll_after:,.0f}" if bankroll_after >= 0 else f"-${abs(bankroll_after):,.0f}"
         st.markdown(f"""
         <div style="margin: 12px 0; padding: 12px 16px;
             background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06);
@@ -1391,7 +1393,7 @@ def render_session_end_modal(data: dict) -> bool:
             <div style="font-family: 'JetBrains Mono', monospace; font-size: 15px; color: rgba(255,255,255,0.6);">
                 ${bankroll_before:,.0f}
                 <span style="margin: 0 8px;">→</span>
-                <span style="color: #fff; font-weight: 700;">${bankroll_after:,.0f}</span>
+                <span style="color: #fff; font-weight: 700;">{br_after_display}</span>
                 <span style="color: {br_color}; font-weight: 600; margin-left: 8px;">({br_sign}${abs(br_diff):,.0f})</span>
             </div>
         </div>
@@ -1717,7 +1719,7 @@ def handle_decision_request(game_state: dict, session: dict):
     try:
         stakes = session.get("stakes", "$1/$2")
         bb_size = float(session.get("bb_size", 2.0))
-        our_stack = st.session_state.our_stack
+        our_stack = max(0, st.session_state.our_stack)  # Never pass negative stack to engine
 
         # Extract fields from component's game_state
         card1 = game_state.get("card1", "")
@@ -1871,6 +1873,9 @@ def handle_hand_complete(component_value: dict, session: dict):
     if profit_loss != 0:
         st.session_state.session_pl += profit_loss
         st.session_state.our_stack += profit_loss
+        # Stack can never go below 0 — at a real table you're busted
+        if st.session_state.our_stack < 0:
+            st.session_state.our_stack = 0
 
     # Sync running P/L to DB so session resume has correct values
     _running_pl = st.session_state.session_pl

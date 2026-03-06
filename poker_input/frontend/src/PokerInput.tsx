@@ -1916,8 +1916,15 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     const pot = parseFloat(potStr)
     if (isNaN(pot) || pot <= 0) return
     setGameState((s) => ({ ...s, pot_size: pot }))
-    setStep("player_count")
-  }, [potStr])
+    // On postflop streets, ask "Checked to Me" or "Facing a Bet" next
+    // On initial preflop→flop this is the first time we ask the postflop action
+    // On turn/river continuations, we need to ask again for the new street
+    if (gameState.street !== "preflop") {
+      setStep("action")
+    } else {
+      setStep("player_count")
+    }
+  }, [potStr, gameState.street])
 
   // ---- Handle street change to post-flop ----
   const continueToStreet = useCallback(

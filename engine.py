@@ -258,13 +258,14 @@ HAND_DISPLAY = {
 def _hs(hand_strength, display_name: str = None) -> str:
     """Get display name for hand strength (with article: 'a', 'an', 'the').
     
-    If display_name is provided and hand is monster/nuts, uses the specific
-    subtype (e.g. 'set' → 'a set') instead of generic 'a very strong hand'.
+    Always uses display_name when available — this is what the player actually has.
+    The engine enum may differ due to board-danger downgrades (e.g. TWO_PAIR→OVERPAIR
+    on a counterfeited board), but the user should see 'two pair' not 'overpair'.
     """
-    val = hand_strength.value if hasattr(hand_strength, 'value') else str(hand_strength)
-    # Use specific monster subtype when available
-    if val in ("monster", "nuts") and display_name and display_name in HAND_DISPLAY:
+    # Always prefer the specific display name (what you actually have)
+    if display_name and display_name in HAND_DISPLAY:
         return HAND_DISPLAY[display_name]
+    val = hand_strength.value if hasattr(hand_strength, 'value') else str(hand_strength)
     return HAND_DISPLAY.get(val, val)
 
 def _hs_bare(hand_strength, display_name: str = None) -> str:
@@ -2062,12 +2063,17 @@ class PokerDecisionEngine:
                 )
             if hand_strength in [HandStrength.OVERPAIR, HandStrength.TOP_PAIR_TOP_KICKER]:
                 if board_texture in [BoardTexture.WET, BoardTexture.SEMI_WET]:
+                    # TPTK/overpair should BET wet boards multiway for protection
+                    # Draws are exactly what we're charging — checking lets them see free cards
+                    amount = round(state.pot_size * 0.55, 2)
+                    if fish:
+                        amount = round(amount * 1.2, 2)
                     return Decision(
-                        action=Action.CHECK,
-                        amount=None,
-                        display="CHECK",
-                        explanation=f"Check. {_hs(hand_strength, state.hand_strength_display).capitalize()} isn't strong enough to bet into this many opponents on a draw-heavy board.",
-                        calculation="Multiway + draws = pot control",
+                        action=Action.BET,
+                        amount=amount,
+                        display=f"BET ${amount:.2f}",
+                        explanation=f"Bet ${amount:.0f} with {_hs(hand_strength, state.hand_strength_display)} for protection. Wet board with multiple opponents — charge the draws now or they'll get there for free.",
+                        calculation=f"Multiway protection bet — 55% pot",
                         confidence=0.80
                     )
                 amount = round(state.pot_size * 0.50, 2)
@@ -2566,6 +2572,39 @@ class PokerDecisionEngine:
                     calculation="Multiway value bet — 60% pot",
                     confidence=0.82
                 )
+            # Overpair/TPTK on wet boards: bet for protection even as defender
+            if hand_strength in [HandStrength.OVERPAIR, HandStrength.TOP_PAIR_TOP_KICKER]:
+                if board_texture in [BoardTexture.WET, BoardTexture.SEMI_WET]:
+                    amount = round(state.pot_size * 0.50, 2)
+                    if fish:
+                        amount = round(amount * 1.2, 2)
+                    return Decision(
+                        action=Action.BET,
+                        amount=amount,
+                        display=f"BET ${amount:.2f}",
+                        explanation=f"Bet ${amount:.0f} with {_hs(hand_strength, state.hand_strength_display)}. Wet board with multiple opponents — charge the draws or they'll get there for free.",
+                        calculation=f"Multiway protection bet — 50% pot",
+                        confidence=0.78
+                    )
+                # Dry board: check for pot control (bet only gets called by better)
+                if state.street == Street.RIVER:
+                    return Decision(
+                        action=Action.CHECK,
+                        amount=None,
+                        display="CHECK",
+                        explanation=f"Check. Your {_hs_bare(hand_strength, state.hand_strength_display)} is likely best but betting into multiple opponents on the river only gets called by better. Take the showdown.",
+                        calculation="Multiway pot control",
+                        confidence=0.78
+                    )
+                amount = round(state.pot_size * 0.40, 2)
+                return Decision(
+                    action=Action.BET,
+                    amount=amount,
+                    display=f"BET ${amount:.2f}",
+                    explanation=f"Bet ${amount:.0f} with {_hs(hand_strength, state.hand_strength_display)}. Dry board helps — charge worse hands but keep the sizing controlled.",
+                    calculation=f"Multiway value bet — 40% pot",
+                    confidence=0.75
+                )
             return Decision(
                 action=Action.CHECK,
                 amount=None,
@@ -3020,14 +3059,14 @@ class PokerDecisionEngine:
                 confidence=0.80
             )
         
-        # Top pair: only call small bets on flop, fold turn/river
+        # Top pair: call small bets on flop AND turn, fold large bets and river
         if hand_strength == HandStrength.TOP_PAIR:
-            if state.street == Street.FLOP and bet_ratio <= 0.50:
+            if state.street in [Street.FLOP, Street.TURN] and bet_ratio <= 0.50:
                 return Decision(
                     action=Action.CALL,
                     amount=state.facing_bet,
                     display=f"CALL ${state.facing_bet:.2f}",
-                    explanation="Call. Top pair is good on the flop — see what the turn brings.",
+                    explanation=f"Call the ${state.facing_bet:.0f}. Top pair beats most of what they're betting at this sizing.",
                     calculation="Multiway pot — tighter range required",
                     confidence=0.70
                 )
@@ -3040,8 +3079,27 @@ class PokerDecisionEngine:
                 confidence=0.80
             )
         
-        # Middle/bottom pair: always fold multiway
+        # Middle/bottom pair: call tiny bets (getting amazing pot odds), fold standard+ bets
         if hand_strength in [HandStrength.MIDDLE_PAIR, HandStrength.BOTTOM_PAIR]:
+            if bet_ratio <= 0.15:
+                # Tiny bet — pot odds are too good to fold any pair
+                return Decision(
+                    action=Action.CALL,
+                    amount=state.facing_bet,
+                    display=f"CALL ${state.facing_bet:.2f}",
+                    explanation=f"Call the ${state.facing_bet:.0f}. The bet is tiny relative to the pot — you only need {pot_odds*100:.0f}% equity and {_hs(hand_strength, state.hand_strength_display)} has more than enough at this price.",
+                    calculation=f"Pot odds: need {pot_odds*100:.0f}% equity — easy call",
+                    confidence=0.72
+                )
+            if state.street == Street.FLOP and bet_ratio <= 0.40:
+                return Decision(
+                    action=Action.CALL,
+                    amount=state.facing_bet,
+                    display=f"CALL ${state.facing_bet:.2f}",
+                    explanation=f"Call the ${state.facing_bet:.0f}. Small bet with {_hs(hand_strength, state.hand_strength_display)} multiway — worth one card to see if you improve.",
+                    calculation=f"Multiway pot — small bet ({bet_ratio*100:.0f}% pot)",
+                    confidence=0.65
+                )
             return Decision(
                 action=Action.FOLD,
                 amount=None,
@@ -3073,7 +3131,38 @@ class PokerDecisionEngine:
                 confidence=0.80
             )
         
-        # Everything else: fold
+        # Gutshot multiway: call if getting good enough price (implied odds matter multiway)
+        if hand_strength == HandStrength.GUTSHOT:
+            equity = get_draw_equity(hand_strength, state.street)
+            implied_equity = equity * 1.5 if state.street == Street.FLOP else equity * 1.2
+            if implied_equity >= pot_odds and bet_ratio <= 0.33:
+                return Decision(
+                    action=Action.CALL,
+                    amount=state.facing_bet,
+                    display=f"CALL ${state.facing_bet:.2f}",
+                    explanation=f"Call the ${state.facing_bet:.0f}. Gutshot with 4 outs — the small bet and multiway pot give you the implied odds to chase.",
+                    calculation=f"~{equity*100:.0f}% equity + multiway implied odds vs {pot_odds*100:.0f}% needed",
+                    confidence=0.62
+                )
+            return Decision(
+                action=Action.FOLD,
+                amount=None,
+                display="FOLD",
+                explanation=_fold_text("Not getting the right price for a gutshot multiway.", state),
+                calculation="Multiway pot — tighter range required",
+                confidence=0.80
+            )
+        
+        # Everything else: fold (but call truly tiny bets with any showdown value)
+        if bet_ratio <= 0.10 and hand_strength not in [HandStrength.AIR]:
+            return Decision(
+                action=Action.CALL,
+                amount=state.facing_bet,
+                display=f"CALL ${state.facing_bet:.2f}",
+                explanation=f"Call the ${state.facing_bet:.0f}. The bet is so small relative to the pot that folding anything with showdown value is a mistake.",
+                calculation=f"Pot odds: need {pot_odds*100:.0f}% — any hand calls",
+                confidence=0.65
+            )
         return Decision(
             action=Action.FOLD,
             amount=None,
@@ -3835,6 +3924,26 @@ def get_decision(
         is_nuts=is_nuts,
     )
     
+    # ── Stack guard: can't play with no chips ──
+    if state.our_stack <= 0:
+        if state.facing_bet > 0:
+            return Decision(
+                action=Action.FOLD,
+                amount=None,
+                display="FOLD",
+                explanation="Fold. You're out of chips — end the session or re-buy.",
+                calculation="No chips remaining",
+                confidence=1.0,
+            )
+        return Decision(
+            action=Action.CHECK,
+            amount=None,
+            display="CHECK",
+            explanation="Check. You're out of chips — end the session or re-buy.",
+            calculation="No chips remaining",
+            confidence=1.0,
+        )
+    
     engine = get_engine()
     decision = engine.get_decision(state)
     
@@ -3858,10 +3967,32 @@ def get_decision(
             )
     
     # ── Cap bet/raise amounts to remaining stack ──
-    # If the recommended bet is ≥90% of stack, convert to ALL-IN
-    if decision.amount is not None and decision.amount > 0 and state.our_stack > 0:
-        remaining = state.our_stack
-        if decision.amount >= remaining * 0.9:
+    # No bet can ever exceed what the player actually has
+    if decision.amount is not None and decision.amount > 0:
+        remaining = max(0, state.our_stack)
+        if remaining <= 0:
+            # Player has no chips — can only check or fold
+            if decision.action in (Action.BET, Action.RAISE, Action.ALL_IN):
+                decision = Decision(
+                    action=Action.CHECK,
+                    amount=None,
+                    display="CHECK",
+                    explanation="Check. You're out of chips — end the session or re-buy.",
+                    calculation="No chips remaining",
+                    confidence=1.0,
+                )
+        elif decision.amount > remaining:
+            # Bet exceeds stack — convert to ALL-IN
+            decision = Decision(
+                action=Action.ALL_IN,
+                amount=round(remaining, 2),
+                display=f"ALL-IN ${remaining:.0f}",
+                explanation=decision.explanation,
+                calculation=f"Stack: ${remaining:.0f} — all-in is the maximum you can bet",
+                confidence=decision.confidence,
+            )
+        elif decision.amount >= remaining * 0.9:
+            # Bet is ≥90% of stack — cleaner to just shove
             decision = Decision(
                 action=Action.ALL_IN,
                 amount=round(remaining, 2),
