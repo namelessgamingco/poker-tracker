@@ -911,7 +911,13 @@ def render_inline_table_check():
             st.rerun()
 
 def check_session_alerts():
-    """Check and display session alerts (time, stop-loss, stop-win, table check)."""
+    """Check and display session alerts (time, stop-loss, stop-win, table check).
+    
+    CRITICAL: This runs on every Streamlit render cycle. It must NEVER make
+    synchronous DB calls — a stale Supabase connection would block the render,
+    cause a Streamlit WebSocket timeout, trigger a reconnect, and wipe the
+    React component's hand state.
+    """
     session = st.session_state.current_session
     if not session:
         return
@@ -923,8 +929,14 @@ def check_session_alerts():
     stakes_info = STAKES_BUY_INS.get(stakes, {"buy_in": 200})
     standard_buy_in = stakes_info["buy_in"]
 
-    profile = get_user_profile()
-    user_mode = profile.get("user_mode", "balanced")
+    # Use cached profile ONLY — never hit DB in the render path
+    # The profile is cached by get_profile_by_auth_id with a 60-second TTL.
+    # If the cache is stale/empty, fall back to safe defaults rather than blocking.
+    user_id = st.session_state.get("user_db_id")
+    cache_key = f"_profile_cache_{user_id}" if user_id else None
+    cached = st.session_state.get(cache_key) if cache_key else None
+    profile = cached.get("data", {}) if cached and isinstance(cached, dict) else {}
+    user_mode = profile.get("user_mode", "balanced") if profile else "balanced"
     mode_config = MODE_CONFIG.get(user_mode, MODE_CONFIG["balanced"])
 
     stop_loss = standard_buy_in * mode_config["stop_loss_bi"]
@@ -1674,14 +1686,30 @@ def render_play_mode():
     stakes = session.get("stakes", "$1/$2")
     bb_size = float(session.get("bb_size", 2.0))
 
-    # Clear ALL stale state on fresh page entry (page nav, refresh, session reconnect)
-    # Our handlers set _intentional_rerun=True before st.rerun().
-    # Any OTHER rerun means fresh start — no stale mid-hand state.
-    if st.session_state.get("_intentional_rerun"):
-        st.session_state._intentional_rerun = False
-    else:
+    # ── Stale state management ──
+    # The old approach (`_intentional_rerun` flag) was too aggressive:
+    # Streamlit WebSocket reconnects (from transient network/DB issues) would
+    # clear the flag, causing two_table_restore and hand state to be wiped.
+    # This is the root cause of the "hand randomly resets" bug.
+    #
+    # New approach: only clear state when the SESSION ITSELF changes.
+    # A reconnect within the same session should preserve everything.
+    # The React component is the source of truth for hand state — it initializes
+    # from the restore props on mount. If restore is None, it starts fresh.
+    # So the only time we need to clear is on actual page entry with no session.
+    session_id = session.get("id", "")
+    last_session_id = st.session_state.get("_last_play_session_id")
+    
+    if session_id != last_session_id:
+        # New session (or first load) — clear any stale data from a previous session
+        st.session_state._last_play_session_id = session_id
         st.session_state.two_table_restore = None
         clear_hand_state()
+    
+    # If an intentional rerun just happened, consume the flag (still used for
+    # ensuring two_table_restore survives handler→rerun→render cycles)
+    if st.session_state.get("_intentional_rerun"):
+        st.session_state._intentional_rerun = False
 
     restore = st.session_state.get("two_table_restore")
     component_value = poker_input(
