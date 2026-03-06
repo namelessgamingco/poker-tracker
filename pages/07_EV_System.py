@@ -168,11 +168,11 @@ def main():
         st.markdown("""
             <div class="fbox">
                 <div class="fbox-label">Expected Value Formula</div>
-                <div class="fbox-formula">EV = (Win% × Amount Won) − (Lose% × Amount Lost)</div>
+                <div class="fbox-formula">EV = (Win% × Net Profit) − (Lose% × Net Loss)</div>
                 <div class="fbox-note">
                     <strong>Example:</strong> You bet $100 into a $100 pot with 60% equity.<br>
-                    EV = (0.60 × $200) − (0.40 × $100) = $120 − $40 = <span class="pos">+$80</span><br>
-                    This is a profitable bet. Over 1,000 attempts you'd expect ~$80,000 profit.
+                    EV = (0.60 × $100 profit) − (0.40 × $100 loss) = $60 − $40 = <span class="pos">+$20</span><br>
+                    This is a profitable bet. Over 1,000 attempts you'd expect ~$20,000 in profit.
                 </div>
             </div>
         """, unsafe_allow_html=True)
@@ -199,7 +199,7 @@ def main():
     st.markdown("""
         <p style="font-size:14px;color:#94a3b8;line-height:1.7;margin-bottom:8px;">
             These projections are derived from a <strong>10,000,000-hand Monte Carlo simulation</strong> run
-            against the current decision engine with realistic opponent distributions at each stake level.
+            against realistic opponent populations modeled on each stake level's typical table composition.
             Volume assumes <strong>8,000 hands/month</strong> (~200 hands/session × 40 sessions) and
             <strong>100% compliance</strong> with app recommendations — which is exactly what the app
             delivers. Win rate range reflects table composition: softer tables with more recreational
@@ -272,7 +272,7 @@ def main():
         </table>
         <p style="font-size:12px;color:#64748b;margin-top:4px;">
             * Gross = poker winnings before subscription cost. ** Net = after subtracting $299/month ($3,588/year) subscription.
-            Projections use the average win rate for each stake level (8,000 hands/month volume).
+            Projections use a mid-to-upper win rate for each stake level at 8,000 hands/month. Your actual rate depends on table composition and execution consistency.
         </p>
     """, unsafe_allow_html=True)
 
@@ -598,7 +598,6 @@ def main():
             over 8,000 hands/month (40 sessions × 200 hands). Variance is real, unavoidable, and
             the single biggest reason players abandon winning strategies.
         </p>
-        </p>
     """, unsafe_allow_html=True)
 
     c1, c2 = st.columns([3, 2])
@@ -769,11 +768,11 @@ def main():
                     <tr><th>Position</th><th>Opening Range</th><th>Hands</th><th>EV Impact</th></tr>
                 </thead>
                 <tbody>
-                    <tr><td>UTG</td><td>12%</td><td>~160 combos</td><td class="neu">Baseline</td></tr>
-                    <tr><td>Hijack</td><td>18%</td><td>~240 combos</td><td class="pos">+0.5 BB/100</td></tr>
-                    <tr><td>Cutoff</td><td>27%</td><td>~360 combos</td><td class="pos">+1.2 BB/100</td></tr>
-                    <tr><td>Button</td><td>42%</td><td>~560 combos</td><td class="pos">+2.8 BB/100</td></tr>
-                    <tr><td>Small Blind</td><td>36%</td><td>~480 combos</td><td class="neg">-0.4 BB/100</td></tr>
+                    <tr><td>UTG</td><td>10%</td><td>~130 combos</td><td class="neu">Baseline</td></tr>
+                    <tr><td>Hijack</td><td>14%</td><td>~185 combos</td><td class="pos">+0.5 BB/100</td></tr>
+                    <tr><td>Cutoff</td><td>25%</td><td>~330 combos</td><td class="pos">+1.2 BB/100</td></tr>
+                    <tr><td>Button</td><td>43%</td><td>~570 combos</td><td class="pos">+2.8 BB/100</td></tr>
+                    <tr><td>Small Blind</td><td>40%</td><td>~530 combos</td><td class="neg">-0.4 BB/100</td></tr>
                     <tr><td>Big Blind</td><td>Defense</td><td>Variable</td><td class="neg">-2.0 BB/100</td></tr>
                 </tbody>
             </table>
@@ -785,7 +784,7 @@ def main():
                 <h4>📍 The Button Advantage</h4>
                 <p>
                     The button is worth approximately +2.8 BB/100 compared to average position.
-                    This is why we open 42% of hands from the button but only 12% from UTG.
+                    This is why we open 43% of hands from the button but only 10% from UTG.
                     The same hand can be +EV in one position and -EV in another.
                 </p>
             </div>
@@ -998,7 +997,7 @@ def main():
         st.markdown("**Risk of Ruin by Bankroll Size:**")
         st.markdown("""
             <table class="dtable">
-                <thead><tr><th>Buy-ins</th><th>Bankroll ($1/$2)</th><th>Risk of Ruin</th></tr></thead>
+                <thead><tr><th>Buy-ins</th><th>Bankroll ($1/$2)</th><th>Risk of Ruin*</th></tr></thead>
                 <tbody>
                     <tr><td>10 BI</td><td>$2,000</td><td class="neg">8.2%</td></tr>
                     <tr><td>13 BI</td><td>$2,600</td><td class="neu">2.1%</td></tr>
@@ -1007,6 +1006,9 @@ def main():
                     <tr><td>20 BI</td><td>$4,000</td><td class="pos">0.1%</td></tr>
                 </tbody>
             </table>
+            <p style="font-size:12px;color:#64748b;margin-top:4px;">
+                * Simulated RoR with stop-loss protection active. Without stop-losses, the raw formula produces higher ruin probabilities. Your actual RoR is shown on the Bankroll Health page using your real data.
+            </p>
         """, unsafe_allow_html=True)
         st.markdown("""
             <div class="ibox">
@@ -1050,7 +1052,7 @@ def main():
         st.markdown("""
             <div class="ibox">
                 <h4>💡 Stop-Loss & Stop-Win</h4>
-                <p>Beyond fatigue, emotional state affects decisions. Our stop-loss (1 BI) and stop-win (3 BI) thresholds end sessions before tilt or overconfidence degrades your edge.</p>
+                <p>Beyond fatigue, emotional state affects decisions. Stop-loss thresholds (0.75–1.25 BI depending on your risk mode) and stop-win (3 BI) end sessions before tilt or overconfidence degrades your edge.</p>
             </div>
         """, unsafe_allow_html=True)
         st.markdown("""
@@ -1077,14 +1079,17 @@ def main():
 
     st.markdown("""
         <div class="wbox">
-            <h4>⚠️ Real-World Win Rate Depends on Table Composition</h4>
+            <h4>⚠️ Real-World Win Rate Depends on Table Composition and Execution</h4>
             <p>
-                +8 BB/100 is achievable at soft tables with multiple recreational opponents — which
-                is typical at $0.50/$1 and common at $1/$2. At tougher tables with more regulars,
-                expect +5 to +6 BB/100. The engine's strategy doesn't change, but your <em>opportunity</em>
-                to exploit mistakes decreases when opponents make fewer of them. This is why table
-                selection matters — and why we present ranges. Verified across a 10,000,000-hand
-                Monte Carlo simulation using realistic opponent mixes at each stake level.
+                +8 BB/100 is achievable at soft tables with multiple recreational opponents and
+                full compliance with app recommendations — which is typical at $0.50/$1 and common
+                at $1/$2. At tougher tables with more regulars, expect +5 to +6 BB/100. Every
+                deviation from the app's recommendations introduces -EV that reduces your effective
+                rate. The engine's strategy doesn't change, but your <em>opportunity</em> to exploit
+                mistakes decreases when opponents make fewer of them — and your edge shrinks when
+                you override the decisions. This is why table selection and discipline both matter.
+                Verified across a 10,000,000-hand Monte Carlo simulation using realistic opponent
+                mixes at each stake level.
             </p>
         </div>
     """, unsafe_allow_html=True)

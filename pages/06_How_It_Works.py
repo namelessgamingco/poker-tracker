@@ -180,7 +180,7 @@ def main():
     """, unsafe_allow_html=True)
 
     # ===== THREE PILLARS =====
-    st.markdown('<div class="sdiv"><h2>The Three Pillars</h2><p>Everything you need to win consistently</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="sdiv"><h2>The Three Pillars</h2><p>Three integrated systems working together every hand</p></div>', unsafe_allow_html=True)
 
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -208,6 +208,16 @@ def main():
             <div class="dshow-scenario">You have A♠ K♥ on the Button facing a $6 raise</div>
             <div class="dshow-action">RAISE TO $18</div>
             <div class="dshow-why">3-bet for value with premium hand in position. AK plays best heads-up with initiative. Sizing: 3× the open to isolate and build the pot.</div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+        <div class="cbox" style="border-left-color:#3b82f6;background:linear-gradient(135deg,rgba(59,130,246,0.08) 0%,rgba(59,130,246,0.03) 100%);">
+            <h3 style="color:#60a5fa;">📌 What This App Is — And What It Isn't</h3>
+            <p>
+                <strong>This app is built for 6-max No-Limit Hold'em online cash games</strong> from $0.50/$1 through $25/$50. You input your cards, position, and situation manually — the app does not read your screen or connect to any poker client. It works alongside any poker platform with no software integration required.<br><br>
+                <strong>Not supported:</strong> Tournaments (MTT/SNG), full ring (9-max), or live/in-person play. The decision engine is optimized specifically for 6-max cash game dynamics.
+            </p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -263,7 +273,7 @@ def main():
             <div class="fcard" style="border-color: #22c55e;">
                 <div class="fcard-title" style="font-size:18px;">📊 Sim-Verified Win Rate: +5 to +8 BB/100</div>
                 <div class="fcard-body" style="line-height:2.0;">
-                    <strong>Backed by a 10,000,000-hand Monte Carlo simulation against the actual engine:</strong><br><br>
+                    <strong>Backed by a 10,000,000-hand Monte Carlo simulation against realistic opponent populations:</strong><br><br>
                     <strong style="color:#22c55e;">Decision Engine:</strong> +5.5 to +6.0 BB/100<br>
                     <span style="color:#64748b;">— Pre-flop ranges, postflop c-betting, check-raises, bluff EV, villain adjustments, multiway protection</span><br><br>
                     <strong style="color:#22c55e;">Session & Tilt Management:</strong> +1.0 BB/100<br>
@@ -271,9 +281,9 @@ def main():
                     <strong style="color:#22c55e;">Sizing & Opponent Exploitation:</strong> +1.0 BB/100<br>
                     <span style="color:#64748b;">— Exact dollar bets, +20% sizing vs fish, board-aware adjustments</span><br><br>
                     <span style="background:#22c55e;color:white;padding:4px 12px;border-radius:6px;font-weight:700;">
-                        Total: +5 to +8 BB/100
-                    </span>
-                    <span style="color:#64748b;font-size:13px;margin-left:8px;">at $1/$2 (higher at soft tables, lower at tough ones)</span>
+                        Total: +7.5 to +8.0 BB/100 at full potential
+                    </span><br><br>
+                    <span style="color:#64748b;font-size:13px;">Real-world range: <strong style="color:#e2e8f0;">+5 to +8 BB/100</strong> — the low end reflects tougher tables with more regulars and any deviation from the app's recommendations. The high end reflects soft tables with full compliance. See <strong>EV System</strong> for the full breakdown.</span>
                 </div>
             </div>
         """, unsafe_allow_html=True)
@@ -282,11 +292,11 @@ def main():
             <div class="fcard" style="margin-top:12px;border-color:#3b82f6;">
                 <div class="fcard-title" style="font-size:15px;">📈 The Assumptions</div>
                 <div class="fcard-body" style="line-height:1.9;">
-                    40 sessions per month (about 10 per week) · 200 hands per session ·
-                    2-3 hours per session · <strong>100% compliance — which is what the app delivers</strong>.
-                    The app is the execution layer. Your job is to input the situation and follow
-                    the decision. See <strong>EV System</strong> page for full projections at every
-                    volume tier with gross and net breakdowns.
+                    40 sessions per month (about 9–10 per week) · 200 hands per session ·
+                    2-3 hours per session · <strong>100% compliance maximizes your rate</strong>.
+                    The app handles the math. Your job is to input the situation, follow the
+                    decision, and let consistency compound. See <strong>EV System</strong> page for
+                    full projections at every volume tier with gross and net breakdowns.
                 </div>
             </div>
         """, unsafe_allow_html=True)
@@ -381,7 +391,7 @@ def main():
     st.markdown('<div class="sdiv"><h2>Frequently Asked Questions</h2><p>Common questions from new users</p></div>', unsafe_allow_html=True)
 
     with st.expander("How fast can I input my cards and get a decision?"):
-        st.markdown("About **3-5 seconds** for most situations. The app is designed for speed — you'll have your answer well before your turn timer runs out. With practice, many users get it down to 2-3 seconds.")
+        st.markdown("About **3-5 seconds** for most situations. The app is designed for speed — input your cards, get your action, execute. With practice, many users get it down to 2-3 seconds.")
 
     with st.expander("What if the app tells me to fold a hand I want to play?"):
         st.markdown("**Fold it.** The app isn't trying to make poker fun — it's trying to make you money. That \"fun\" hand is likely costing you money long-term. Trust the math.")
@@ -395,6 +405,9 @@ def main():
     with st.expander("Does this work for tournaments?"):
         st.markdown("**No.** This app is designed specifically for **6-max No-Limit Hold'em cash games**. Tournament poker has different considerations (ICM, stack sizes, blind levels) that this app doesn't account for.")
 
+    with st.expander("Which poker platforms does this work with?"):
+        st.markdown("**All of them.** You input the situation manually, so the app works alongside any online poker site — PokerStars, GGPoker, ACR, Ignition, CoinPoker, or any other platform. No software integration or download required on the poker client side.")
+
     with st.expander("How does it handle bluffs?"):
         st.markdown("The engine identifies profitable bluff spots — dry board c-bets, river barrels, turn probes — and calculates exact EV: break-even fold %, estimated opponent fold rate, and expected profit per bluff. All bluffs are limited to heads-up pots where fold equity exists. Your bluff stats are tracked over time.")
 
@@ -405,7 +418,7 @@ def main():
         st.markdown("At $1/$2 stakes playing 10 sessions/week, the sim-verified expected monthly gross is **$1,120** (net **$821 after the $299 subscription**). At $2/$5 it's **$2,800 gross / $2,501 net**. The app pays for itself in roughly **11 sessions at $1/$2** or **4 sessions at $2/$5**. See the **EV System** page for the full breakdown.")
 
     with st.expander("What about rakeback?"):
-        st.markdown("Rakeback is money your poker site returns to you from the rake collected on every hand — and it stacks on top of your win rate. At $1/$2 with a typical 30% rakeback deal, you can collect **$336–$480/month** in rakeback alone, which more than covers the $299 subscription before your table winnings even factor in. If you're not collecting rakeback, you're leaving real money on the table. See the **EV System** page for the full rakeback breakdown by stakes.")
+        st.markdown("Rakeback is money your poker site returns to you from the rake collected on every hand — and it stacks on top of your win rate. At $1/$2 with a typical 30% rakeback deal, you can collect **$336–$480/month** in rakeback alone, which can cover the $299 subscription on its own at typical volumes — with your table winnings as pure profit on top. If you're not collecting rakeback, you're leaving real money on the table. See the **EV System** page for the full rakeback breakdown by stakes.")
 
 
 if __name__ == "__main__":

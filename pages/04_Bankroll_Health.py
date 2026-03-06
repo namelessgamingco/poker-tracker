@@ -915,8 +915,9 @@ def render_empty_state():
             <div class="edu-title">When to Move Up & Down</div>
             <div class="edu-text">
                 <span class="edu-ok">Move UP</span> when your bankroll reaches 
-                <span class="edu-highlight">20 buy-ins of the next stake</span>. 
-                This gives you extra cushion as you adjust to tougher competition.
+                your risk mode's buy-in requirement at the next stake level
+                (e.g. <span class="edu-highlight">15 buy-ins</span> in Balanced mode). 
+                The app tracks this automatically and tells you when you're ready.
             </div>
             <div class="edu-text">
                 <span class="edu-warn">Move DOWN</span> when your bankroll drops to 
@@ -936,25 +937,31 @@ def render_empty_state():
         <div class="edu-section">
             <div class="edu-title">What You Can Expect</div>
             <div class="edu-subtitle">
-                Annual profit projections using the Nameless decision engine at 
-                10 sessions/week, 200 hands/session, +6 BB/100 win rate.
+                Annual profit projections at 10 sessions/week, 200 hands/session.
+                Includes table winnings (+7 BB/100 average) plus 30% rakeback.
             </div>
             <div class="sg sg-3">
                 <div class="si">
                     <div class="si-label">$1/$2</div>
-                    <div class="si-val green">$20,000–$24,000</div>
-                    <div class="si-detail">per year</div>
+                    <div class="si-val green">$18,000–$22,000</div>
+                    <div class="si-detail">per year (table + rakeback)</div>
                 </div>
                 <div class="si">
                     <div class="si-label">$2/$5</div>
-                    <div class="si-val green">$50,000–$60,000</div>
-                    <div class="si-detail">per year</div>
+                    <div class="si-val green">$42,000–$50,000</div>
+                    <div class="si-detail">per year (table + rakeback)</div>
                 </div>
                 <div class="si">
                     <div class="si-label">$5/$10</div>
-                    <div class="si-val green">$100,000–$120,000</div>
-                    <div class="si-detail">per year</div>
+                    <div class="si-val green">$80,000–$96,000</div>
+                    <div class="si-detail">per year (table + rakeback)</div>
                 </div>
+            </div>
+            <div style="font-family:'Inter',sans-serif;font-size:11px;color:rgba(255,255,255,0.25);
+                margin-top:12px;line-height:1.6;text-align:center;">
+                Table winnings: 100,000 hands/yr × win rate × BB size.
+                Rakeback: ~30% of rake generated (platform dependent).
+                See the <span style="color:rgba(255,255,255,0.40);font-weight:600;">EV System</span> page for detailed breakdowns.
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -1152,8 +1159,8 @@ def render_empty_state():
 
         # Move up/down callout
         nxt = get_next_stakes(rec)
-        move_up_text = (f'Move up to {nxt["name"]} when you reach {fmtc(nxt["typical_bi"] * 20)} '
-                        f'(20 buy-ins at next level).' if nxt else "You're at the highest tracked stakes.")
+        move_up_text = (f'Move up to {nxt["name"]} when you reach {fmtc(nxt["typical_bi"] * req_bis)} '
+                        f'({req_bis} buy-ins at next level).' if nxt else "You're at the highest tracked stakes.")
         move_down_text = (f' Move down if you drop to {fmtc(rec["typical_bi"] * 12)} (12 buy-ins).'
                           if rec != STAKES_CONFIG[0] else '')
 
@@ -1359,10 +1366,10 @@ def render_bankroll_editor(bankroll, user_id, risk_mode, rec_stakes):
     # Move-up/down thresholds for context
     threshold_parts = []
     if nxt:
-        move_up_br = nxt["typical_bi"] * 20
+        move_up_br = nxt["typical_bi"] * mode["buy_ins"]
         threshold_parts.append(
             f'Move up to <span style="color:#69F0AE;font-weight:600;">{nxt["name"]}</span> '
-            f'at {fmtc(move_up_br)} (20 buy-ins)'
+            f'at {fmtc(move_up_br)} ({mode["buy_ins"]} buy-ins)'
         )
     if rec_stakes != STAKES_CONFIG[0]:
         move_down_br = rec_stakes["typical_bi"] * 12

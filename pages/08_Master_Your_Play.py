@@ -191,9 +191,8 @@ def main():
         <div class="m-hero">
             <h1>🏆 Master Your Play</h1>
             <p>
-                Everything you need to maximize your profits. Follow these rules,
-                avoid these mistakes, and trust the process. This is your complete
-                playbook for consistent poker income.
+                The rules, the leaks, the math, and the mindset. Eight sections that
+                cover everything between you and consistent profit.
             </p>
         </div>
     """, unsafe_allow_html=True)
@@ -204,10 +203,10 @@ def main():
     st.markdown("""
         <div class="mquote">
             <div class="mquote-text">
-                "You are not a poker player anymore. You are an execution machine.
+                "You are not guessing anymore. You are executing a system.
                 Your job is to input the situation, receive the optimal action, and execute it
                 without hesitation, emotion, or second-guessing. The math does the thinking.
-                You do the clicking."
+                Discipline is what separates winners from everyone else."
             </div>
             <div class="mquote-src">— The Core Philosophy</div>
         </div>
@@ -493,7 +492,7 @@ def main():
                 <h3>💰 When to Move Up</h3>
                 <p>
                     You move up when Bankroll Health says you can — not when you want to.
-                    Typically this means 15+ buy-ins at the new stake level.
+                    Your risk mode sets the buy-in requirement (13–17 depending on mode).
                     <br><br>
                     <strong>Wrong:</strong> "I won 3 sessions, time for $2/$5!"<br>
                     <strong>Right:</strong> "Bankroll Health shows I can play $2/$5. Moving up."
@@ -546,7 +545,7 @@ def main():
                 <p>
                     At $2/$5 and above, you face more regulars and fewer recreational players.
                     Your BB/100 win rate will be lower even with perfect play — at $10/$20 and $25/$50
-                    expect +3 to +5 BB/100 compared to +5 to +8 at $1/$2. The dollar profit
+                    expect +3 to +5 BB/100 compared to +5 to +8 at $1/$2 where tables are softer. The dollar profit
                     still increases because the stakes are bigger, but don't expect the same
                     edge you have at lower stakes. Move up for the right reasons — bankroll, not ego.
                 </p>
@@ -619,7 +618,7 @@ def main():
             <div class="fcard-eq">Perfect Execution + Proper Bankroll + Session Discipline = Consistent Profit</div>
             <div class="fcard-bd">
                 Follow every decision × Play correct stakes × End sessions on time<br>
-                = +5 to +8 BB/100 win rate = $9,800 to $54,000+/year net profit depending on stakes<br>
+                = +5 to +8 BB/100 win rate depending on table composition and execution = $9,800 to $54,000+/year net profit depending on stakes<br>
                 <span style="font-size:12px;opacity:0.8;">(after $299/month subscription · app covers its cost in 4-11 sessions)</span>
             </div>
         </div>
@@ -678,7 +677,7 @@ def main():
                 The willingness to follow it perfectly — that's rare. That's what you're paying for.
                 That's what makes you profitable."
             </div>
-            <div class="mquote-src" style="color:#22c55e;">— Your Edge</div>
+            <div class="mquote-src" style="color:#22c55e;">— The Nameless Poker Philosophy</div>
         </div>
     """, unsafe_allow_html=True)
 

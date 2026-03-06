@@ -34,7 +34,7 @@ STAKES_OPTIONS = [
 
 RISK_MODES = {
     "aggressive": {
-        "name": "Aggressive", "icon": "🔥", "color": "#FF5252",
+        "name": "Aggressive", "icon": "🔥", "color": "#FFB300",
         "buy_ins": 13, "stop_loss": 0.75, "stop_win": 3.0, "ror": "~0.28%",
         "desc": "Faster stake progression, tighter stop-loss. For experienced players comfortable with variance.",
     },
@@ -321,8 +321,8 @@ def main():
             '<div class="setting-item">'
             '<div class="setting-name">Session Time Warning</div>'
             '<div class="setting-why">'
-            'Decision quality drops ~8% at 3 hours and ~15% at 4+ hours. '
-            'You\'ll see a warning banner after this many hours to help you quit while you\'re still sharp.'
+            'Decision quality drops ~2% after 2 hours and accelerates from there — ~8% by hour 4, ~15% by hour 5. '
+            'The default 3-hour warning fires before the steeper decline begins.'
             '</div></div>', unsafe_allow_html=True
         )
         warning_hours = st.slider(

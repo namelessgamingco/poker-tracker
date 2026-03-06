@@ -4,6 +4,7 @@
 
 import streamlit as st
 import html as _html
+import uuid as _uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
 
@@ -1583,35 +1584,60 @@ def render_setup_mode():
 
     # ── Start button ──
     if st.button("▶️  Start Session", type="primary", use_container_width=True, disabled=not override):
-        session = create_session(
-            user_id=user_id,
-            stakes=selected_stakes,
-            bb_size=bb_size,
-            buy_in_amount=buy_in,
-            bankroll_at_start=current_bankroll if current_bankroll > 0 else None,
-            stop_loss_amount=stop_loss,
-            stop_win_amount=stop_win,
-        )
-        if session:
-            st.session_state.current_session = session
-            st.session_state.session_mode = "play"
-            st.session_state.our_stack = buy_in
-            st.session_state.session_pl = 0.0
-            st.session_state.hands_played = 0
-            st.session_state.decisions_requested = 0
-            st.session_state.hand_outcomes = []
-            st.session_state.session_bluff_spots = 0
-            st.session_state.session_bluff_bets = 0
-            st.session_state.session_bluff_folds_won = 0
-            st.session_state.session_bluff_profit = 0.0
-            st.session_state.current_loss_streak = 0
-            st.session_state.tilt_banner_shown_at_streak = 0
-            st.session_state.tilt_banner_shown_at_pl = None
-            clear_hand_state()
-            update_sidebar_session_info(session, 0)
-            st.rerun()
-        else:
-            st.error("Failed to create session. Please try again.")
+        # ── Optimistic session creation ──
+        # Build the session dict locally and proceed immediately.
+        # The DB INSERT runs in a background thread — user sees the play screen instantly.
+        # The session ID is generated client-side (UUID4) and used for all subsequent writes.
+        session_id = str(_uuid.uuid4())
+        started_at = datetime.now(timezone.utc).isoformat()
+        session = {
+            "id": session_id,
+            "user_id": user_id,
+            "stakes": selected_stakes,
+            "bb_size": bb_size,
+            "buy_in_amount": buy_in,
+            "bankroll_at_start": current_bankroll if current_bankroll > 0 else None,
+            "stop_loss_amount": stop_loss,
+            "stop_win_amount": stop_win,
+            "started_at": started_at,
+            "status": "active",
+            "hands_played": 0,
+            "decisions_requested": 0,
+            "outcomes_won": 0,
+            "outcomes_lost": 0,
+            "outcomes_folded": 0,
+            "is_test": False,
+        }
+
+        # Fire DB write in background — never blocks the UI
+        import threading
+        def _bg_create():
+            try:
+                from db import get_supabase_admin_for_thread
+                sb = get_supabase_admin_for_thread()
+                sb.table("poker_sessions").insert(session).execute()
+            except Exception as e:
+                print(f"[session] Background create_session failed: {e}")
+        threading.Thread(target=_bg_create, daemon=True).start()
+
+        st.session_state.current_session = session
+        st.session_state.session_mode = "play"
+        st.session_state.our_stack = buy_in
+        st.session_state.session_pl = 0.0
+        st.session_state.hands_played = 0
+        st.session_state.decisions_requested = 0
+        st.session_state.hand_outcomes = []
+        st.session_state.hand_log_entries = []
+        st.session_state.session_bluff_spots = 0
+        st.session_state.session_bluff_bets = 0
+        st.session_state.session_bluff_folds_won = 0
+        st.session_state.session_bluff_profit = 0.0
+        st.session_state.current_loss_streak = 0
+        st.session_state.tilt_banner_shown_at_streak = 0
+        st.session_state.tilt_banner_shown_at_pl = None
+        clear_hand_state()
+        update_sidebar_session_info(session, 0)
+        st.rerun()
 
 
 # =============================================================================
