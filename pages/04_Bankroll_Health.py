@@ -1250,13 +1250,15 @@ def render_hero(bankroll, stats, rec_stakes, risk_mode):
     # Explain data sources: bankroll = manual, stats = automatic from sessions
     if stats["has_data"]:
         source_text = (
-            f'Your bankroll is set by you — update it below after deposits or withdrawals. '
-            f'Hourly rate, win rate, and hours are pulled automatically from your '
-            f'{stats["total_sessions"]} tracked sessions and drive your move-up projections.'
+            f'Your bankroll updates automatically after each session. '
+            f'Adjust it below for deposits or withdrawals. '
+            f'Hourly rate, win rate, and hours are pulled from your '
+            f'{stats["total_sessions"]} tracked sessions.'
         )
     else:
         source_text = (
-            'Your bankroll is set by you — update it below after deposits or withdrawals. '
+            'Your bankroll will update automatically after each session. '
+            'Adjust it below for deposits or withdrawals. '
             'Once you play sessions, your hourly rate and win rate will populate automatically '
             'from real data and power your move-up projections.'
         )
@@ -1281,10 +1283,8 @@ def render_bankroll_editor(bankroll, user_id, risk_mode, rec_stakes):
             <div class="dk-hdr">💰 UPDATE BANKROLL</div>
             <div style="font-family:'Inter',sans-serif;font-size:12px;color:rgba(255,255,255,0.40);
                 line-height:1.6;margin-bottom:16px;">
-                Update your bankroll after deposits, withdrawals, or at the start of each week. 
-                This is your total poker bankroll — it's not automatically adjusted by session results. 
-                Your session P/L feeds the stats above (hourly rate, win rate), but your bankroll 
-                number is always set by you.
+                Your bankroll updates automatically after each session. 
+                Use this to adjust for deposits, withdrawals, or to sync with your actual total across all accounts.
                 Currently <span style="color:#fff;font-weight:600;">{fmtc(bankroll)}</span> = 
                 <span style="color:{mode['color']};font-weight:600;">{bis:.1f} buy-ins</span> at 
                 <span style="color:#fff;font-weight:600;">{rec_stakes['name']}</span>.

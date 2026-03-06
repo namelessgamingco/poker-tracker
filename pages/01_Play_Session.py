@@ -1373,6 +1373,30 @@ def render_session_end_modal(data: dict) -> bool:
         </div>
         """, unsafe_allow_html=True)
 
+    # ── Bankroll update confirmation ──
+    bankroll_before = data.get("bankroll_before")
+    bankroll_after = data.get("bankroll_after")
+    if bankroll_before and bankroll_after:
+        br_diff = bankroll_after - bankroll_before
+        br_sign = "+" if br_diff >= 0 else ""
+        br_color = "#69F0AE" if br_diff >= 0 else "#FF5252"
+        st.markdown(f"""
+        <div style="margin: 12px 0; padding: 12px 16px;
+            background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 10px; text-align: center;">
+            <div style="font-family: 'Inter', sans-serif; font-size: 11px; color: rgba(255,255,255,0.35);
+                text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px;">
+                💰 Bankroll Updated
+            </div>
+            <div style="font-family: 'JetBrains Mono', monospace; font-size: 15px; color: rgba(255,255,255,0.6);">
+                ${bankroll_before:,.0f}
+                <span style="margin: 0 8px;">→</span>
+                <span style="color: #fff; font-weight: 700;">${bankroll_after:,.0f}</span>
+                <span style="color: {br_color}; font-weight: 600; margin-left: 8px;">({br_sign}${abs(br_diff):,.0f})</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
     if st.button("Close Session", type="primary", use_container_width=True, key="close_session_btn"):
         dismiss_modal()
         st.session_state.session_mode = "setup"
@@ -1707,7 +1731,6 @@ def handle_decision_request(game_state: dict, session: dict):
         board = game_state.get("board", None)
         board_texture = game_state.get("board_texture", None)
         hand_strength = game_state.get("hand_strength", None)
-        is_nuts = bool(game_state.get("is_nuts", False))
         villain_type = game_state.get("villain_type", "unknown")
         we_are_aggressor = game_state.get("we_are_aggressor", False)
         num_limpers = int(game_state.get("num_limpers", 0))
@@ -1739,7 +1762,6 @@ def handle_decision_request(game_state: dict, session: dict):
             we_are_aggressor=we_are_aggressor,
             action_facing=action_facing,
             villain_type=villain_type,
-            is_nuts=is_nuts,
         )
 
         # Serialize for React (includes bluff_context + alternative)
@@ -2061,6 +2083,8 @@ def render_end_session():
                     session_id=session_id,
                     current_stakes=stakes,
                 )
+                # Sync to session state so sidebar updates immediately
+                st.session_state["bankroll"] = new_bankroll
 
             # Get outcome summary
             summary = get_session_outcome_summary(session_id)
@@ -2073,6 +2097,9 @@ def render_end_session():
                 "losses": summary.get("losses", 0),
                 "folds": summary.get("folds", 0),
                 "bb_size": float(session.get("bb_size", 2.0)),
+                # Bankroll update data for confirmation display
+                "bankroll_before": current_bankroll if current_bankroll > 0 else None,
+                "bankroll_after": (current_bankroll + calculated_pl) if current_bankroll > 0 else None,
             })
 
             st.session_state.session_mode = "play"  # Show modal via play mode
