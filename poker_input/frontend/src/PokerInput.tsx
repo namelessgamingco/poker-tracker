@@ -1328,6 +1328,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       is_nuts: autoNuts,
       villain_type: gs.villain_type,
       we_are_aggressor: gs.we_are_aggressor,
+      total_invested: gs.total_invested,
       show_second_table: showSecondTable,
       active_table: activeTable,
       primary_holds_table: primaryHoldsTable,

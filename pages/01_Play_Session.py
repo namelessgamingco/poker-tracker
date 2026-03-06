@@ -1733,9 +1733,15 @@ def handle_decision_request(game_state: dict, session: dict):
         board = game_state.get("board", None)
         board_texture = game_state.get("board_texture", None)
         hand_strength = game_state.get("hand_strength", None)
+        is_nuts = bool(game_state.get("is_nuts", False))
         villain_type = game_state.get("villain_type", "unknown")
         we_are_aggressor = game_state.get("we_are_aggressor", False)
         num_limpers = int(game_state.get("num_limpers", 0))
+        
+        # Remaining stack = starting stack minus what we've already put in this hand
+        # This prevents the engine from recommending bets larger than what we have left
+        total_invested = float(game_state.get("total_invested", 0))
+        remaining_stack = max(0, our_stack - total_invested)
 
         # Pre-flop hand classification (with guard)
         if street == "preflop" and not hand_strength:
@@ -1748,8 +1754,8 @@ def handle_decision_request(game_state: dict, session: dict):
 
         decision = get_decision(
             stakes=stakes,
-            our_stack=our_stack,
-            villain_stack=our_stack,
+            our_stack=remaining_stack,
+            villain_stack=remaining_stack,
             pot_size=pot_size,
             facing_bet=facing_bet,
             our_position=position,
@@ -1764,6 +1770,7 @@ def handle_decision_request(game_state: dict, session: dict):
             we_are_aggressor=we_are_aggressor,
             action_facing=action_facing,
             villain_type=villain_type,
+            is_nuts=is_nuts,
         )
 
         # Serialize for React (includes bluff_context + alternative)
