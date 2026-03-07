@@ -849,7 +849,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   const table2DecisionFromPython = args["table2_decision"] as DecisionResult | null | undefined
   const table1BoardEntryIndexFromPython = args["table1_board_entry_index"] as number | undefined
   const table2BoardEntryIndexFromPython = args["table2_board_entry_index"] as number | undefined
-  const clearRecoveryFromPython = args["clear_recovery"] as boolean | undefined
+  const clearRecoveryFromPython = !!(args["clear_recovery"])
 
   // =========================================================================
   // SESSION STORAGE PERSISTENCE — survives Streamlit session resets
@@ -882,8 +882,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     } catch (_) {}
   }
 
-  // Check if Python sent real state OR explicitly told us to start fresh
-  // clear_recovery=true means "new session, ignore sessionStorage"
+  // Check if Python sent real state OR told us to start fresh
+  // clear_recovery means "new session, ignore sessionStorage"
   const hasPythonState = !!(
     clearRecoveryFromPython ||
     table1GameStateFromPython?.position ||

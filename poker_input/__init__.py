@@ -44,6 +44,7 @@ def poker_input(
     restore_state=None,
     hand_log=None,
     session_active=True,
+    clear_recovery=False,
     key=None,
 ):
     """
@@ -73,6 +74,7 @@ def poker_input(
         t2_decision: Legacy - Table 2 decision
         restore_state: Dict with game state to restore after rerun
         session_active: Whether session is active
+        clear_recovery: If True, tells React to clear sessionStorage and start fresh (new session)
         key: Streamlit component key
 
     Returns:
@@ -103,6 +105,7 @@ def poker_input(
         restore_state=restore_state,
         hand_log=hand_log,
         session_active=session_active,
+        clear_recovery=clear_recovery,
         key=key,
         default=None,
     )
