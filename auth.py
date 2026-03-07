@@ -108,6 +108,30 @@ def _gotrue_password_login(email: str, password: str) -> dict:
     return r.json()
 
 
+def _gotrue_refresh(refresh_token: str) -> Optional[dict]:
+    """Exchange a refresh token for new access + refresh tokens via GoTrue REST API.
+    
+    Used for silent re-authentication when Streamlit's server-side session resets
+    (e.g., Railway container restart, WebSocket collision). The refresh token
+    survives in st.query_params (browser URL) while st.session_state is wiped.
+    """
+    url = _supabase_url().rstrip("/")
+    key = _supabase_anon_key().strip()
+    if not url or not key:
+        return None
+    
+    endpoint = f"{url}/auth/v1/token?grant_type=refresh_token"
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+    }
+    r = httpx.post(endpoint, headers=headers, json={"refresh_token": refresh_token}, timeout=10.0)
+    if r.status_code >= 400:
+        return None
+    return r.json()
+
+
 # ---------- Session State Helpers ----------
 
 def _init_session_state():
@@ -191,6 +215,12 @@ def _hide_sidebar_while_logged_out():
 def sign_out():
     """Clear session and force re-render to login screen."""
     _clear_auth_state()
+    # Remove persisted refresh token from URL
+    try:
+        if "_rt" in st.query_params:
+            del st.query_params["_rt"]
+    except Exception:
+        pass
     st.rerun()
 
 
@@ -280,6 +310,14 @@ section[data-testid="stSidebar"] {display: none !important;}
 
             st.session_state["email"] = user_email
             st.session_state["is_admin"] = user_email in ADMIN_EMAILS
+
+            # Persist refresh token in URL for session-reset survival
+            # When Streamlit kills a session ("already connected"), query_params
+            # survive because they're in the browser URL, not server memory.
+            try:
+                st.query_params["_rt"] = refresh_token
+            except Exception:
+                pass
 
             try:
                 reset_supabase_client()
@@ -498,11 +536,60 @@ def require_auth():
     
     Returns the user object if authenticated and has access.
     Shows login UI or lockout screen and stops execution if not.
+    
+    If Streamlit's server resets the session ("Session with id X is already 
+    connected! Connecting to a new session"), st.session_state is wiped but 
+    the refresh token survives in st.query_params (browser URL). This function
+    detects that scenario and silently re-authenticates without showing login.
     """
     _init_session_state()
     
     # Check if already authenticated this session
     if not st.session_state.get("authenticated"):
+        # ── Silent re-auth: recover from Streamlit session reset ──
+        # query_params survive session resets because they're in the browser URL.
+        rt = st.query_params.get("_rt")
+        if rt:
+            try:
+                reauth = _gotrue_refresh(rt)
+                if reauth and reauth.get("access_token"):
+                    access_token = reauth["access_token"]
+                    refresh_token = reauth.get("refresh_token", rt)
+                    user_obj = reauth.get("user", {})
+                    user_email = ""
+                    if isinstance(user_obj, dict):
+                        user_email = (user_obj.get("email") or "").strip().lower()
+                    
+                    # Re-populate session state
+                    st.session_state["authenticated"] = True
+                    st.session_state["access_token"] = access_token
+                    st.session_state["refresh_token"] = refresh_token
+                    st.session_state["user"] = user_obj
+                    st.session_state["email"] = user_email
+                    st.session_state["is_admin"] = user_email in ADMIN_EMAILS
+                    
+                    # Rotate the stored refresh token
+                    try:
+                        st.query_params["_rt"] = refresh_token
+                    except Exception:
+                        pass
+                    
+                    print(f"[auth] Silent re-auth successful for {user_email}")
+                    st.rerun()
+                else:
+                    # Refresh failed (token expired/revoked) — clear and show login
+                    print("[auth] Silent re-auth: refresh token invalid, clearing")
+                    try:
+                        del st.query_params["_rt"]
+                    except Exception:
+                        pass
+            except Exception as e:
+                print(f"[auth] Silent re-auth failed: {e}")
+                try:
+                    del st.query_params["_rt"]
+                except Exception:
+                    pass
+        
         _login_ui()
         st.stop()
     

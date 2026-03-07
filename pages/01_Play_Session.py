@@ -1439,6 +1439,28 @@ def render_setup_mode():
     # Check for active session
     active_session = get_active_session(user_id) if user_id else None
     if active_session:
+        # ── Auto-recovery: if we got here via silent re-auth (session reset),
+        # skip the "Continue Session" button and rejoin immediately.
+        # The user was mid-play when Streamlit killed the session — don't make
+        # them click a button to get back. The _rt query param indicates we
+        # just recovered from a session reset (it's set during login and cleared on sign-out).
+        auto_recover = "_rt" in st.query_params
+        
+        if auto_recover:
+            # Auto-continue — restore from DB and jump straight to play
+            st.session_state.current_session = active_session
+            st.session_state.session_mode = "play"
+            st.session_state.our_stack = float(
+                active_session.get("current_stack")
+                or active_session.get("buy_in_amount", 200)
+            )
+            st.session_state.session_pl = float(active_session.get("profit_loss", 0) or 0)
+            st.session_state.hands_played = int(active_session.get("hands_played", 0) or 0)
+            st.session_state.hand_log_entries = get_session_hand_log(active_session["id"])
+            update_sidebar_session_info(active_session, st.session_state.session_pl)
+            st.rerun()
+            return
+
         st.markdown('<div class="alert-banner warning"><span class="alert-icon">⚠️</span><div><span class="alert-title">Active session found.</span> Your session stats are saved. Any in-progress hand will need to be re-entered.</div></div>', unsafe_allow_html=True)
 
         col1, col2 = st.columns(2)
@@ -1704,7 +1726,10 @@ def render_play_mode():
         # New session (or first load) — clear any stale data from a previous session
         st.session_state._last_play_session_id = session_id
         st.session_state.two_table_restore = None
+        st.session_state._clear_recovery = True  # Tell React to ignore sessionStorage
         clear_hand_state()
+    else:
+        st.session_state._clear_recovery = False
     
     # If an intentional rerun just happened, consume the flag (still used for
     # ensuring two_table_restore survives handler→rerun→render cycles)
@@ -1733,6 +1758,7 @@ def render_play_mode():
         table2_board_entry_index=restore.get("table2_board_entry_index") if restore else None,
         hand_log=st.session_state.get("hand_log_entries", []),
         session_active=True,
+        clear_recovery=st.session_state.get("_clear_recovery", False),
         key="poker_input_main",
     )
 

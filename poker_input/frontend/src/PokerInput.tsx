@@ -849,9 +849,56 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   const table2DecisionFromPython = args["table2_decision"] as DecisionResult | null | undefined
   const table1BoardEntryIndexFromPython = args["table1_board_entry_index"] as number | undefined
   const table2BoardEntryIndexFromPython = args["table2_board_entry_index"] as number | undefined
+  const clearRecoveryFromPython = args["clear_recovery"] as boolean | undefined
+
+  // =========================================================================
+  // SESSION STORAGE PERSISTENCE — survives Streamlit session resets
+  // =========================================================================
+  // When Railway/Streamlit kills the server session ("already connected"),
+  // st.session_state is wiped and Python sends empty props. But the browser
+  // tab is still open and sessionStorage survives. We save hand state here
+  // so the React component can restore it on remount instead of going blank.
+  const SS_KEY = "nameless_poker_hand_state"
+
+  function saveToSessionStorage(data: Record<string, any>) {
+    try {
+      window.sessionStorage.setItem(SS_KEY, JSON.stringify(data))
+    } catch (_) {}
+  }
+
+  function loadFromSessionStorage(): Record<string, any> | null {
+    try {
+      const raw = window.sessionStorage.getItem(SS_KEY)
+      if (!raw) return null
+      return JSON.parse(raw)
+    } catch (_) {
+      return null
+    }
+  }
+
+  function clearSessionStorage() {
+    try {
+      window.sessionStorage.removeItem(SS_KEY)
+    } catch (_) {}
+  }
+
+  // Check if Python sent real state OR explicitly told us to start fresh
+  // clear_recovery=true means "new session, ignore sessionStorage"
+  const hasPythonState = !!(
+    clearRecoveryFromPython ||
+    table1GameStateFromPython?.position ||
+    table2GameStateFromPython?.position ||
+    decisionFromPython ||
+    restoreState
+  )
+
+  // If Python says clear recovery, wipe stale sessionStorage immediately
+  if (clearRecoveryFromPython) {
+    clearSessionStorage()
+  }
 
   // ---- Game State ----
-  // On mount, restore from props if available (survives Streamlit reruns)
+  // Priority: 1) Python props  2) sessionStorage  3) fresh state
   const [gameState, setGameState] = useState<GameState>(() => {
     // Primary state holds the ACTIVE table's data
     // If primaryHoldsTable is 1: primary=Table1
@@ -883,6 +930,16 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         we_are_aggressor: rs.we_are_aggressor || false,
       }
     }
+    
+    // Fallback to sessionStorage — recovers hand state after Streamlit session reset
+    if (!hasPythonState) {
+      const saved = loadFromSessionStorage()
+      if (saved?.gameState?.position) {
+        console.log("[RECOVERY] Restoring hand from sessionStorage:", saved.gameState.position, saved.step)
+        return saved.gameState as GameState
+      }
+    }
+    
     return { ...FRESH_GAME_STATE }
   })
 
@@ -905,6 +962,15 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       if (street !== "preflop") return "board_rank"
       return "position"
     }
+    
+    // Fallback to sessionStorage
+    if (!hasPythonState) {
+      const saved = loadFromSessionStorage()
+      if (saved?.step && saved?.gameState?.position) {
+        return saved.step as InputStep
+      }
+    }
+    
     return "position"
   })
   const [pendingRank, setPendingRank] = useState<string>("")
@@ -948,6 +1014,12 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         if (street === "turn") return existingCards < 4 ? existingCards : 3
         if (street === "river") return existingCards < 5 ? existingCards : 4
       }
+      
+      // Fallback to sessionStorage
+      if (!hasPythonState) {
+        const saved = loadFromSessionStorage()
+        if (saved?.boardEntryIndex !== undefined) return saved.boardEntryIndex
+      }
       return 0
     })
     const [chosenBluffAction, setChosenBluffAction] = useState<"BET" | "CHECK" | null>(null)
@@ -961,11 +1033,31 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       return table2DecisionFromPython
     }
     
+    // Fallback to sessionStorage
+    if (!hasPythonState) {
+      const saved = loadFromSessionStorage()
+      if (saved?.decision) return saved.decision as DecisionResult
+    }
+    
     return null
   })
   const [keyboardActive, setKeyboardActive] = useState(mode !== "standard")
   const [showOverlay, setShowOverlay] = useState(false)
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
+
+  // =========================================================================
+  // PERSIST HAND STATE TO SESSION STORAGE (survives Streamlit session resets)
+  // =========================================================================
+  useEffect(() => {
+    if (gameState.position && step !== "position") {
+      saveToSessionStorage({
+        gameState,
+        step,
+        decision,
+        boardEntryIndex,
+      })
+    }
+  }, [gameState, step, decision, boardEntryIndex])
 
   // =========================================================================
   // TWO-TABLE MODE STATE (NEW)
@@ -1272,6 +1364,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     setBoardEntryIndex(0)
     setDecision(null)
     setChosenBluffAction(null)
+    clearSessionStorage()
   }, [])
 
   // ---- Submit game state to Streamlit ----
