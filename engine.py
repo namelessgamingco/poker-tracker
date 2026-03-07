@@ -1013,8 +1013,12 @@ def _hand_read(state: GameState) -> str:
     
     # ── SET (hidden monster — they can't see it) ──
     if dn == "set":
+        if street == Street.RIVER:
+            if bt == BoardTexture.WET:
+                return "You've got a set — your hand is hidden and the board is scary, but if they had the flush or straight they'd have raised by now"
+            return "You've got a set on the river — your hand is invisible and they'll pay off with worse"
         if bt == BoardTexture.WET:
-            return "You've got a set and it's completely hidden, but this board is draw-heavy"
+            return "You've got a set and it's completely hidden, but this board is draw-heavy — bet big to charge draws now"
         return "You've got a set — your hand is invisible and they'll overplay top pair against you"
     
     # ── TRIPS (visible — pair on board, kicker wars) ──
@@ -1040,6 +1044,8 @@ def _hand_read(state: GameState) -> str:
         board_cards = _parse_board_cards(board)
         flush_count = _count_flush_suits(board_cards) if board_cards else 0
         if flush_count >= 3:
+            if street == Street.RIVER:
+                return "You have a straight — but the flush-possible board means you could be behind if they have it"
             return "You have a straight but there's a flush draw on the board — you need to charge draws now before they get there"
         if bt == BoardTexture.PAIRED:
             return "You have a straight but the paired board means full houses are possible"
