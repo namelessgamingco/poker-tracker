@@ -278,36 +278,70 @@ def _hs_bare(hand_strength, display_name: str = None) -> str:
 
 # Open ranges by position (hands to open-raise with)
 # Format: set of hand strings
+# AUDIT FIX: Expanded all ranges to match 6-max GTO targets
+# UTG ~10%, HJ ~14%, CO ~25%, BTN ~43%, SB ~40%
 OPEN_RANGES = {
     Position.UTG: {
-        "AA", "KK", "QQ", "JJ", "TT", "99", "88", "77",
-        "AKs", "AQs", "AJs", "ATs", "KQs", "KJs", "KTs", "QJs",
+        "AA", "KK", "QQ", "JJ", "TT", "99", "88", "77", "66",
+        "AKs", "AQs", "AJs", "ATs", "A9s", "KQs", "KJs", "KTs", "QJs", "QTs", "JTs",
         "AKo", "AQo", "AJo"
     },
     Position.HJ: {
-        "AA", "KK", "QQ", "JJ", "TT", "99", "88", "77", "66",
-        "AKs", "AQs", "AJs", "ATs", "A9s", "KQs", "KJs", "KTs", "QJs", "QTs", "JTs", "T9s",
-        "AKo", "AQo", "AJo", "KQo"
+        "AA", "KK", "QQ", "JJ", "TT", "99", "88", "77", "66", "55",
+        "AKs", "AQs", "AJs", "ATs", "A9s", "A8s",
+        "KQs", "KJs", "KTs", "K9s", "QJs", "QTs", "JTs", "J9s", "T9s", "98s", "87s",
+        "AKo", "AQo", "AJo", "ATo", "KQo", "KJo"
     },
     Position.CO: {
-        "AA", "KK", "QQ", "JJ", "TT", "99", "88", "77", "66", "55", "44",
+        "AA", "KK", "QQ", "JJ", "TT", "99", "88", "77", "66", "55", "44", "33", "22",
         "AKs", "AQs", "AJs", "ATs", "A9s", "A8s", "A7s", "A6s", "A5s", "A4s", "A3s", "A2s",
-        "KQs", "KJs", "KTs", "K9s", "QJs", "QTs", "Q9s", "JTs", "J9s", "T9s", "98s", "87s", "76s", "65s",
-        "AKo", "AQo", "AJo", "ATo", "KQo", "KJo", "QJo"
+        "KQs", "KJs", "KTs", "K9s", "K8s", "K7s",
+        "QJs", "QTs", "Q9s", "JTs", "J9s", "J8s", "T9s", "T8s", "98s", "97s",
+        "87s", "86s", "76s", "75s", "65s", "64s", "54s",
+        "AKo", "AQo", "AJo", "ATo", "A9o", "KQo", "KJo", "KTo", "QJo", "QTo", "JTo"
     },
     Position.BTN: {
         "AA", "KK", "QQ", "JJ", "TT", "99", "88", "77", "66", "55", "44", "33", "22",
         "AKs", "AQs", "AJs", "ATs", "A9s", "A8s", "A7s", "A6s", "A5s", "A4s", "A3s", "A2s",
-        "KQs", "KJs", "KTs", "K9s", "K8s", "K7s", "K6s", "K5s",
-        "QJs", "QTs", "Q9s", "Q8s", "JTs", "J9s", "J8s", "T9s", "T8s", "98s", "97s", "87s", "86s", "76s", "75s", "65s", "64s", "54s", "53s", "43s",
-        "AKo", "AQo", "AJo", "ATo", "A9o", "KQo", "KJo", "KTo", "QJo", "QTo", "JTo"
+        "KQs", "KJs", "KTs", "K9s", "K8s", "K7s", "K6s", "K5s", "K4s", "K3s", "K2s",
+        "QJs", "QTs", "Q9s", "Q8s", "Q7s", "Q6s", "Q5s",
+        "JTs", "J9s", "J8s", "J7s",
+        "T9s", "T8s", "T7s",
+        "98s", "97s", "96s",
+        "87s", "86s", "85s",
+        "76s", "75s", "74s",
+        "65s", "64s", "63s",
+        "54s", "53s", "52s",
+        "43s",
+        "AKo", "AQo", "AJo", "ATo", "A9o", "A8o", "A7o", "A6o", "A5o",
+        "KQo", "KJo", "KTo", "K9o",
+        "QJo", "QTo", "Q9o",
+        "JTo", "J9o", "J8o",
+        "T9o", "T8o",
+        "98o", "97o",
+        "87o",
     },
     Position.SB: {
+        # Mirror BTN range (spec: "similar to BTN")
         "AA", "KK", "QQ", "JJ", "TT", "99", "88", "77", "66", "55", "44", "33", "22",
         "AKs", "AQs", "AJs", "ATs", "A9s", "A8s", "A7s", "A6s", "A5s", "A4s", "A3s", "A2s",
-        "KQs", "KJs", "KTs", "K9s", "K8s", "K7s", "K6s",
-        "QJs", "QTs", "Q9s", "Q8s", "JTs", "J9s", "J8s", "T9s", "T8s", "98s", "97s", "87s", "86s", "76s", "75s", "65s", "64s", "54s",
-        "AKo", "AQo", "AJo", "ATo", "A9o", "KQo", "KJo", "KTo", "QJo", "QTo", "JTo"
+        "KQs", "KJs", "KTs", "K9s", "K8s", "K7s", "K6s", "K5s", "K4s", "K3s", "K2s",
+        "QJs", "QTs", "Q9s", "Q8s", "Q7s", "Q6s", "Q5s",
+        "JTs", "J9s", "J8s", "J7s",
+        "T9s", "T8s", "T7s",
+        "98s", "97s", "96s",
+        "87s", "86s", "85s",
+        "76s", "75s", "74s",
+        "65s", "64s", "63s",
+        "54s", "53s", "52s",
+        "43s",
+        "AKo", "AQo", "AJo", "ATo", "A9o", "A8o", "A7o", "A6o", "A5o",
+        "KQo", "KJo", "KTo", "K9o",
+        "QJo", "QTo", "Q9o",
+        "JTo", "J9o", "J8o",
+        "T9o", "T8o",
+        "98o", "97o",
+        "87o",
     },
 }
 
@@ -2918,14 +2952,16 @@ class PokerDecisionEngine:
                     calculation=f"Overbet {bet_ratio*100:.0f}% pot — they're polarized",
                     confidence=0.90
                 )
-            if hand_strength in [HandStrength.TWO_PAIR]:
+            # AUDIT FIX 4: Overpair added — overbets are polarized (nuts or bluff),
+            # overpair has ~50%+ equity vs that polarized range at low stakes
+            if hand_strength in [HandStrength.TWO_PAIR, HandStrength.OVERPAIR]:
                 return Decision(
                     action=Action.CALL,
                     amount=state.facing_bet,
                     display=f"CALL ${state.facing_bet:.2f}",
-                    explanation=f"Call. Overbet is scary but {_hs(hand_strength, state.hand_strength_display)} beats enough of their range.",
-                    calculation=f"Overbet {bet_ratio*100:.0f}% pot",
-                    confidence=0.70
+                    explanation=f"Call. Overbet is scary but {_hs(hand_strength, state.hand_strength_display)} beats enough of their bluffs in this polarized spot.",
+                    calculation=f"Overbet {bet_ratio*100:.0f}% pot — polarized range",
+                    confidence=0.65
                 )
             # Fold everything else vs overbets
             return Decision(
@@ -3014,7 +3050,8 @@ class PokerDecisionEngine:
                     confidence=0.72
                 )
             # Strong draws — call with equity
-            if hand_strength in [HandStrength.COMBO_DRAW, HandStrength.FLUSH_DRAW]:
+            # AUDIT FIX 5: Added OESD (was excluded, only combo/flush checked)
+            if hand_strength in [HandStrength.COMBO_DRAW, HandStrength.FLUSH_DRAW, HandStrength.OESD]:
                 equity = get_draw_equity(hand_strength, state.street)
                 if equity >= pot_odds:
                     return Decision(
@@ -3025,6 +3062,16 @@ class PokerDecisionEngine:
                         calculation=f"Equity {equity*100:.0f}% >= {pot_odds*100:.0f}% pot odds",
                         confidence=0.75
                     )
+            # AUDIT FIX 5: Pot odds safety net for RAISE branch (was missing entirely)
+            if pot_odds <= 0.15:
+                return Decision(
+                    action=Action.CALL,
+                    amount=state.facing_bet,
+                    display=f"CALL ${state.facing_bet:.2f}",
+                    explanation=f"Call the ${state.facing_bet:.0f}. The raise is small relative to the pot — you only need {pot_odds*100:.0f}% equity and that's too cheap to fold.",
+                    calculation=f"Pot odds: {pot_odds*100:.1f}% — mandatory call at this price",
+                    confidence=0.75
+                )
             # Fold everything else vs a raise
             return Decision(
                 action=Action.FOLD,
@@ -3197,15 +3244,16 @@ class PokerDecisionEngine:
                 confidence=0.80
             )
         
-        # Everything else: fold (but call truly tiny bets with any showdown value)
-        if bet_ratio <= 0.10 and hand_strength not in [HandStrength.AIR]:
+        # Everything else: fold (but call small bets with any showdown value)
+        # AUDIT FIX: Raised from 10% to 15% for consistency across all methods
+        if pot_odds <= 0.15:
             return Decision(
                 action=Action.CALL,
                 amount=state.facing_bet,
                 display=f"CALL ${state.facing_bet:.2f}",
-                explanation=f"Call the ${state.facing_bet:.0f}. The bet is so small relative to the pot that folding anything with showdown value is a mistake.",
-                calculation=f"Pot odds: need {pot_odds*100:.0f}% — any hand calls",
-                confidence=0.65
+                explanation=f"Call the ${state.facing_bet:.0f}. The bet is small relative to the pot — you only need {pot_odds*100:.0f}% equity and that's too cheap to fold even multiway.",
+                calculation=f"Pot odds: {pot_odds*100:.1f}% — mandatory call at this price",
+                confidence=0.75
             )
         return Decision(
             action=Action.FOLD,
@@ -3293,6 +3341,31 @@ class PokerDecisionEngine:
                     calculation=get_made_hand_ev(hand_strength, state.pot_size, state.facing_bet, pot_odds),
                     confidence=0.70
                 )
+        
+        # AUDIT FIX 1: Bottom pair — call small river bets (was missing, fell to fold)
+        if hand_strength == HandStrength.BOTTOM_PAIR:
+            if bet_ratio <= 0.33:
+                return Decision(
+                    action=Action.CALL,
+                    amount=state.facing_bet,
+                    display=f"CALL ${state.facing_bet:.2f}",
+                    explanation=f"Call the ${state.facing_bet:.0f}. Small bet — bottom pair has enough equity at this price to look them up.",
+                    calculation=get_made_hand_ev(hand_strength, state.pot_size, state.facing_bet, pot_odds),
+                    confidence=0.55
+                )
+        
+        # Pot odds safety net — if the bet is tiny relative to the pot, call with anything
+        # AUDIT FIX: Raised from 10% to 15% to close gap between safety net and hand-specific thresholds
+        # Example: $6 into $215 = 2.7% pot odds — call with any hand that has any showdown value
+        if pot_odds <= 0.15:
+            return Decision(
+                action=Action.CALL,
+                amount=state.facing_bet,
+                display=f"CALL ${state.facing_bet:.2f}",
+                explanation=f"Call the ${state.facing_bet:.0f}. The bet is small relative to the pot — you only need {pot_odds*100:.0f}% equity and that's too cheap to fold.",
+                calculation=f"Pot odds: {pot_odds*100:.1f}% — mandatory call at this price",
+                confidence=0.78
+            )
         
         # Everything else - fold
         return Decision(
@@ -3403,8 +3476,11 @@ class PokerDecisionEngine:
             )
         
         # Middle pair — call small turn bets, fold large
+        # AUDIT FIX 2: Threshold raised from 0.40 to 0.55
+        # Routing sends bet_ratio > 0.50 here, so threshold must exceed 0.50 to work.
+        # Middle pair has ~30-35% equity; pot odds at 55% = 26% → math supports the call.
         if hand_strength == HandStrength.MIDDLE_PAIR:
-            if bet_ratio <= 0.40:
+            if bet_ratio <= 0.55:
                 return Decision(
                     action=Action.CALL,
                     amount=state.facing_bet,
@@ -3413,6 +3489,29 @@ class PokerDecisionEngine:
                     calculation=get_made_hand_ev(hand_strength, state.pot_size, state.facing_bet, pot_odds),
                     confidence=0.60
                 )
+        
+        # AUDIT FIX 1: Bottom pair — call small turn bets (was missing, fell to fold)
+        if hand_strength == HandStrength.BOTTOM_PAIR:
+            if bet_ratio <= 0.33:
+                return Decision(
+                    action=Action.CALL,
+                    amount=state.facing_bet,
+                    display=f"CALL ${state.facing_bet:.2f}",
+                    explanation=f"Call the ${state.facing_bet:.0f}. Small bet — bottom pair has enough equity at this price to take one more card.",
+                    calculation=get_made_hand_ev(hand_strength, state.pot_size, state.facing_bet, pot_odds),
+                    confidence=0.55
+                )
+        
+        # AUDIT FIX: Pot odds safety net — 15% floor (raised from no safety net)
+        if pot_odds <= 0.15:
+            return Decision(
+                action=Action.CALL,
+                amount=state.facing_bet,
+                display=f"CALL ${state.facing_bet:.2f}",
+                explanation=f"Call the ${state.facing_bet:.0f}. The bet is small relative to the pot — you only need {pot_odds*100:.0f}% equity and that's too cheap to fold.",
+                calculation=f"Pot odds: {pot_odds*100:.1f}% — mandatory call at this price",
+                confidence=0.78
+            )
         
         # Fold weak hands
         return Decision(
@@ -3545,9 +3644,10 @@ class PokerDecisionEngine:
                 confidence=0.80
             )
         
-        # Bottom pair on flop — call small bets, fold large
-        if hand_strength == HandStrength.BOTTOM_PAIR and state.street == Street.FLOP:
-            if bet_ratio <= 0.40:
+        # Bottom pair — call small bets
+        # AUDIT FIX 1: Expanded from flop-only to all streets (turn/river fell to fold)
+        if hand_strength == HandStrength.BOTTOM_PAIR:
+            if state.street == Street.FLOP and bet_ratio <= 0.40:
                 return Decision(
                     action=Action.CALL,
                     amount=state.facing_bet,
@@ -3555,6 +3655,15 @@ class PokerDecisionEngine:
                     explanation=f"Call the ${state.facing_bet:.0f}. Bottom pair is weak, but the bet is small enough ({bet_ratio*100:.0f}% pot) to take one more card. Fold to aggression on the turn.",
                     calculation=f"Small bet ({bet_ratio*100:.0f}% pot) — worth one card",
                     confidence=0.60
+                )
+            elif state.street in [Street.TURN, Street.RIVER] and bet_ratio <= 0.33:
+                return Decision(
+                    action=Action.CALL,
+                    amount=state.facing_bet,
+                    display=f"CALL ${state.facing_bet:.2f}",
+                    explanation=f"Call the ${state.facing_bet:.0f}. Small bet — bottom pair has enough equity at this price to look them up.",
+                    calculation=get_made_hand_ev(hand_strength, state.pot_size, state.facing_bet, pot_odds),
+                    confidence=0.55
                 )
         
         # Overcards on flop — call small bets (6 outs ~24%)
@@ -3568,6 +3677,18 @@ class PokerDecisionEngine:
                     calculation=f"~24% to pair up vs {pot_odds*100:.0f}% pot odds",
                     confidence=0.58
                 )
+        
+        # Pot odds safety net — if the bet is small relative to the pot, call with anything
+        # AUDIT FIX: Raised from 10% to 15% to close the gap between safety net and hand-specific thresholds
+        if pot_odds <= 0.15:
+            return Decision(
+                action=Action.CALL,
+                amount=state.facing_bet,
+                display=f"CALL ${state.facing_bet:.2f}",
+                explanation=f"Call the ${state.facing_bet:.0f}. The bet is small relative to the pot — you only need {pot_odds*100:.0f}% equity and that's too cheap to fold.",
+                calculation=f"Pot odds: {pot_odds*100:.1f}% — mandatory call at this price",
+                confidence=0.78
+            )
         
         # Fold air and weak hands
         return Decision(
@@ -3652,6 +3773,17 @@ class PokerDecisionEngine:
                 confidence=0.60
             )
         
+        # AUDIT FIX 7: Pot odds safety net for donk bets (was missing)
+        if pot_odds <= 0.15:
+            return Decision(
+                action=Action.CALL,
+                amount=state.facing_bet,
+                display=f"CALL ${state.facing_bet:.2f}",
+                explanation=f"Call the ${state.facing_bet:.0f}. The donk bet is small relative to the pot — too cheap to fold.",
+                calculation=f"Pot odds: {pot_odds*100:.1f}% — mandatory call at this price",
+                confidence=0.75
+            )
+        
         # Everything else: fold
         return Decision(
             action=Action.FOLD,
@@ -3698,6 +3830,17 @@ class PokerDecisionEngine:
                 confidence=0.90
             )
         
+        # AUDIT FIX 6a: Two pair — call (was missing entirely, fell to catch-all fold)
+        if hand_strength == HandStrength.TWO_PAIR:
+            return Decision(
+                action=Action.CALL,
+                amount=state.facing_bet,
+                display=f"CALL ${state.facing_bet:.2f}",
+                explanation=f"Call. Two pair is strong enough to continue against a check-raise — reassess on the next street.",
+                calculation="Two pair vs check-raise — call and reassess",
+                confidence=0.82
+            )
+        
         # Overpair/TPTK - call but proceed with caution
         if hand_strength in [HandStrength.OVERPAIR, HandStrength.TOP_PAIR_TOP_KICKER]:
             return Decision(
@@ -3742,6 +3885,18 @@ class PokerDecisionEngine:
                     calculation=f"Equity {equity*100:.0f}% >= {pot_odds*100:.0f}% pot odds",
                     confidence=0.75
                 )
+        
+        # AUDIT FIX 6b: Pot odds safety net for check-raises
+        pot_odds_cr = calculate_pot_odds(state.pot_size, state.facing_bet)
+        if pot_odds_cr <= 0.15:
+            return Decision(
+                action=Action.CALL,
+                amount=state.facing_bet,
+                display=f"CALL ${state.facing_bet:.2f}",
+                explanation=f"Call the ${state.facing_bet:.0f}. The check-raise is small relative to the pot — you only need {pot_odds_cr*100:.0f}% equity and that's too cheap to fold.",
+                calculation=f"Pot odds: {pot_odds_cr*100:.1f}% — mandatory call at this price",
+                confidence=0.75
+            )
         
         # Fold everything else
         return Decision(
@@ -3802,6 +3957,12 @@ def create_game_state(
     stakes_info = STAKES_CONFIG.get(stakes, {"sb": 1.0, "bb": 2.0})
     bb_size = stakes_info["bb"]
     sb_size = stakes_info["sb"]
+    
+    # ── INPUT SANITIZATION — never crash on bad UI data ──
+    pot_size = max(0, pot_size or 0)
+    facing_bet = max(0, facing_bet or 0)
+    our_stack = max(0, our_stack or 0)
+    villain_stack = max(0, villain_stack or 0)
     
     effective_stack = min(our_stack, villain_stack)
     
@@ -3867,6 +4028,14 @@ def create_game_state(
     try:
         af = ActionFacing[af_raw]
     except (KeyError, AttributeError):
+        af = ActionFacing.NONE
+    
+    # ── CONTRADICTORY STATE GUARD ──
+    # If facing_bet is 0 but action says we're facing a bet/raise, override to NONE
+    # Prevents degenerate CALL $0 or stuck states from bad UI data
+    if facing_bet <= 0 and af in (ActionFacing.BET, ActionFacing.RAISE,
+                                   ActionFacing.CHECK_RAISE, ActionFacing.THREE_BET,
+                                   ActionFacing.FOUR_BET):
         af = ActionFacing.NONE
     
     try:
@@ -4004,6 +4173,36 @@ def get_decision(
                 action=decision.action,
                 amount=rounded_amt,
                 display=f"{action_word} ${rounded_amt:.0f}" if action_word else decision.display,
+                explanation=decision.explanation,
+                calculation=decision.calculation,
+                confidence=decision.confidence,
+                bluff_context=decision.bluff_context,
+                alternative=decision.alternative,
+            )
+    
+    # ── MINIMUM BET FLOOR: Never bet less than 1 BB ──
+    # Can happen with tiny pot sizes (e.g. $8 pot at $5/$10 → 33% = $2.64)
+    # AUDIT FIX: Also catches zero-amount bets (e.g. 33% of $0 pot)
+    if decision.action in (Action.BET, Action.RAISE) and decision.amount is not None:
+        if decision.amount <= 0:
+            # Can't bet $0 — convert to CHECK
+            decision = Decision(
+                action=Action.CHECK,
+                amount=None,
+                display="CHECK",
+                explanation=decision.explanation,
+                calculation=decision.calculation,
+                confidence=decision.confidence,
+            )
+        elif decision.amount < state.bb_size:
+            floored_amt = round_bet(state.bb_size, stakes)
+            action_word = "BET" if decision.action == Action.BET else "RAISE TO"
+            # Recalculate pot percentage for explanation
+            pct = floored_amt / state.pot_size if state.pot_size > 0 else 1.0
+            decision = Decision(
+                action=decision.action,
+                amount=floored_amt,
+                display=f"{action_word} ${floored_amt:.0f}",
                 explanation=decision.explanation,
                 calculation=decision.calculation,
                 confidence=decision.confidence,
