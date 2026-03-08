@@ -1855,6 +1855,10 @@ def handle_decision_request(game_state: dict, session: dict):
 
         # Serialize for React (includes bluff_context + alternative)
         decision_dict = decision_to_dict(decision)
+        # Add unique timestamp so React's useEffect always detects a new decision,
+        # even if the action/display are identical to the previous one.
+        import time as _time
+        decision_dict["_ts"] = _time.time()
 
         st.session_state.current_decision_dict = decision_dict
         st.session_state.current_decision_obj = decision
@@ -1887,12 +1891,14 @@ def handle_decision_request(game_state: dict, session: dict):
         print(f"[engine] Decision request failed: {e}")
         import traceback
         traceback.print_exc()
+        import time as _time
         st.session_state.current_decision_dict = {
             "action": "CHECK",
             "amount": 0,
             "display": "CHECK",
             "explanation": "Something went wrong calculating this hand. Try entering it again — if the issue persists, start a new hand.",
             "calculation": f"Error: {e}",
+            "_ts": _time.time(),
         }
         st.session_state.decision_table_id = game_state.get("table_id", 1)
 

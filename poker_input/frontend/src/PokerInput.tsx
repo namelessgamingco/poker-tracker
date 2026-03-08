@@ -1190,7 +1190,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     }
     
     // Create a unique key for this decision to detect if it's new
-    const decisionKey = `${decisionTableId}-${decisionFromPython.display}-${decisionFromPython.action}-${decisionFromPython.explanation || ""}-${decisionFromPython.calculation || ""}`
+    // _ts is a timestamp added by Python to guarantee uniqueness even for identical decisions
+    const decisionKey = `${decisionTableId}-${(decisionFromPython as any)._ts || ""}-${decisionFromPython.display}-${decisionFromPython.action}`
     
     // Only process if this is a NEW decision we haven't seen
     if (lastProcessedDecisionRef.current === decisionKey) {
@@ -1400,6 +1401,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
 
     Streamlit.setComponentValue({
       type: "decision_request",
+      _req_ts: Date.now(),  // Unique per request — ensures retries aren't suppressed by Streamlit
       table_id: primaryHoldsTable,
       position: gs.position,
       card1: cardToString(gs.card1),
@@ -2126,16 +2128,32 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     }
   }, [step, submitDecisionRequest])
 
-  // ---- Safety: reset if stuck in calculating for 12 seconds ----
+  // ---- Safety: retry if stuck in calculating ----
+  // If decision hasn't arrived after 5 seconds, re-send the request.
+  // If still stuck after 12 seconds, fall back to villain_type as last resort.
+  const calcRetryRef = useRef(0)
   useEffect(() => {
-    if (step !== "showing_decision" || decision) return
+    if (step !== "showing_decision" || decision) {
+      calcRetryRef.current = 0
+      return
+    }
     const timeout = setTimeout(() => {
       if (!decision) {
-        setStep("villain_type")
+        if (calcRetryRef.current < 2) {
+          // Retry: re-submit the decision request
+          calcRetryRef.current += 1
+          console.log(`[CALC_RETRY] Attempt ${calcRetryRef.current} — re-sending decision request`)
+          submitDecisionRequest()
+        } else {
+          // Last resort after 2 retries: reset to villain type
+          console.log("[CALC_RETRY] Giving up — resetting to villain_type")
+          calcRetryRef.current = 0
+          setStep("villain_type")
+        }
       }
-    }, 12000)
+    }, 5000)
     return () => clearTimeout(timeout)
-  }, [step, decision])
+  }, [step, decision, submitDecisionRequest])
 
   // ---- Pre-select villain type from session default ----
   useEffect(() => {
