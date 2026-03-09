@@ -507,6 +507,8 @@ def init_session_state():
         "current_loss_streak": 0,
         "tilt_banner_shown_at_streak": 0,
         "tilt_banner_shown_at_pl": None,
+        # Auto-dismiss tilt alerts: content stored here, cleared on next hand interaction
+        "_tilt_alert_content": None,  # None = no active alert, else list of (type, icon, title, msg)
 
         # Rerun tracking — True only when OUR code triggers st.rerun()
         "_intentional_rerun": False,
@@ -971,20 +973,20 @@ def check_session_alerts():
     if (session_pl <= tilt_threshold
             and session_pl > -stop_loss
             and (shown_at_pl is None or session_pl < shown_at_pl - 20)):
-        alerts.append(("mental", "🧠", "Mental Check",
+        st.session_state._tilt_alert_content = [("mental", "🧠", "Mental Check",
             f"Rough stretch — you're down {fmt_money_short(session_pl)}. "
             f"Your decisions have been mathematically correct. Results ≠ quality. "
-            f"Stay the course or end the session with discipline."))
+            f"Stay the course or end the session with discipline.")]
         st.session_state.tilt_banner_shown_at_pl = session_pl
 
     # Tilt detection: consecutive losses
     streak = get_current_loss_streak()
     shown_at_streak = st.session_state.tilt_banner_shown_at_streak
     if streak >= TILT_LOSS_STREAK and streak > shown_at_streak:
-        alerts.append(("mental", "🧠", f"{streak} Losses in a Row",
+        st.session_state._tilt_alert_content = [("mental", "🧠", f"{streak} Losses in a Row",
             "This is normal variance. At +6 BB/100, streaks of 3-5 losses happen in almost "
             "every session. Your edge comes from the next 100 hands, not the last 3. "
-            "Take a deep breath. The math hasn't changed."))
+            "Take a deep breath. The math hasn't changed.")]
         st.session_state.tilt_banner_shown_at_streak = streak
 
     # Table check (every N minutes, configurable in Settings)
@@ -1000,7 +1002,7 @@ def check_session_alerts():
         if check_needed:
             st.session_state.table_check_due = True
 
-    # Render alerts
+    # Render critical alerts (time, stop-loss, stop-win) — always visible
     for alert_type, icon, title, message in alerts:
         st.markdown(f"""
         <div class="alert-banner {alert_type}">
@@ -1008,6 +1010,18 @@ def check_session_alerts():
             <div><span class="alert-title">{title}</span> — {message}</div>
         </div>
         """, unsafe_allow_html=True)
+
+    # Render tilt/mental alerts — auto-dismiss on next hand interaction
+    # These persist in session state until cleared by handle_decision_request/handle_street_continue
+    tilt_content = st.session_state.get("_tilt_alert_content")
+    if tilt_content:
+        for alert_type, icon, title, message in tilt_content:
+            st.markdown(f"""
+            <div class="alert-banner {alert_type}">
+                <span class="alert-icon">{icon}</span>
+                <div><span class="alert-title">{title}</span> — {message}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
     # Table check renders only between hands — expander clicks cause Streamlit rerun which kills hand state
     if not st.session_state.get("current_decision_dict"):
@@ -1416,6 +1430,7 @@ def render_session_end_modal(data: dict) -> bool:
         dismiss_modal()
         st.session_state.session_mode = "setup"
         st.session_state.current_session = None
+        st.session_state._tilt_alert_content = None
         clear_sidebar_session_info()
         st.rerun()
 
@@ -1669,6 +1684,7 @@ def render_setup_mode():
         st.session_state.current_loss_streak = 0
         st.session_state.tilt_banner_shown_at_streak = 0
         st.session_state.tilt_banner_shown_at_pl = None
+        st.session_state._tilt_alert_content = None
         clear_hand_state()
         update_sidebar_session_info(session, 0)
         st.rerun()
@@ -1727,6 +1743,7 @@ def render_play_mode():
         st.session_state._last_play_session_id = session_id
         st.session_state.two_table_restore = None
         st.session_state._clear_recovery = True  # Tell React to ignore sessionStorage
+        st.session_state._tilt_alert_content = None  # Prevent phantom tilt banner
         clear_hand_state()
     else:
         st.session_state._clear_recovery = False
@@ -1795,6 +1812,9 @@ def render_play_mode():
 
 def handle_decision_request(game_state: dict, session: dict):
     """Component sent a game_state — run engine, send decision back."""
+
+    # Auto-dismiss tilt banner when user starts entering next hand
+    st.session_state._tilt_alert_content = None
 
     try:
         stakes = session.get("stakes", "$1/$2")
@@ -1909,6 +1929,9 @@ def handle_decision_request(game_state: dict, session: dict):
 
 def handle_hand_complete(component_value: dict, session: dict):
     """Component sent hand_complete — record outcome, update stats, show modal."""
+
+    # Clear tilt banner so fresh one can fire after this rerun if streak continues
+    st.session_state._tilt_alert_content = None
 
     session_id = session.get("id")
     user_id = st.session_state.get("user_db_id")
@@ -2052,6 +2075,9 @@ def handle_street_continue(component_value: dict, session: dict):
     pot size, action, and villain type before a decision is requested.
     The actual decision_request fires separately when the user completes those steps.
     """
+    # Auto-dismiss tilt banner when user continues playing
+    st.session_state._tilt_alert_content = None
+
     # Preserve table state through rerun
     st.session_state.two_table_restore = {
         "show_second_table": component_value.get("show_second_table", False),
