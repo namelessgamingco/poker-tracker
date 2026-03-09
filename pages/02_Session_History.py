@@ -300,6 +300,27 @@ section[data-testid="stSidebar"] { background: #0F0F1A; }
 # HELPERS
 # =============================================================================
 
+# ── Cached DB wrappers ──
+# Session history data doesn't change while browsing. Cache aggressively
+# to eliminate redundant DB roundtrips on every Streamlit rerun (page flip,
+# filter change, expander toggle).
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _cached_user_sessions(user_id: str, limit: int = 500) -> list:
+    """Cache the full session list — refreshes every 60s."""
+    return get_user_sessions(user_id, limit=limit) or []
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_outcome_summary(session_id: str) -> dict:
+    """Cache outcome summary — completed sessions never change."""
+    return get_session_outcome_summary(session_id) or {}
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_bluff_stats(session_id: str) -> dict:
+    """Cache bluff stats — completed sessions never change."""
+    return get_session_bluff_stats(session_id) or {}
+
+
 def get_user_id() -> Optional[str]:
     return st.session_state.get("user_db_id")
 
@@ -626,7 +647,7 @@ def render_session_row(session: dict):
         """, unsafe_allow_html=True)
 
         # ── Outcome breakdown ──
-        summary = get_session_outcome_summary(session_id) if session_id else {}
+        summary = _cached_outcome_summary(session_id) if session_id else {}
         wins = summary.get("wins", 0)
         losses = summary.get("losses", 0)
         folds = summary.get("folds", 0)
@@ -657,7 +678,7 @@ def render_session_row(session: dict):
             """, unsafe_allow_html=True)
 
         # ── Aggressive Plays (bluff stats) ──
-        bluff_stats = get_session_bluff_stats(session_id) if session_id else {}
+        bluff_stats = _cached_bluff_stats(session_id) if session_id else {}
         bluff_spots = bluff_stats.get("total_spots", 0)
 
         if bluff_spots > 0:
@@ -761,7 +782,7 @@ def build_export_df(sessions: List[dict]) -> pd.DataFrame:
 
         # Bluff stats
         sid = s.get("id")
-        bs = get_session_bluff_stats(sid) if sid else {}
+        bs = _cached_bluff_stats(sid) if sid else {}
 
         data.append({
             "Date": sdt.strftime("%Y-%m-%d %H:%M") if sdt else "",
@@ -839,7 +860,7 @@ def main():
         st.warning("Please log in to view your session history.")
         return
 
-    all_sessions = get_user_sessions(user_id, limit=500)
+    all_sessions = _cached_user_sessions(user_id, limit=500)
 
     if not all_sessions:
         st.markdown("""
