@@ -623,7 +623,9 @@ function detectHandStrength(
   if (holeRanks[0] === holeRanks[1] && holeRanks[0] > boardRanks[0]) return "overpair"
   // Underpair: pocket pair below ALL board cards (e.g. 55 on K-Q-J)
   if (holeRanks[0] === holeRanks[1] && holeRanks[0] < boardRanks[boardRanks.length - 1]) return "underpair"
-  // Pocket pair between board ranks — similar to bottom pair in practice
+  // Pocket pair between board ranks — plays like middle pair (beats bluffs + lower pairs)
+  // AUDIT FIX: Was catch-all "bottom_pair", now correctly distinguishes PP above lowest board card
+  if (holeRanks[0] === holeRanks[1] && holeRanks[0] > boardRanks[boardRanks.length - 1]) return "middle_pair"
   if (holeRanks[0] === holeRanks[1]) return "bottom_pair"
 
   // === DRAWS (skip on river — no cards left to draw to) ===

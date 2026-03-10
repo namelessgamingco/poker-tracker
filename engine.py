@@ -2095,6 +2095,28 @@ class PokerDecisionEngine:
     def _postflop_decision(self, state: GameState) -> Decision:
         """Handle all post-flop decisions."""
         
+        # AUDIT FIX: Guard against zero pot — prevents division by zero in bluff
+        # spots and nonsensical bets. Can't happen in real play (blinds guarantee
+        # a minimum pot) but defensive against bad UI input.
+        if state.pot_size <= 0:
+            if state.facing_bet > 0:
+                return Decision(
+                    action=Action.FOLD,
+                    amount=None,
+                    display="FOLD",
+                    explanation="Fold. Something looks wrong with the pot size — try entering the hand again.",
+                    calculation="Pot is empty — cannot act",
+                    confidence=0.50,
+                )
+            return Decision(
+                action=Action.CHECK,
+                amount=None,
+                display="CHECK",
+                explanation="Check. No pot to contest.",
+                calculation="Pot is empty",
+                confidence=0.95,
+            )
+        
         # FIX 1.5: Adjust hand strength based on board danger
         # This prevents overbetting vulnerable hands on scary boards
         adjusted_strength = adjust_hand_strength_for_board(
@@ -3406,6 +3428,21 @@ class PokerDecisionEngine:
                     explanation=f"Call the ${state.facing_bet:.0f}. Small bet gives you a good price — your {_hs_bare(hand_strength, state.hand_strength_display)} beats their weaker value bets and bluffs.",
                     calculation=get_made_hand_ev(hand_strength, state.pot_size, state.facing_bet, pot_odds),
                     confidence=0.70
+                )
+        
+        # AUDIT FIX: Middle pair — call small river bets, fold large
+        # Was missing entirely; middle pair fell through to catch-all fold
+        # Note: routing sends bet_ratio > 0.50 here, so threshold must exceed 0.50
+        # Middle pair at ~55% pot has ~30% equity as bluff-catcher; pot odds ~26% — call is correct
+        if hand_strength == HandStrength.MIDDLE_PAIR:
+            if bet_ratio <= 0.55:
+                return Decision(
+                    action=Action.CALL,
+                    amount=state.facing_bet,
+                    display=f"CALL ${state.facing_bet:.2f}",
+                    explanation=f"Call the ${state.facing_bet:.0f}. Middle pair as a bluff-catcher — the bet is small enough to look them up.",
+                    calculation=get_made_hand_ev(hand_strength, state.pot_size, state.facing_bet, pot_odds),
+                    confidence=0.55
                 )
         
         # AUDIT FIX 1: Bottom pair — call small river bets (was missing, fell to fold)
