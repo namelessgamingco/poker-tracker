@@ -679,6 +679,13 @@ def require_auth():
     st.session_state["payment_link_url"] = payment_link
     
     if not has_access:
+        # Auto-update expired trials in DB so admin dashboard is accurate
+        if status_msg == "trial_expired":
+            try:
+                from db import update_profile
+                update_profile(user_id, {"subscription_status": "expired", "is_trial": False})
+            except Exception:
+                pass  # Non-critical — access is already denied
         _show_lockout_screen(status_msg, payment_link)
         st.stop()
     
