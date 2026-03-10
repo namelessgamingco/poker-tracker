@@ -706,6 +706,18 @@ def round_bet(amount: float, stakes: str) -> float:
     return max(round_to, rounded)  # Never round to 0
 
 
+def fmt_bet(amount: float) -> str:
+    """Format a dollar amount for display: '$5' for whole dollars, '$1.50' for half-dollars.
+    Handles $0.50/$1 stakes where bets commonly end in .50 while keeping
+    clean formatting at all other stakes where amounts are always whole numbers.
+    """
+    if amount is None:
+        return "$0"
+    if amount == int(amount):
+        return f"${int(amount)}"
+    return f"${amount:.2f}"
+
+
 # Draw outs for coaching text
 DRAW_OUTS = {
     HandStrength.COMBO_DRAW: ("combo draw", "12+ outs"),
@@ -4322,7 +4334,7 @@ def get_decision(
             decision = Decision(
                 action=decision.action,
                 amount=rounded_amt,
-                display=f"{action_word} ${rounded_amt:.0f}" if action_word else decision.display,
+                display=f"{action_word} {fmt_bet(rounded_amt)}" if action_word else decision.display,
                 explanation=decision.explanation,
                 calculation=decision.calculation,
                 confidence=decision.confidence,
@@ -4352,7 +4364,7 @@ def get_decision(
             decision = Decision(
                 action=decision.action,
                 amount=floored_amt,
-                display=f"{action_word} ${floored_amt:.0f}",
+                display=f"{action_word} {fmt_bet(floored_amt)}",
                 explanation=decision.explanation,
                 calculation=decision.calculation,
                 confidence=decision.confidence,
@@ -4380,9 +4392,9 @@ def get_decision(
             decision = Decision(
                 action=Action.ALL_IN,
                 amount=round(remaining, 2),
-                display=f"ALL-IN ${remaining:.0f}",
+                display=f"ALL-IN {fmt_bet(remaining)}",
                 explanation=decision.explanation,
-                calculation=f"Stack: ${remaining:.0f} — all-in is the maximum you can bet",
+                calculation=f"Stack: {fmt_bet(remaining)} — all-in is the maximum you can bet",
                 confidence=decision.confidence,
             )
         elif decision.amount >= remaining * 0.9:
@@ -4390,10 +4402,72 @@ def get_decision(
             decision = Decision(
                 action=Action.ALL_IN,
                 amount=round(remaining, 2),
-                display=f"ALL-IN ${remaining:.0f}",
+                display=f"ALL-IN {fmt_bet(remaining)}",
                 explanation=decision.explanation,
-                calculation=f"Stack: ${remaining:.0f} — shove is cleaner than a near-stack bet",
+                calculation=f"Stack: {fmt_bet(remaining)} — shove is cleaner than a near-stack bet",
                 confidence=decision.confidence,
             )
+    
+    # ── Fix $0.50/$1 explanation text ──
+    # At $0.50/$1, bets land on $X.50 but :.0f in explanation text rounds them
+    # to whole numbers ("bet $2" when actual bet is $1.50). This post-processes
+    # the explanation to match the display badge. Only fires at $0.50/$1 since
+    # all other stakes produce whole-dollar amounts where :.0f is correct.
+    if state.bb_size <= 1.0 and decision.explanation:
+        # Build replacement map: :.0f version → fmt_bet version
+        # Only for values that actually have .50 cents (whole numbers are fine)
+        vals = [v for v in [decision.amount, state.facing_bet, state.pot_size]
+                if v is not None and v > 0 and v != int(v)]
+        fixes = {}
+        for val in vals:
+            wrong = f"${int(round(val))}"
+            right = fmt_bet(val)
+            if wrong != right:
+                fixes[wrong] = right
+        
+        if fixes:
+            def _apply(text):
+                if not text: return text
+                for wrong, right in fixes.items():
+                    text = text.replace(wrong, right)
+                return text
+            
+            new_expl = _apply(decision.explanation)
+            new_calc = _apply(decision.calculation)
+            
+            # Also fix bluff_context explanations if present
+            new_bc = decision.bluff_context
+            if new_bc:
+                from dataclasses import replace as dc_replace
+                new_bc = dc_replace(new_bc,
+                    explanation_bet=_apply(new_bc.explanation_bet),
+                    explanation_check=_apply(new_bc.explanation_check),
+                )
+            
+            # Fix alternative decision too
+            new_alt = decision.alternative
+            if new_alt:
+                new_alt = Decision(
+                    action=new_alt.action, amount=new_alt.amount,
+                    display=new_alt.display,
+                    explanation=_apply(new_alt.explanation),
+                    calculation=_apply(new_alt.calculation),
+                    confidence=new_alt.confidence,
+                    bluff_context=new_bc,  # Share fixed bluff_context
+                    alternative=None,
+                )
+            
+            if (new_expl != decision.explanation or new_calc != decision.calculation
+                    or new_bc is not decision.bluff_context):
+                decision = Decision(
+                    action=decision.action,
+                    amount=decision.amount,
+                    display=decision.display,
+                    explanation=new_expl,
+                    calculation=new_calc,
+                    confidence=decision.confidence,
+                    bluff_context=new_bc,
+                    alternative=new_alt,
+                )
     
     return decision

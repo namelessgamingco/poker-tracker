@@ -306,17 +306,22 @@ function humanizeExplanation(text: string): string {
 }
 
 function roundBetDisplay(display: string): string {
-  // Round dollar amounts to whole numbers: "BET $4.62" → "BET $5"
+  // Round dollar amounts: "$4.62" → "$5", but preserve ".50" endings for $0.50/$1 stakes
   return display.replace(/\$(\d+\.\d+)/g, (_, amount) => {
-    return "$" + Math.round(parseFloat(amount))
+    const num = parseFloat(amount)
+    if (num === Math.floor(num)) return "$" + num
+    if (num * 2 === Math.floor(num * 2)) return "$" + num.toFixed(2)
+    return "$" + Math.round(num)
   })
 }
 
 function roundCalculation(calc: string): string {
   if (!calc) return ""
-  // Round amounts in calculation: "33% pot = $4.62" → "33% pot = $5"
   return calc.replace(/\$(\d+\.\d+)/g, (_, amount) => {
-    return "$" + Math.round(parseFloat(amount))
+    const num = parseFloat(amount)
+    if (num === Math.floor(num)) return "$" + num
+    if (num * 2 === Math.floor(num * 2)) return "$" + num.toFixed(2)
+    return "$" + Math.round(num)
   })
 }
 
@@ -1616,7 +1621,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         // Extract amount if present (e.g., "RAISE TO $12" -> "$12")
         const match = decision.display.match(/\$([\d.]+)/)
         if (match) {
-          ourAmount = "$" + Math.round(parseFloat(match[1]))
+          const num = parseFloat(match[1])
+          ourAmount = num === Math.floor(num) ? "$" + num : "$" + num.toFixed(2)
         }
       }
 
