@@ -1221,6 +1221,8 @@ def _coach(state: GameState, action: str, fallback: str = "", **ctx) -> str:
                 return f"{hand_read}. Size up — this player won't fold, so every dollar you bet prints money."
             return f"{hand_read}. Bet {pct_desc or sizing_desc} to build the pot — you can handle any action."
         
+        if fish:
+            return f"{hand_read}. Bet {pct_desc or sizing_desc} — this player calls with worse hands, so every dollar you bet prints value."
         return f"{hand_read}. Bet {pct_desc or sizing_desc} for value."
     
     # ══════════════════════════════════════════════
@@ -3020,7 +3022,10 @@ class PokerDecisionEngine:
         is_raise = state.action_facing == ActionFacing.RAISE
         
         # TIER1-FIX: SPR commitment — in low SPR pots, commit with top pair+
-        if state.spr is not None and state.spr < 4:
+        # AUDIT FIX: Exclude river — no future streets, so commitment logic
+        # (RAISE/ALL-IN to deny equity) doesn't apply. River decisions should
+        # go through the sizing-aware _facing_river_bet path instead.
+        if state.spr is not None and state.spr < 4 and state.street != Street.RIVER:
             if hand_strength in [HandStrength.NUTS, HandStrength.MONSTER, HandStrength.TWO_PAIR,
                                 HandStrength.OVERPAIR, HandStrength.TOP_PAIR_TOP_KICKER, HandStrength.TOP_PAIR]:
                 fish = _is_fish(state)
@@ -3047,7 +3052,7 @@ class PokerDecisionEngine:
                     action=Action.RAISE,
                     amount=amt,
                     display=f"RAISE TO ${amt:.2f}",
-                    explanation=f"Call. You're committed with {_hs(hand_strength, state.hand_strength_display)} at this pot size.",
+                    explanation=f"Raise. You're committed with {_hs(hand_strength, state.hand_strength_display)} at this pot size — build the pot now.",
                     calculation=f"SPR {state.spr:.1f} < 4, committed",
                     confidence=0.88
                 )
@@ -3088,6 +3093,27 @@ class PokerDecisionEngine:
                     explanation=f"Call. Their raise is concerning, but {_hs(hand_strength, state.hand_strength_display)} is too strong to fold on the flop.",
                     calculation="Raises are strong — reassess on later streets",
                     confidence=0.72
+                )
+            # AUDIT FIX: Top pair — call on flop, fold on turn/river
+            # Raises are strong, but top pair has enough equity on the flop to continue.
+            # On later streets, a raise after bet-call usually means a stronger hand.
+            if hand_strength == HandStrength.TOP_PAIR:
+                if street == Street.FLOP:
+                    return Decision(
+                        action=Action.CALL,
+                        amount=state.facing_bet,
+                        display=f"CALL ${state.facing_bet:.2f}",
+                        explanation=f"Call. A raise is concerning, but top pair is too strong to fold on the flop. Reassess on the turn.",
+                        calculation="Facing raise on flop — peel one street with top pair",
+                        confidence=0.68
+                    )
+                return Decision(
+                    action=Action.FOLD,
+                    amount=None,
+                    display="FOLD",
+                    explanation=_fold_text(f"A raise on the {street.value} means real strength — top pair isn't enough.", state),
+                    calculation="Facing raise — tighten up",
+                    confidence=0.82
                 )
             # Strong draws — call with equity
             # AUDIT FIX 5: Added OESD (was excluded, only combo/flush checked)
@@ -3515,6 +3541,18 @@ class PokerDecisionEngine:
                 confidence=0.80
             )
         
+        # AUDIT FIX: Overcards on turn — call small bets (~12% equity, 6 outs)
+        if hand_strength == HandStrength.OVERCARDS:
+            if bet_ratio <= 0.33:
+                return Decision(
+                    action=Action.CALL,
+                    amount=state.facing_bet,
+                    display=f"CALL ${state.facing_bet:.2f}",
+                    explanation=f"Call the ${state.facing_bet:.0f}. Two overcards with ~12% to pair up — the bet is small enough to take one more card.",
+                    calculation=f"~12% equity vs {pot_odds*100:.0f}% pot odds",
+                    confidence=0.52
+                )
+        
         # Middle pair — call small turn bets, fold large
         # AUDIT FIX 2: Threshold raised from 0.40 to 0.55
         # Routing sends bet_ratio > 0.50 here, so threshold must exceed 0.50 to work.
@@ -3604,7 +3642,7 @@ class PokerDecisionEngine:
                     action=Action.CALL,
                     amount=state.facing_bet,
                     display=f"CALL ${state.facing_bet:.2f}",
-                    explanation=f"Call the ${state.facing_bet:.0f}. Middle pair at a small bet — you beat bluffs and draws at this price. Reassess on the next street.",
+                    explanation=f"Call the ${state.facing_bet:.0f}. Middle pair at a small bet — you beat bluffs and draws at this price." + (" Reassess on the next street." if state.street != Street.RIVER else " You're catching bluffs at this price."),
                     calculation=get_made_hand_ev(hand_strength, state.pot_size, state.facing_bet, pot_odds),
                     confidence=0.70
                 )
@@ -3706,9 +3744,10 @@ class PokerDecisionEngine:
                     confidence=0.55
                 )
         
-        # Overcards on flop — call small bets (6 outs ~24%)
-        if hand_strength == HandStrength.OVERCARDS and state.street == Street.FLOP:
-            if bet_ratio <= 0.40:
+        # Overcards — call small bets (6 outs: ~24% flop, ~12% turn)
+        # AUDIT FIX: Was flop-only, now handles turn too
+        if hand_strength == HandStrength.OVERCARDS:
+            if state.street == Street.FLOP and bet_ratio <= 0.40:
                 return Decision(
                     action=Action.CALL,
                     amount=state.facing_bet,
@@ -3716,6 +3755,15 @@ class PokerDecisionEngine:
                     explanation=f"Call the ${state.facing_bet:.0f}. You have two overcards (~24% to pair up) and the bet is small enough to take a card. If you hit top pair, you'll likely have the best hand.",
                     calculation=f"~24% to pair up vs {pot_odds*100:.0f}% pot odds",
                     confidence=0.58
+                )
+            elif state.street == Street.TURN and bet_ratio <= 0.33:
+                return Decision(
+                    action=Action.CALL,
+                    amount=state.facing_bet,
+                    display=f"CALL ${state.facing_bet:.2f}",
+                    explanation=f"Call the ${state.facing_bet:.0f}. Two overcards with ~12% to pair up on the river — the bet is small enough to take one more card.",
+                    calculation=f"~12% to pair up vs {pot_odds*100:.0f}% pot odds",
+                    confidence=0.52
                 )
         
         # Pot odds safety net — if the bet is small relative to the pot, call with anything
