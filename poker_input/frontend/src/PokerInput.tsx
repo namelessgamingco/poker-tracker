@@ -1568,10 +1568,10 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     const lastActionCost = decision?.amount || 0
     
     // For folds: auto-calculate P/L and send immediately
+    // AUDIT FIX: Was adding decision.amount when engine said CALL, but user FOLDED
+    // — they didn't pay the call. Only count what was actually invested.
     if (outcome === "folded") {
-      const foldLoss = gs.total_invested + (
-        decision?.display?.toUpperCase().includes("CALL") ? lastActionCost : 0
-      )
+      const foldLoss = gs.total_invested
       _sendHandCompleteToStreamlit(outcome, -foldLoss)
       return
     }
@@ -1623,14 +1623,15 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       let newAction = "check_raise" // default for postflop
 
       if (street === "preflop") {
+        // AUDIT FIX: Escalation was off by one level. currentAction is what WE
+        // were facing before our decision, not our action. When we opened (none)
+        // and they re-raise, we're now facing a 3-bet, not a raise.
         if (currentAction === "none" || currentAction === "limp") {
-          newAction = "raise"
+          newAction = "3bet"   // We opened/iso'd, they 3-bet us
         } else if (currentAction === "raise") {
-          newAction = "3bet"
-        } else if (currentAction === "3bet") {
-          newAction = "4bet"
+          newAction = "4bet"   // We 3-bet (were facing raise), they 4-bet us
         } else {
-          newAction = "4bet"
+          newAction = "4bet"   // 4-bet+ territory
         }
       } else {
         // Post-flop: check what our previous decision was
@@ -1659,15 +1660,15 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       
       // Set contextual label and context message
       if (street === "preflop") {
-        if (newAction === "raise") {
-          setAmountLabel("Their raise to $")
-          setAmountContext(ourAmount ? `You raised to ${ourAmount}` : `You raised`)
-        } else if (newAction === "3bet") {
+        if (newAction === "3bet") {
           setAmountLabel("Their 3-bet to $")
+          setAmountContext(ourAmount ? `You raised to ${ourAmount}` : `You raised`)
+        } else if (newAction === "4bet") {
+          setAmountLabel("Their 4-bet to $")
           setAmountContext(ourAmount ? `You 3-bet to ${ourAmount}` : `You 3-bet`)
         } else {
-          setAmountLabel("Their 4-bet to $")
-          setAmountContext(ourAmount ? `You 4-bet to ${ourAmount}` : `You 4-bet`)
+          setAmountLabel("Their raise to $")
+          setAmountContext(ourAmount ? `You raised to ${ourAmount}` : `You raised`)
         }
       } else {
         if (newAction === "bet") {
