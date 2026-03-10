@@ -340,7 +340,28 @@ section[data-testid="stSidebar"] {display: none !important;}
                 display_msg = "Unable to sign in. Please check your credentials."
             st.markdown(_err.format(display_msg), unsafe_allow_html=True)
 
-    st.markdown('<div style="text-align:center;padding:32px 0 0 0"><div style="font-family:JetBrains Mono,monospace;font-size:10px;color:rgba(255,255,255,0.12);letter-spacing:0.05em">Texas Hold&#39;em NL 6-Max Cash</div></div>', unsafe_allow_html=True)
+    # ── Apply + Support links ──
+    st.markdown("""
+    <div style="margin-top:32px;display:flex;flex-direction:column;gap:10px;">
+        <a href="https://namelessgaming.co/#sqs-form" target="_blank" style="
+            display:block;text-align:center;padding:12px 16px;
+            background:rgba(0,210,106,0.06);border:1px solid rgba(0,210,106,0.2);
+            border-radius:10px;text-decoration:none;
+        ">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:#69F0AE;letter-spacing:0.04em;">REQUEST ACCESS</div>
+            <div style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:4px;">Don't have an account? Limited spots available.</div>
+        </a>
+        <a href="https://discord.com/channels/1169748589522718770/1268729463500439553" target="_blank" style="
+            display:block;text-align:center;padding:12px 16px;
+            background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);
+            border-radius:10px;text-decoration:none;
+        ">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;color:rgba(255,255,255,0.5);letter-spacing:0.04em;">💬 NEED HELP?</div>
+            <div style="font-size:11px;color:rgba(255,255,255,0.2);margin-top:4px;">Open a support ticket on Discord</div>
+        </a>
+    </div>
+    <div style="text-align:center;padding:24px 0 0 0"><div style="font-family:JetBrains Mono,monospace;font-size:10px;color:rgba(255,255,255,0.12);letter-spacing:0.05em">Texas Hold&#39;em NL 6-Max Cash</div></div>
+    """, unsafe_allow_html=True)
 
     st.stop()
 
