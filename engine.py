@@ -961,6 +961,46 @@ def adjust_hand_strength_for_board(
             if hand_strength not in [HandStrength.NUTS, HandStrength.MONSTER]:
                 downgrades += 1
     
+    # Pocket pair on paired board detection:
+    # When we have a pocket pair (e.g. 66) and the board is paired (e.g. 3-7-3),
+    # the frontend classifies this as TWO_PAIR (66+33). But EVERYONE has the board
+    # pair — our real strength is just our pocket pair relative to the other board cards.
+    # Example: 66 on 3♠7♠3♥ → "two pair" but any 7x has better two pair, any 3x has trips.
+    # Downgrade to OVERPAIR if PP > all non-paired board cards, else MIDDLE_PAIR.
+    if hand_strength == HandStrength.TWO_PAIR and our_hand:
+        hand_clean = our_hand.strip().replace(" ", "")
+        hole_ranks = []
+        hi = 0
+        while hi < len(hand_clean) - 1:
+            r = hand_clean[hi].upper()
+            s = hand_clean[hi+1].lower()
+            if r in RANK_VALUES and s in "hdcs":
+                hole_ranks.append(RANK_VALUES[r])
+                hi += 2
+            else:
+                hi += 1
+        
+        if len(hole_ranks) >= 2 and hole_ranks[0] == hole_ranks[1]:
+            # We have a pocket pair — check if board is paired with a DIFFERENT rank
+            pp_rank = hole_ranks[0]
+            board_ranks = [RANK_VALUES.get(c[0], 0) for c in board_cards]
+            from collections import Counter
+            board_rank_counts = Counter(board_ranks)
+            board_pairs = [r for r, cnt in board_rank_counts.items() if cnt >= 2]
+            
+            if board_pairs and pp_rank not in board_pairs:
+                # Board is paired but NOT with our rank → our "two pair" is fake
+                # (pocket pair + shared board pair, everyone has the board pair)
+                non_paired_board = [r for r in board_ranks if board_rank_counts[r] < 2]
+                max_non_paired = max(non_paired_board) if non_paired_board else 0
+                
+                if pp_rank > max_non_paired:
+                    # PP above all other board cards → effectively an overpair
+                    downgrades += 1  # TWO_PAIR → OVERPAIR
+                else:
+                    # PP below at least one non-paired board card → middle pair territory
+                    downgrades += 2  # TWO_PAIR → OVERPAIR → TPTK (or further)
+    
     # Board-pair counterfeit detection:
     # When board has a high pair (e.g. AA on board) and we have "two pair",
     # our two pair is effectively just one pair + board pair — much weaker.
@@ -3828,6 +3868,31 @@ class PokerDecisionEngine:
                 explanation=_coach(state, "raise_facing_checkraise", f"Re-raise — they check-raised into your {_hs_bare(hand_strength, state.hand_strength_display)}.", amount=amount),
                 calculation=f"{'3×' if fish else '2.5×'} their raise = ${amount:.2f}",
                 confidence=0.90
+            )
+        
+        # ── OVERBET CHECK-RAISE (>2x pot) ──
+        # A massive check-raise is almost always the nuts or a huge draw.
+        # At $1/$2-$5/$10, overbet check-raises are 90%+ value (trips, sets, straights).
+        # Only continue with real two pair+. Everything else folds.
+        cr_bet_ratio = state.facing_bet / state.pot_size if state.pot_size > 0 else 1.0
+        if cr_bet_ratio > 2.0:
+            if hand_strength == HandStrength.TWO_PAIR:
+                return Decision(
+                    action=Action.CALL,
+                    amount=state.facing_bet,
+                    display=f"CALL ${state.facing_bet:.2f}",
+                    explanation=f"Call. The check-raise is massive but two pair is strong enough to continue — be ready to fold if the aggression continues.",
+                    calculation=f"Overbet check-raise ({cr_bet_ratio:.0f}× pot) — two pair calls once",
+                    confidence=0.65
+                )
+            # Overpair, TPTK, and below → fold to overbet check-raise
+            return Decision(
+                action=Action.FOLD,
+                amount=None,
+                display="FOLD",
+                explanation=_fold_text(f"A check-raise this size means a monster — {_hs(hand_strength, state.hand_strength_display)} can't call.", state),
+                calculation=f"Overbet check-raise ({cr_bet_ratio:.0f}× pot) — only monsters continue",
+                confidence=0.88
             )
         
         # AUDIT FIX 6a: Two pair — call (was missing entirely, fell to catch-all fold)
