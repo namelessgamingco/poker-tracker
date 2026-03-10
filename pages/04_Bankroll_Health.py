@@ -1208,6 +1208,150 @@ def render_empty_state():
 
 
 # =============================================================================
+# RENDER FUNCTION — BANKROLL FUNDAMENTALS (reference panel on dashboard)
+# =============================================================================
+
+def render_fundamentals(bankroll, risk_mode, rec_stakes):
+    """Collapsible reference panel with key bankroll education from the onboarding flow.
+    Shows stakes requirements table, move-up/down rules, and annual projections —
+    the three pieces users need when evaluating whether to change stakes or risk mode.
+    """
+    with st.expander("📚 Bankroll Fundamentals", expanded=False):
+
+        # ---- Stakes Requirements Table ----
+        st.markdown("""
+            <div class="edu-section" style="margin-top: 0;">
+                <div class="edu-title">Bankroll Requirements by Stakes</div>
+                <div class="edu-subtitle">
+                    How much bankroll you need for each stake level across all three risk modes.
+                    Backed by Monte Carlo simulations of 10,000+ player lifetimes.
+                </div>
+                <table class="stakes-tbl">
+                    <tr>
+                        <th>Stakes</th>
+                        <th>Buy-in</th>
+                        <th>🔥 Aggressive (13 BI)</th>
+                        <th>⚖️ Balanced (15 BI)</th>
+                        <th>🛡️ Conservative (17 BI)</th>
+                    </tr>
+                    <tr>
+                        <td style="color: #fff; font-weight: 700;">$0.50/$1</td>
+                        <td>$100</td>
+                        <td style="color: #FFB300;">$1,300</td>
+                        <td style="color: #4BA3FF;">$1,500</td>
+                        <td style="color: #69F0AE;">$1,700</td>
+                    </tr>
+                    <tr>
+                        <td style="color: #fff; font-weight: 700;">$1/$2</td>
+                        <td>$200</td>
+                        <td style="color: #FFB300;">$2,600</td>
+                        <td style="color: #4BA3FF;">$3,000</td>
+                        <td style="color: #69F0AE;">$3,400</td>
+                    </tr>
+                    <tr>
+                        <td style="color: #fff; font-weight: 700;">$2/$5</td>
+                        <td>$500</td>
+                        <td style="color: #FFB300;">$6,500</td>
+                        <td style="color: #4BA3FF;">$7,500</td>
+                        <td style="color: #69F0AE;">$8,500</td>
+                    </tr>
+                    <tr>
+                        <td style="color: #fff; font-weight: 700;">$5/$10</td>
+                        <td>$1,000</td>
+                        <td style="color: #FFB300;">$13,000</td>
+                        <td style="color: #4BA3FF;">$15,000</td>
+                        <td style="color: #69F0AE;">$17,000</td>
+                    </tr>
+                    <tr>
+                        <td style="color: #fff; font-weight: 700;">$10/$20</td>
+                        <td>$2,000</td>
+                        <td style="color: #FFB300;">$26,000</td>
+                        <td style="color: #4BA3FF;">$30,000</td>
+                        <td style="color: #69F0AE;">$34,000</td>
+                    </tr>
+                    <tr>
+                        <td style="color: #fff; font-weight: 700;">$25/$50</td>
+                        <td>$5,000</td>
+                        <td style="color: #FFB300;">$65,000</td>
+                        <td style="color: #4BA3FF;">$75,000</td>
+                        <td style="color: #69F0AE;">$85,000</td>
+                    </tr>
+                </table>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # ---- Move Up / Move Down Rules ----
+        # Personalize with their current bankroll and stakes
+        sel_mode = RISK_MODES[risk_mode]
+        req_bis = sel_mode["buy_ins"]
+        nxt = get_next_stakes(rec_stakes)
+        move_up_target = fmtc(nxt["typical_bi"] * req_bis) if nxt else None
+
+        move_up_line = (
+            f'<span class="edu-ok">Move UP</span> to <span class="edu-highlight">{nxt["name"]}</span> '
+            f'when your bankroll reaches <span class="edu-highlight">{move_up_target}</span> '
+            f'({req_bis} buy-ins in {sel_mode["name"]} mode).'
+            if nxt else
+            '<span class="edu-ok">You\'re at the highest tracked stakes.</span> Keep building your bankroll.'
+        )
+
+        move_down_target = fmtc(rec_stakes["typical_bi"] * 12)
+        move_down_line = (
+            f'<span class="edu-warn">Move DOWN</span> from {rec_stakes["name"]} if your bankroll drops to '
+            f'<span class="edu-highlight">{move_down_target}</span> (12 buy-ins). '
+            f'Moving down protects your bankroll so you can move back up when variance swings your way.'
+            if rec_stakes != STAKES_CONFIG[0] else
+            'You\'re at the lowest tracked stakes — focus on building your bankroll before considering a move up.'
+        )
+
+        st.markdown(f"""
+            <div class="edu-section">
+                <div class="edu-title">When to Move Up & Down</div>
+                <div class="edu-text">{move_up_line}</div>
+                <div class="edu-text">{move_down_line}</div>
+                <div class="edu-text" style="margin-bottom: 0;">
+                    The app tracks this automatically. You'll see it in the Move-Up Projection above
+                    and in your Stakes Ladder tab.
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # ---- Annual Profit Projections ----
+        st.markdown("""
+            <div class="edu-section">
+                <div class="edu-title">Annual Profit Projections</div>
+                <div class="edu-subtitle">
+                    At 10 sessions/week, 200 hands/session.
+                    Includes table winnings (+7 BB/100 average) plus estimated 30% rakeback.
+                </div>
+                <div class="sg sg-3">
+                    <div class="si">
+                        <div class="si-label">$1/$2</div>
+                        <div class="si-val green">$18,000–$22,000</div>
+                        <div class="si-detail">per year (table + rakeback)</div>
+                    </div>
+                    <div class="si">
+                        <div class="si-label">$2/$5</div>
+                        <div class="si-val green">$42,000–$50,000</div>
+                        <div class="si-detail">per year (table + rakeback)</div>
+                    </div>
+                    <div class="si">
+                        <div class="si-label">$5/$10</div>
+                        <div class="si-val green">$80,000–$96,000</div>
+                        <div class="si-detail">per year (table + rakeback)</div>
+                    </div>
+                </div>
+                <div style="font-family:'Inter',sans-serif;font-size:11px;color:rgba(255,255,255,0.25);
+                    margin-top:12px;line-height:1.6;text-align:center;">
+                    Table winnings: 100,000 hands/yr × win rate × BB size.
+                    Rakeback: ~30% of rake generated (platform dependent).
+                    See the <span style="color:rgba(255,255,255,0.40);font-weight:600;">EV System</span> page for detailed breakdowns.
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+
+# =============================================================================
 # RENDER FUNCTIONS — DASHBOARD (when bankroll is set)
 # =============================================================================
 
@@ -1936,6 +2080,9 @@ def main():
 
     # ===== INLINE BANKROLL EDITOR =====
     render_bankroll_editor(bankroll, user_id, risk_mode, rec_stakes)
+
+    # ===== BANKROLL FUNDAMENTALS (collapsible reference) =====
+    render_fundamentals(bankroll, risk_mode, rec_stakes)
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
