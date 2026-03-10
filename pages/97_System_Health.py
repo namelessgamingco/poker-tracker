@@ -19,7 +19,7 @@ from db import (
     get_user_settings,
 )
 
-st.set_page_config(page_title="System Health", page_icon="🩺", layout="wide")
+st.set_page_config(page_title="System Health", page_icon="favicon.png", layout="wide")
 
 # ---------- Auth + admin gate ----------
 

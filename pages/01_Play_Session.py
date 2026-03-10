@@ -10,7 +10,7 @@ from typing import Optional, Dict, Any
 
 st.set_page_config(
     page_title="Play Session | Nameless Poker",
-    page_icon="🎯",
+    page_icon="favicon.png",
     layout="wide",
 )
 

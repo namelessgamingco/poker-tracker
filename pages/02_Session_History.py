@@ -10,7 +10,7 @@ import io
 
 st.set_page_config(
     page_title="Session History | Nameless Poker",
-    page_icon="📋",
+    page_icon="favicon.png",
     layout="wide",
 )
 

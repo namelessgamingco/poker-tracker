@@ -6,7 +6,7 @@ import streamlit as st
 
 st.set_page_config(
     page_title="How It Works | Poker Decision App",
-    page_icon="📖",
+    page_icon="favicon.png",
     layout="wide",
 )
 

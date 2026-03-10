@@ -30,7 +30,7 @@ import math
 
 st.set_page_config(
     page_title="Bankroll Health | Nameless Poker",
-    page_icon="💰",
+    page_icon="favicon.png",
     layout="wide",
 )
 

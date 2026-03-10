@@ -12,7 +12,7 @@
 # =============================================================================
 
 import streamlit as st
-st.set_page_config(page_title="Admin Console", page_icon="🔐", layout="wide")
+st.set_page_config(page_title="Admin Console", page_icon="favicon.png", layout="wide")
 
 from auth import require_auth
 from sidebar import render_sidebar
