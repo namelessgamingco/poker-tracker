@@ -486,7 +486,7 @@ def init_session_state():
 
         # Input mode
         "input_mode": "keyboard",  # "standard", "keyboard", "two_table"
-        "default_villain": "",  # Session-level villain default ("unknown", "fish", "reg")
+        "default_villain": "unknown",  # Session-level villain default ("unknown", "fish", "reg")
 
         # Modal queue
         "modal_queue": [],
@@ -1550,21 +1550,21 @@ def render_setup_mode():
     st.markdown('<div class="setup-section"><div class="setup-section-title">Default Opponent</div>',
                 unsafe_allow_html=True)
 
-    villain_default = st.radio("Default", ["Ask Every Hand", "Unknown", "Weak Player", "Good Player"],
+    villain_default = st.radio("Default", ["Unknown", "Weak Player", "Good Player", "Ask Every Hand"],
                                 index=0, horizontal=True, label_visibility="collapsed")
 
-    if villain_default == "Ask Every Hand":
-        st.caption("You'll pick the opponent type each hand. Most accurate — takes one extra tap.")
-        st.session_state.default_villain = ""
-    elif villain_default == "Unknown":
-        st.caption("Balanced sizing that works against anyone. Safe default, but you'll miss opportunities to size up against weak players.")
+    if villain_default == "Unknown":
+        st.caption("Balanced sizing that works against anyone. Safe default for most tables.")
         st.session_state.default_villain = "unknown"
     elif villain_default == "Weak Player":
-        st.caption("Larger value bets, exploitative sizing. Best when your table is mostly recreational players. You'll extract more from their mistakes.")
+        st.caption("Larger value bets, exploitative sizing. Best when your table is mostly recreational players.")
         st.session_state.default_villain = "fish"
-    else:
-        st.caption("Tighter ranges, careful sizing. Use at reg-heavy or tough tables where opponents adjust to your bets.")
+    elif villain_default == "Good Player":
+        st.caption("Tighter ranges, careful sizing. Use at reg-heavy or tough tables where opponents adjust.")
         st.session_state.default_villain = "reg"
+    else:
+        st.caption("Adds an extra step every hand. Use the opponent badge during input to override per-hand instead — it's faster.")
+        st.session_state.default_villain = ""
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1758,7 +1758,7 @@ def render_play_mode():
         mode=st.session_state.input_mode,
         stakes=stakes,
         bb_size=bb_size,
-        default_villain=st.session_state.get("default_villain", ""),
+        default_villain=st.session_state.get("default_villain", "unknown"),
         stack_size=st.session_state.our_stack,
         decision_result=st.session_state.current_decision_dict,
         decision_table_id=st.session_state.get("decision_table_id", 1),

@@ -368,6 +368,8 @@ function getStepDescription(step: InputStep): string {
     case "action": return "Selecting action..."
     case "amount": return "Entering amount..."
     case "limper_count": return "Entering limper count..."
+    case "player_count": return "Counting players..."
+    case "villain_position": return "Locating the raiser..."
     case "board_rank":
     case "board_suit": return "Entering board..."
     case "pot_size": return "Entering pot size..."
@@ -1174,14 +1176,14 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
 
   // ---- Focus amount input when step changes ----
   useEffect(() => {
-    if ((step === "amount" || step === "limper_count") && amountRef.current) {
+    if (step === "amount" && amountRef.current) {
       setTimeout(() => amountRef.current?.focus(), 50)
     }
     if (step === "pot_size" && potRef.current) {
       setTimeout(() => { potRef.current?.focus(); potRef.current?.select() }, 50)
     }
     // For all other steps, focus the container so keyboard shortcuts work immediately
-    if (step !== "amount" && step !== "pot_size" && step !== "limper_count" && containerRef.current) {
+    if (step !== "amount" && step !== "pot_size" && containerRef.current) {
       setTimeout(() => containerRef.current?.focus(), 50)
     }
   }, [step])
@@ -2030,6 +2032,12 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     proceedAfterLastInput()
   }, [amountStr, proceedAfterLastInput])
 
+  // ---- Handle limper count direct select (one-tap) ----
+  const selectLimperCount = useCallback((count: number) => {
+    setGameState((s) => ({ ...s, num_limpers: Math.min(count, 5) }))
+    proceedAfterLastInput()
+  }, [proceedAfterLastInput])
+
   // ---- FIX 1.2: Handle player count selection ----
   const confirmPlayerCount = useCallback((count: number) => {
     setGameState((s) => ({ ...s, num_players: count }))
@@ -2368,10 +2376,10 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         return
       }
 
-      // Limper count quick select (1-5)
+      // Limper count quick select (1-5) — auto-confirms
       if (step === "limper_count" && "12345".includes(key)) {
         e.preventDefault()
-        setAmountStr(key)
+        selectLimperCount(parseInt(key))
         return
       }
 
@@ -2450,7 +2458,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   }, [
     keyboardActive, step, gameState.street, pendingRank, decision, mode, showSecondTable,
     selectPosition, selectRank, selectSuit, selectAction,
-    confirmAmount, confirmLimperCount, confirmPlayerCount, confirmVillainPosition, confirmPotSize, goBack, sendNewHand, sendHandComplete, continueToStreet, theyRaisedMe, theyBet, confirmPlInput,
+    confirmAmount, confirmLimperCount, selectLimperCount, confirmPlayerCount, confirmVillainPosition, confirmPotSize, goBack, sendNewHand, sendHandComplete, continueToStreet, theyRaisedMe, theyBet, confirmPlInput,
     switchTable, chosenBluffAction,
   ])
 
@@ -3454,6 +3462,10 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         return `${amountLabel} Type amount, then Enter...`
       case "limper_count":
         return "How many players limped in? Enter..."
+      case "player_count":
+        return keyboardActive ? "Press 2-5 · how many players in this pot?" : "How many players are in this pot?"
+      case "villain_position":
+        return keyboardActive ? "Press 1 near blinds · 2 middle · 3 at button" : "Where is the raiser sitting relative to the Dealer button?"
       case "board_rank": {
         const needed = requiredBoardCards(gameState.street)
         const have = gameState.board_cards.filter((c) => c !== null).length
@@ -3559,6 +3571,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       if (tableStep === "action") return gs.street === "preflop" ? "Preflop action" : `${gs.street.charAt(0).toUpperCase() + gs.street.slice(1)} action`
       if (tableStep === "amount") return "Enter amount"
       if (tableStep === "limper_count") return "Limper count"
+      if (tableStep === "player_count") return "Players in pot"
+      if (tableStep === "villain_position") return "Raiser's seat"
       if (tableStep === "villain_type") return "Villain type"
       if (tableStep === "board_rank" || tableStep === "board_suit") {
         const needed = requiredBoardCards(gs.street)
@@ -3580,6 +3594,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       if (tableStep === "card2_rank" || tableStep === "card2_suit") return 35
       if (tableStep === "action") return gs.street === "preflop" ? 50 : 70
       if (tableStep === "amount" || tableStep === "limper_count") return gs.street === "preflop" ? 60 : 75
+      if (tableStep === "player_count") return gs.street === "preflop" ? 55 : 72
+      if (tableStep === "villain_position") return gs.street === "preflop" ? 58 : 74
       if (tableStep === "villain_type") return 85
       if (tableStep === "board_rank" || tableStep === "board_suit") return 55
       if (tableStep === "pot_size") return 65
@@ -4751,23 +4767,28 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
                 <span><span style={{ color: "rgba(255,255,255,0.5)" }}>3</span> good player</span>
               </>
             )}
-            {(step === "amount" || step === "pot_size" || step === "limper_count") && (
+            {(step === "amount" || step === "pot_size") && (
               <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Enter</span> confirm</span>
+            )}
+            {step === "limper_count" && (
+              <>
+                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>1-5</span> limper count</span>
+              </>
             )}
             {step === "player_count" && (
               <>
-                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>2</span> heads up</span>
-                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>3</span> 3-way</span>
-                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>4</span> 4-way</span>
+                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>2</span> just us</span>
+                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>3</span> 3 players</span>
+                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>4</span> 4 players</span>
                 <span><span style={{ color: "rgba(255,255,255,0.5)" }}>5</span> 5+</span>
-                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Enter</span> = heads up</span>
+                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Enter</span> = just us</span>
               </>
             )}
             {step === "villain_position" && (
               <>
-                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>1</span> early</span>
+                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>1</span> near blinds</span>
                 <span><span style={{ color: "rgba(255,255,255,0.5)" }}>2</span> middle</span>
-                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>3</span> late</span>
+                <span><span style={{ color: "rgba(255,255,255,0.5)" }}>3</span> at button</span>
                 <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Enter</span> = middle</span>
               </>
             )}
@@ -5060,64 +5081,30 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
                 color: theme.textMuted,
                 lineHeight: 1.5,
               }}>
-                Count how many players called $2 before you. This affects your raising size and range.
+                Count how many players called ${bbSize} before you. This affects your raising size and range.
               </div>
             </div>
 
-            {/* Visual limper count selector */}
-            <div style={{
-              display: "flex",
-              gap: 8,
-              marginBottom: 12,
-            }}>
+            {/* One-tap limper count selector */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
               {[1, 2, 3, 4, 5].map((num) => (
                 <button
                   key={num}
-                  onClick={() => {
-                    setAmountStr(num.toString())
-                  }}
+                  onClick={() => selectLimperCount(num)}
                   style={{
                     ...S.btn,
-                    flex: 1,
                     padding: "14px 8px",
-                    fontSize: 18,
-                    fontWeight: 700,
-                    background: amountStr === num.toString() 
-                      ? "rgba(75, 163, 255, 0.15)" 
-                      : "rgba(255,255,255,0.03)",
-                    borderColor: amountStr === num.toString()
-                      ? theme.accent
-                      : theme.borderLight,
-                    color: amountStr === num.toString()
-                      ? theme.accent
-                      : theme.text,
+                    textAlign: "center" as const,
+                    background: "rgba(255,255,255,0.03)",
+                    borderColor: theme.border,
                   }}
                 >
                   {keyboardActive && <span style={S.hint}>{num}</span>}
-                  {num}
+                  <div style={{ fontSize: 18, fontWeight: 700, color: theme.text }}>{num}</div>
+                  <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>limper{num > 1 ? "s" : ""}</div>
                 </button>
               ))}
             </div>
-
-            {/* Confirm button */}
-            <button 
-              onClick={confirmLimperCount} 
-              disabled={!amountStr}
-              style={{ 
-                ...S.btn, 
-                width: "100%",
-                padding: "12px",
-                background: amountStr ? "rgba(0,200,83,0.12)" : "rgba(255,255,255,0.02)", 
-                borderColor: amountStr ? "rgba(0,200,83,0.3)" : theme.border, 
-                color: amountStr ? theme.green : theme.textDim,
-                fontWeight: 600,
-                fontSize: 13,
-                cursor: amountStr ? "pointer" : "not-allowed",
-              }}
-            >
-              {keyboardActive && amountStr && <span style={{...S.hint, color: theme.green}}>↵</span>}
-              {amountStr ? `Confirm ${amountStr} Limper${amountStr !== "1" ? "s" : ""}` : "Select a number above"}
-            </button>
           </div>
         )}
 
@@ -5205,13 +5192,21 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           <div>
             {/* Villain type override badge */}
             {renderVillainBadge()}
-            <div style={S.sectionLabel}>Players Still in Hand</div>
+            <div style={S.sectionLabel}>How many players in this pot?</div>
+            <div style={{
+              fontSize: 11,
+              color: theme.textMuted,
+              marginBottom: 10,
+              lineHeight: 1.4,
+            }}>
+              Count yourself and anyone still in the hand
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
               {[
-                { count: 2, label: "Heads Up", desc: "You + 1 opponent", key: "2" },
-                { count: 3, label: "3-Way", desc: "You + 2 opponents", key: "3" },
-                { count: 4, label: "4-Way", desc: "You + 3 opponents", key: "4" },
-                { count: 5, label: "5+", desc: "You + 4+ opponents", key: "5" },
+                { count: 2, label: "Just Us", desc: "You vs 1 opponent", key: "2" },
+                { count: 3, label: "3 Players", desc: "You + 2 others", key: "3" },
+                { count: 4, label: "4 Players", desc: "You + 3 others", key: "4" },
+                { count: 5, label: "5+", desc: "Big multiway pot", key: "5" },
               ].map((p) => (
                 <button
                   key={p.count}
@@ -5236,12 +5231,20 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         {/* VILLAIN POSITION - FIX 1.3 */}
         {step === "villain_position" && (
           <div>
-            <div style={S.sectionLabel}>Who Raised?</div>
+            <div style={S.sectionLabel}>Where is the raiser sitting?</div>
+            <div style={{
+              fontSize: 11,
+              color: theme.textMuted,
+              marginBottom: 10,
+              lineHeight: 1.4,
+            }}>
+              Relative to the Dealer button on the table
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
               {[
-                { pos: "SB", label: "Early", desc: "SB / BB / UTG", key: "1" },
-                { pos: "CO", label: "Middle", desc: "HJ / Cutoff", key: "2" },
-                { pos: "BTN", label: "Late", desc: "Button", key: "3" },
+                { pos: "SB", label: "Near Blinds", desc: "First to act · tight range", key: "1" },
+                { pos: "CO", label: "Middle Seats", desc: "Middle of the table", key: "2" },
+                { pos: "BTN", label: "At the Button", desc: "Dealer chip · wide range", key: "3" },
               ].map((v) => (
                 <button
                   key={v.pos}
@@ -6034,64 +6037,30 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               color: theme.textMuted,
               lineHeight: 1.5,
             }}>
-              Count how many players called $2 before you. This affects your raising size and range.
+              Count how many players called ${bbSize} before you. This affects your raising size and range.
             </div>
           </div>
 
-          {/* Visual limper count selector */}
-          <div style={{
-            display: "flex",
-            gap: 8,
-            marginBottom: 12,
-          }}>
+          {/* One-tap limper count selector */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8 }}>
             {[1, 2, 3, 4, 5].map((num) => (
               <button
                 key={num}
-                onClick={() => {
-                  setAmountStr(num.toString())
-                }}
+                onClick={() => selectLimperCount(num)}
                 style={{
                   ...S.btn,
-                  flex: 1,
                   padding: "14px 8px",
-                  fontSize: 18,
-                  fontWeight: 700,
-                  background: amountStr === num.toString() 
-                    ? "rgba(75, 163, 255, 0.15)" 
-                    : "rgba(255,255,255,0.03)",
-                  borderColor: amountStr === num.toString()
-                    ? theme.accent
-                    : theme.borderLight,
-                  color: amountStr === num.toString()
-                    ? theme.accent
-                    : theme.text,
+                  textAlign: "center" as const,
+                  background: "rgba(255,255,255,0.03)",
+                  borderColor: theme.border,
                 }}
               >
                 {keyboardActive && <span style={S.hint}>{num}</span>}
-                {num}
+                <div style={{ fontSize: 18, fontWeight: 700, color: theme.text }}>{num}</div>
+                <div style={{ fontSize: 11, color: theme.textMuted, marginTop: 2 }}>limper{num > 1 ? "s" : ""}</div>
               </button>
             ))}
           </div>
-
-          {/* Confirm button */}
-          <button 
-            onClick={confirmLimperCount} 
-            disabled={!amountStr}
-            style={{ 
-              ...S.btn, 
-              width: "100%",
-              padding: "12px",
-              background: amountStr ? "rgba(0,200,83,0.12)" : "rgba(255,255,255,0.02)", 
-              borderColor: amountStr ? "rgba(0,200,83,0.3)" : theme.border, 
-              color: amountStr ? theme.green : theme.textDim,
-              fontWeight: 600,
-              fontSize: 13,
-              cursor: amountStr ? "pointer" : "not-allowed",
-            }}
-          >
-            {keyboardActive && amountStr && <span style={{...S.hint, color: theme.green}}>↵</span>}
-            {amountStr ? `Confirm ${amountStr} Limper${amountStr !== "1" ? "s" : ""}` : "Select a number above"}
-          </button>
         </div>
       )}
 
@@ -6179,13 +6148,21 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         <div>
           {/* Villain type override badge */}
           {renderVillainBadge()}
-          <div style={S.sectionLabel}>Players Still in Hand</div>
+          <div style={S.sectionLabel}>How many players in this pot?</div>
+          <div style={{
+            fontSize: 11,
+            color: theme.textMuted,
+            marginBottom: 10,
+            lineHeight: 1.4,
+          }}>
+            Count yourself and anyone still in the hand
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
             {[
-              { count: 2, label: "Heads Up", desc: "You + 1 opponent", key: "2" },
-              { count: 3, label: "3-Way", desc: "You + 2 opponents", key: "3" },
-              { count: 4, label: "4-Way", desc: "You + 3 opponents", key: "4" },
-              { count: 5, label: "5+", desc: "You + 4+ opponents", key: "5" },
+              { count: 2, label: "Just Us", desc: "You vs 1 opponent", key: "2" },
+              { count: 3, label: "3 Players", desc: "You + 2 others", key: "3" },
+              { count: 4, label: "4 Players", desc: "You + 3 others", key: "4" },
+              { count: 5, label: "5+", desc: "Big multiway pot", key: "5" },
             ].map((p) => (
               <button
                 key={p.count}
@@ -6210,12 +6187,20 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       {/* VILLAIN POSITION - FIX 1.3 */}
       {step === "villain_position" && (
         <div>
-          <div style={S.sectionLabel}>Who Raised?</div>
+          <div style={S.sectionLabel}>Where is the raiser sitting?</div>
+          <div style={{
+            fontSize: 11,
+            color: theme.textMuted,
+            marginBottom: 10,
+            lineHeight: 1.4,
+          }}>
+            Relative to the Dealer button on the table
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
             {[
-              { pos: "SB", label: "Early", desc: "SB / BB / UTG", key: "1" },
-              { pos: "CO", label: "Middle", desc: "HJ / Cutoff", key: "2" },
-              { pos: "BTN", label: "Late", desc: "Button", key: "3" },
+              { pos: "SB", label: "Near Blinds", desc: "First to act · tight range", key: "1" },
+              { pos: "CO", label: "Middle Seats", desc: "Middle of the table", key: "2" },
+              { pos: "BTN", label: "At the Button", desc: "Dealer chip · wide range", key: "3" },
             ].map((v) => (
               <button
                 key={v.pos}
@@ -6565,8 +6550,30 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               <span><span style={{ color: "rgba(255,255,255,0.5)" }}>3</span> good player</span>
             </>
           )}
-          {(step === "amount" || step === "pot_size" || step === "limper_count") && (
+          {(step === "amount" || step === "pot_size") && (
             <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Enter</span> confirm</span>
+          )}
+          {step === "limper_count" && (
+            <>
+              <span><span style={{ color: "rgba(255,255,255,0.5)" }}>1-5</span> limper count</span>
+            </>
+          )}
+          {step === "player_count" && (
+            <>
+              <span><span style={{ color: "rgba(255,255,255,0.5)" }}>2</span> just us</span>
+              <span><span style={{ color: "rgba(255,255,255,0.5)" }}>3</span> 3 players</span>
+              <span><span style={{ color: "rgba(255,255,255,0.5)" }}>4</span> 4 players</span>
+              <span><span style={{ color: "rgba(255,255,255,0.5)" }}>5</span> 5+</span>
+              <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Enter</span> = just us</span>
+            </>
+          )}
+          {step === "villain_position" && (
+            <>
+              <span><span style={{ color: "rgba(255,255,255,0.5)" }}>1</span> near blinds</span>
+              <span><span style={{ color: "rgba(255,255,255,0.5)" }}>2</span> middle</span>
+              <span><span style={{ color: "rgba(255,255,255,0.5)" }}>3</span> at button</span>
+              <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Enter</span> = middle</span>
+            </>
           )}
           {step === "outcome_select" && (
             <>
