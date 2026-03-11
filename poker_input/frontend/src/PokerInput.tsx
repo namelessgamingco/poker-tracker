@@ -2586,6 +2586,10 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     const action = gameState.action_facing
     const pot = gameState.pot_size
 
+    // At $1/$2+ (bb >= 2), round to whole dollars — nobody bets $12.50 at $2/$5
+    // At micros (bb < 2), preserve cents — $2.50 is a real bet at $0.50/$1
+    const roundBet = (raw: number) => bbSize >= 2 ? Math.round(raw) : Math.round(raw * 100) / 100
+
     type Preset = { label: string; value: number }
     let presets: Preset[] = []
 
@@ -2593,31 +2597,31 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       if (action === "raise") {
         // Standard open raise sizes (opponent raised to these amounts)
         presets = [
-          { label: "2.5bb", value: Math.round(bbSize * 2.5 * 100) / 100 },
-          { label: "3bb", value: Math.round(bbSize * 3 * 100) / 100 },
-          { label: "4bb", value: Math.round(bbSize * 4 * 100) / 100 },
-          { label: "5bb", value: Math.round(bbSize * 5 * 100) / 100 },
-          { label: "6bb", value: Math.round(bbSize * 6 * 100) / 100 },
+          { label: "2.5bb", value: roundBet(bbSize * 2.5) },
+          { label: "3bb", value: roundBet(bbSize * 3) },
+          { label: "4bb", value: roundBet(bbSize * 4) },
+          { label: "5bb", value: roundBet(bbSize * 5) },
+          { label: "6bb", value: roundBet(bbSize * 6) },
         ]
       } else if (action === "3bet") {
         // 3-bet sizes
         presets = [
-          { label: "8bb", value: Math.round(bbSize * 8 * 100) / 100 },
-          { label: "10bb", value: Math.round(bbSize * 10 * 100) / 100 },
-          { label: "12bb", value: Math.round(bbSize * 12 * 100) / 100 },
-          { label: "15bb", value: Math.round(bbSize * 15 * 100) / 100 },
+          { label: "8bb", value: roundBet(bbSize * 8) },
+          { label: "10bb", value: roundBet(bbSize * 10) },
+          { label: "12bb", value: roundBet(bbSize * 12) },
+          { label: "15bb", value: roundBet(bbSize * 15) },
         ]
       } else if (action === "4bet") {
         // 4-bet sizes
         presets = [
-          { label: "22bb", value: Math.round(bbSize * 22 * 100) / 100 },
-          { label: "25bb", value: Math.round(bbSize * 25 * 100) / 100 },
-          { label: "30bb", value: Math.round(bbSize * 30 * 100) / 100 },
-          { label: "40bb", value: Math.round(bbSize * 40 * 100) / 100 },
+          { label: "22bb", value: roundBet(bbSize * 22) },
+          { label: "25bb", value: roundBet(bbSize * 25) },
+          { label: "30bb", value: roundBet(bbSize * 30) },
+          { label: "40bb", value: roundBet(bbSize * 40) },
         ]
       }
     } else if (pot > 0) {
-      // Postflop: pot-percentage presets
+      // Postflop: pot-percentage presets (always whole dollars — pots are entered as integers)
       if (action === "bet" || action === "check_raise") {
         presets = [
           { label: "⅓ pot", value: Math.round(pot * 0.33) },
