@@ -1121,6 +1121,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   const amountRef = useRef<HTMLInputElement>(null)
   const plInputRef = useRef<HTMLInputElement>(null)
   const potRef = useRef<HTMLInputElement>(null)
+  const villainOverrideRef = useRef(false)  // Tracks manual villain type override this hand
+  const t2VillainOverrideRef = useRef(false)  // Same, for table 2
 
   // ---- Set frame height ----
   // Set a generous fixed height ONCE. Never resize during gameplay.
@@ -1259,6 +1261,11 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     setT2BoardEntryIndex(saveBoardEntryIndex)
     setT2Decision(saveDecision)
 
+    // Swap villain override tracking between tables
+    const saveVillainOverride = villainOverrideRef.current
+    villainOverrideRef.current = t2VillainOverrideRef.current
+    t2VillainOverrideRef.current = saveVillainOverride
+
     // Toggle active table
     setActiveTable((t) => (t === 1 ? 2 : 1))
     setPrimaryHoldsTable((t) => (t === 1 ? 2 : 1))  // FIX: Track the swap
@@ -1280,6 +1287,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       setT2LimperCount(1)
       setT2BoardEntryIndex(0)
       setT2Decision(null)
+      t2VillainOverrideRef.current = false
       // If we were on table 2, switch back to table 1
       if (activeTable === 2) {
         // Swap states so table 1 is primary
@@ -1346,6 +1354,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       setLimperCount(0)
       setBoardEntryIndex(0)
       setDecision(null)
+      villainOverrideRef.current = false  // Reset table 2's override (currently in primary)
       
       // Swap to put Table 1 back in primary
       switchTable()
@@ -1372,6 +1381,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     setBoardEntryIndex(0)
     setDecision(null)
     setChosenBluffAction(null)
+    villainOverrideRef.current = false
     clearSessionStorage()
   }, [])
 
@@ -1933,6 +1943,30 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     [pendingRank, step, gameState, boardEntryIndex]
   )
 
+  // ---- Auto-skip villain_type when session default is set ----
+  // When the user configured a default villain type in session settings,
+  // skip the villain_type step entirely and auto-submit through "ready".
+  // Override: user can tap the villain badge visible during input steps,
+  // or press Escape from "ready" to land on villain_type.
+  const proceedAfterLastInput = useCallback(() => {
+    if (defaultVillain) {
+      // Apply session-level default (unless user overrode this hand)
+      if (!villainOverrideRef.current) {
+        setGameState((s) => ({ ...s, villain_type: defaultVillain }))
+      }
+      setStep("ready")  // ready useEffect auto-submits after state settles
+    } else {
+      setStep("villain_type")
+    }
+  }, [defaultVillain])
+
+  // ---- Amount preset: one-tap confirm with a preset value ----
+  // Sets facing_bet and proceeds (skipping villain_type if default is set)
+  const selectAmountPreset = useCallback((value: number) => {
+    setGameState((s) => ({ ...s, facing_bet: value }))
+    proceedAfterLastInput()
+  }, [proceedAfterLastInput])
+
   // ---- Handle action select ----
   const selectAction = useCallback(
     (actionId: string, needsAmount: boolean, needsCount?: boolean) => {
@@ -1974,10 +2008,10 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         // FIX C4: "Checked to Me" postflop — must collect player count for multiway logic
         setStep("player_count")
       } else {
-        setStep("villain_type")
+        proceedAfterLastInput()
       }
     },
-    [gameState.street]
+    [gameState.street, proceedAfterLastInput]
   )
 
   // ---- Handle amount confirm ----
@@ -1985,30 +2019,30 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     const amt = parseFloat(amountStr)
     if (isNaN(amt) || amt <= 0) return
     setGameState((s) => ({ ...s, facing_bet: amt }))
-    setStep("villain_type")
-  }, [amountStr])
+    proceedAfterLastInput()
+  }, [amountStr, proceedAfterLastInput])
 
   // ---- Handle limper count confirm ----
   const confirmLimperCount = useCallback(() => {
     const count = parseInt(amountStr)
     if (isNaN(count) || count < 1) return
     setGameState((s) => ({ ...s, num_limpers: Math.min(count, 5) }))
-    setStep("villain_type")
-  }, [amountStr])
+    proceedAfterLastInput()
+  }, [amountStr, proceedAfterLastInput])
 
   // ---- FIX 1.2: Handle player count selection ----
   const confirmPlayerCount = useCallback((count: number) => {
     setGameState((s) => ({ ...s, num_players: count }))
     const af = gameState.action_facing
     if (af === "none" || af === "") {
-      // "Checked to Me" — player count collected, now go to villain_type
-      setStep("villain_type")
+      // "Checked to Me" — player count collected, proceed to submit or villain_type
+      proceedAfterLastInput()
     } else if (af === "raise" || af === "bet") {
       setStep("villain_position")
     } else {
       setStep("amount")
     }
-  }, [gameState.action_facing])
+  }, [gameState.action_facing, proceedAfterLastInput])
 
   // ---- FIX 1.3: Handle villain position selection ----
   const confirmVillainPosition = useCallback((pos: string) => {
@@ -2181,9 +2215,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   const selectHandStrength = useCallback(
     (hs: string) => {
       setGameState((s) => ({ ...s, hand_strength: hs }))
-      setStep("villain_type")
+      proceedAfterLastInput()
     },
-    []
+    [proceedAfterLastInput]
   )
 
   // ==========================================================================
@@ -2541,6 +2575,173 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       outline: "none",
       width: 120,
     },
+  }
+
+  // ==========================================================================
+  // AMOUNT PRESETS — one-tap sizing buttons
+  // ==========================================================================
+
+  function renderAmountPresets() {
+    const street = gameState.street
+    const action = gameState.action_facing
+    const pot = gameState.pot_size
+
+    type Preset = { label: string; value: number }
+    let presets: Preset[] = []
+
+    if (street === "preflop") {
+      if (action === "raise") {
+        // Standard open raise sizes (opponent raised to these amounts)
+        presets = [
+          { label: "2.5bb", value: Math.round(bbSize * 2.5 * 100) / 100 },
+          { label: "3bb", value: Math.round(bbSize * 3 * 100) / 100 },
+          { label: "4bb", value: Math.round(bbSize * 4 * 100) / 100 },
+          { label: "5bb", value: Math.round(bbSize * 5 * 100) / 100 },
+          { label: "6bb", value: Math.round(bbSize * 6 * 100) / 100 },
+        ]
+      } else if (action === "3bet") {
+        // 3-bet sizes
+        presets = [
+          { label: "8bb", value: Math.round(bbSize * 8 * 100) / 100 },
+          { label: "10bb", value: Math.round(bbSize * 10 * 100) / 100 },
+          { label: "12bb", value: Math.round(bbSize * 12 * 100) / 100 },
+          { label: "15bb", value: Math.round(bbSize * 15 * 100) / 100 },
+        ]
+      } else if (action === "4bet") {
+        // 4-bet sizes
+        presets = [
+          { label: "22bb", value: Math.round(bbSize * 22 * 100) / 100 },
+          { label: "25bb", value: Math.round(bbSize * 25 * 100) / 100 },
+          { label: "30bb", value: Math.round(bbSize * 30 * 100) / 100 },
+          { label: "40bb", value: Math.round(bbSize * 40 * 100) / 100 },
+        ]
+      }
+    } else if (pot > 0) {
+      // Postflop: pot-percentage presets
+      if (action === "bet" || action === "check_raise") {
+        presets = [
+          { label: "⅓ pot", value: Math.round(pot * 0.33) },
+          { label: "½ pot", value: Math.round(pot * 0.5) },
+          { label: "⅔ pot", value: Math.round(pot * 0.67) },
+          { label: "pot", value: Math.round(pot) },
+        ]
+      }
+    }
+
+    if (presets.length === 0) return null
+
+    // Remove duplicates and $0 presets
+    const seen = new Set<number>()
+    presets = presets.filter((p) => {
+      if (p.value <= 0 || seen.has(p.value)) return false
+      seen.add(p.value)
+      return true
+    })
+
+    return (
+      <div style={{
+        display: "flex",
+        gap: 6,
+        marginBottom: 10,
+        flexWrap: "wrap",
+      }}>
+        {presets.map((p, i) => (
+          <button
+            key={p.label}
+            onClick={() => selectAmountPreset(p.value)}
+            style={{
+              flex: 1,
+              minWidth: 54,
+              padding: "10px 6px",
+              borderRadius: 8,
+              border: `1px solid rgba(75,163,255,0.25)`,
+              background: "rgba(75,163,255,0.06)",
+              color: "rgba(255,255,255,0.85)",
+              fontSize: 14,
+              fontWeight: 700,
+              fontFamily: theme.mono,
+              cursor: "pointer",
+              transition: "all 0.12s ease",
+              textAlign: "center" as const,
+              display: "flex",
+              flexDirection: "column" as const,
+              alignItems: "center",
+              gap: 2,
+            }}
+          >
+            <span>${p.value % 1 === 0 ? p.value : p.value.toFixed(2)}</span>
+            <span style={{ fontSize: 10, fontWeight: 500, color: theme.textMuted }}>{p.label}</span>
+          </button>
+        ))}
+      </div>
+    )
+  }
+
+  // ==========================================================================
+  // VILLAIN OVERRIDE BADGE — tap to cycle type inline (no navigation)
+  // ==========================================================================
+
+  function renderVillainBadge() {
+    if (!defaultVillain) return null
+    // Only show during input steps after action is selected
+    const showOnSteps: InputStep[] = [
+      "amount", "limper_count", "player_count", "villain_position", "pot_size",
+    ]
+    if (!showOnSteps.includes(step)) return null
+
+    // Show CURRENT villain type (may differ from default after cycling)
+    const currentVt = villainOverrideRef.current ? gameState.villain_type : defaultVillain
+    const villainLabel = currentVt === "fish" ? "Weak Player"
+      : currentVt === "reg" ? "Good Player"
+      : "Unknown"
+
+    const cycleVillain = () => {
+      const order = ["unknown", "fish", "reg"]
+      const currentIdx = order.indexOf(gameState.villain_type)
+      const nextIdx = (currentIdx + 1) % order.length
+      setGameState((s) => ({ ...s, villain_type: order[nextIdx] }))
+      villainOverrideRef.current = true
+    }
+
+    return (
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "6px 12px",
+        marginBottom: 10,
+        borderRadius: 8,
+        background: villainOverrideRef.current
+          ? "rgba(255,179,0,0.05)"
+          : "rgba(255,255,255,0.02)",
+        border: villainOverrideRef.current
+          ? "1px solid rgba(255,179,0,0.15)"
+          : `1px solid ${theme.border}`,
+      }}>
+        <span style={{ fontSize: 12, color: theme.textMuted, fontFamily: theme.mono }}>
+          vs <span style={{
+            color: villainOverrideRef.current ? theme.amber : theme.text,
+            fontWeight: 600,
+          }}>{villainLabel}</span>
+        </span>
+        <button
+          onClick={cycleVillain}
+          style={{
+            background: "none",
+            border: `1px solid ${theme.borderLight}`,
+            borderRadius: 6,
+            padding: "3px 10px",
+            color: theme.textMuted,
+            fontSize: 11,
+            fontFamily: theme.mono,
+            cursor: "pointer",
+            transition: "all 0.12s ease",
+          }}
+        >
+          change
+        </button>
+      </div>
+    )
   }
 
   // ==========================================================================
@@ -4795,7 +4996,14 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               </div>
             )}
             
+            {/* Villain type override badge */}
+            {renderVillainBadge()}
+
             <div style={S.sectionLabel}>{amountLabel}</div>
+
+            {/* Quick-select presets — one tap confirms amount */}
+            {renderAmountPresets()}
+
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <span style={{ color: theme.textMuted, fontSize: 18, fontFamily: theme.mono }}>$</span>
               <input
@@ -4823,6 +5031,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         {/* LIMPER COUNT INPUT */}
         {step === "limper_count" && (
           <div>
+            {/* Villain type override badge */}
+            {renderVillainBadge()}
             <div style={S.sectionLabel}>How Many Limpers?</div>
             
             {/* Context explanation */}
@@ -4989,6 +5199,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         {/* PLAYER COUNT - FIX 1.2 */}
         {step === "player_count" && (
           <div>
+            {/* Villain type override badge */}
+            {renderVillainBadge()}
             <div style={S.sectionLabel}>Players Still in Hand</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
               {[
@@ -5758,7 +5970,14 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             </div>
           )}
           
+          {/* Villain type override badge */}
+          {renderVillainBadge()}
+
           <div style={S.sectionLabel}>{amountLabel}</div>
+
+          {/* Quick-select presets — one tap confirms amount */}
+          {renderAmountPresets()}
+
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <span style={{ color: theme.textMuted, fontSize: 18, fontFamily: theme.mono }}>$</span>
             <input
@@ -5786,6 +6005,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       {/* LIMPER COUNT INPUT */}
       {step === "limper_count" && (
         <div>
+          {/* Villain type override badge */}
+          {renderVillainBadge()}
           <div style={S.sectionLabel}>How Many Limpers?</div>
           
           {/* Context explanation */}
@@ -5952,6 +6173,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       {/* PLAYER COUNT - FIX 1.2 */}
       {step === "player_count" && (
         <div>
+          {/* Villain type override badge */}
+          {renderVillainBadge()}
           <div style={S.sectionLabel}>Players Still in Hand</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
             {[
