@@ -3213,7 +3213,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             <div style={{ fontSize: 10, fontWeight: 700, color: theme.green, marginBottom: 6, letterSpacing: "0.08em" }}>
               ★ RECOMMENDED
             </div>
-            <div style={{ fontSize: 22, fontWeight: 800, fontFamily: theme.mono, color: "#fff", marginBottom: 8 }}>
+            <div style={{ fontSize: 28, fontWeight: 900, fontFamily: theme.mono, color: "#fff", marginBottom: 8 }}>
               {roundBetDisplay(decision.display)}
             </div>
             <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", lineHeight: 1.5 }}>
@@ -3248,7 +3248,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             <div style={{ fontSize: 10, fontWeight: 700, color: theme.textDim, marginBottom: 6, letterSpacing: "0.08em" }}>
               SAFE OPTION
             </div>
-            <div style={{ fontSize: 22, fontWeight: 800, fontFamily: theme.mono, color: "rgba(255,255,255,0.5)", marginBottom: 8 }}>
+            <div style={{ fontSize: 28, fontWeight: 900, fontFamily: theme.mono, color: "rgba(255,255,255,0.5)", marginBottom: 8 }}>
               {alt.display}
             </div>
             <div style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", lineHeight: 1.5 }}>
@@ -3286,27 +3286,53 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     const action = decision.action || decision.display
     let bg = "linear-gradient(135deg, #546E7A, #78909C)" // fold default
     let textColor = "#fff"
-    let glow = "0 4px 20px rgba(84,110,122,0.2)"
+    let glow = "0 6px 28px rgba(84,110,122,0.25)"
 
     if (["RAISE", "BET", "RE-RAISE", "3-BET", "4-BET"].some((a) => decision.display.includes(a))) {
       bg = "linear-gradient(135deg, #00C853, #00E676)"
       textColor = "#000"
-      glow = "0 4px 24px rgba(0,200,83,0.25)"
+      glow = "0 6px 32px rgba(0,200,83,0.35)"
     } else if (["CALL", "CHECK"].some((a) => decision.display.includes(a))) {
       bg = "linear-gradient(135deg, #FFB300, #FFC107)"
       textColor = "#000"
-      glow = "0 4px 24px rgba(255,179,0,0.25)"
+      glow = "0 6px 32px rgba(255,179,0,0.35)"
     } else if (decision.display.includes("ALL-IN")) {
       bg = "linear-gradient(135deg, #D32F2F, #F44336)"
       textColor = "#fff"
-      glow = "0 4px 24px rgba(211,47,47,0.25)"
+      glow = "0 6px 32px rgba(211,47,47,0.35)"
     }
 
     // Show bluff indicator for auto-bluffs (probe, c-bet)
     const isAutoBluff = decision.bluff_context && decision.bluff_context.delivery === "auto"
+    const isFoldDecision = decision.display.toUpperCase().includes("FOLD")
+
+    // Split display into action word and amount for visual hierarchy
+    // "RAISE TO $12" → action="RAISE TO", amount="$12"
+    // "FOLD" → action="FOLD", amount=null
+    const displayRounded = roundBetDisplay(decision.display)
+    const amountSplit = displayRounded.match(/^(.+?)(\$[\d,.]+)$/)
+    const actionWord = amountSplit ? amountSplit[1].trim() : displayRounded
+    const amountPart = amountSplit ? amountSplit[2] : null
+
+    // Color wash for the entire decision area — peripheral vision picks up category before focus
+    const washColor = isFoldDecision
+      ? "transparent"
+      : decision.display.includes("ALL-IN")
+      ? "rgba(211,47,47,0.04)"
+      : ["RAISE", "BET", "RE-RAISE", "3-BET", "4-BET"].some((a) => decision.display.includes(a))
+      ? "rgba(0,200,83,0.04)"
+      : ["CALL", "CHECK"].some((a) => decision.display.includes(a))
+      ? "rgba(255,179,0,0.04)"
+      : "transparent"
 
     return (
-      <div style={{ margin: "20px 0" }}>
+      <div style={{
+        margin: "20px 0",
+        background: washColor,
+        borderRadius: 20,
+        padding: washColor !== "transparent" ? "4px" : 0,
+        transition: "background 0.3s ease",
+      }}>
         {/* Auto-bluff indicator */}
         {isAutoBluff && (
           <div style={{
@@ -3330,23 +3356,53 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         <div
           style={{
             background: bg,
-            borderRadius: 12,
-            padding: "20px 24px",
+            borderRadius: 16,
+            padding: amountPart ? "26px 28px 22px" : "30px 28px",
             textAlign: "center",
-            boxShadow: glow,
+            boxShadow: isFoldDecision ? "none" : glow,
+            // Snap-in animation: scale from 97% to 100% — catches peripheral attention
+            animation: "decisionSnap 0.15s ease-out",
           }}
         >
-          <div
-            style={{
-              fontSize: 30,
-              fontWeight: 800,
+          {amountPart ? (
+            <>
+              {/* Action word — smaller, uppercase label */}
+              <div style={{
+                fontSize: 14,
+                fontWeight: 700,
+                fontFamily: theme.mono,
+                color: textColor,
+                opacity: 0.7,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase" as const,
+                marginBottom: 4,
+              }}>
+                {actionWord}
+              </div>
+              {/* Amount — huge, unmissable */}
+              <div style={{
+                fontSize: 44,
+                fontWeight: 900,
+                fontFamily: theme.mono,
+                color: textColor,
+                letterSpacing: "-0.02em",
+                lineHeight: 1.1,
+              }}>
+                {amountPart}
+              </div>
+            </>
+          ) : (
+            /* Single word decisions: FOLD, CHECK, ALL-IN */
+            <div style={{
+              fontSize: 40,
+              fontWeight: 900,
               fontFamily: theme.mono,
               color: textColor,
-              letterSpacing: "0.04em",
-            }}
-          >
-            {roundBetDisplay(decision.display)}
-          </div>
+              letterSpacing: "0.06em",
+            }}>
+              {displayRounded}
+            </div>
+          )}
           {/* Hand strength badge — color-coded, shows specific hand type */}
           {gameState.hand_strength && !["air", "premium", "strong", "playable", "marginal", "trash"].includes(gameState.hand_strength) && (() => {
             const isMonster = ["quads","full_house","flush","straight","set","trips","royal_flush","straight_flush","monster","nuts"]
@@ -3362,27 +3418,30 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               : HAND_STRENGTH_DISPLAY[gameState.hand_strength] || gameState.hand_strength
             return (
               <div style={{
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: 700,
                 textTransform: "uppercase" as const,
                 letterSpacing: "0.1em",
-                marginTop: 6,
+                marginTop: 8,
                 color: nutsDetected ? "#FFD54F" : color,
               }}>
                 {label}
               </div>
             )
           })()}
-          {decision.explanation && (
-            <div style={{ fontSize: 13, color: textColor, opacity: 0.8, marginTop: 6 }}>
-              {humanizeExplanation(decision.explanation)}
-            </div>
-          )}
-          {decision.calculation && (
-            <div style={{ fontSize: 11, color: textColor, opacity: 0.6, marginTop: 4, fontFamily: theme.mono }}>
-              {roundCalculation(decision.calculation)}
-            </div>
-          )}
+          {/* Explanation + calculation: delayed fade-in so they don't compete with the action */}
+          <div style={{ animation: "detailFadeIn 0.4s ease-out 0.3s both" }}>
+            {decision.explanation && (
+              <div style={{ fontSize: 13, color: textColor, opacity: 0.75, marginTop: 8, lineHeight: 1.4 }}>
+                {humanizeExplanation(decision.explanation)}
+              </div>
+            )}
+            {decision.calculation && (
+              <div style={{ fontSize: 11, color: textColor, opacity: 0.5, marginTop: 4, fontFamily: theme.mono }}>
+                {roundCalculation(decision.calculation)}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Post-decision actions */}
@@ -4346,6 +4405,14 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           @keyframes pulse {
             0%, 100% { opacity: 0.4; transform: scale(1); }
             50% { opacity: 1; transform: scale(1.2); }
+          }
+          @keyframes decisionSnap {
+            0% { transform: scale(0.97); opacity: 0.7; }
+            100% { transform: scale(1); opacity: 1; }
+          }
+          @keyframes detailFadeIn {
+            0% { opacity: 0; transform: translateY(4px); }
+            100% { opacity: 1; transform: translateY(0); }
           }
           button:hover {
             filter: brightness(1.15);
@@ -5754,6 +5821,14 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         @keyframes pulse {
           0%, 100% { opacity: 0.4; transform: scale(1); }
           50% { opacity: 1; transform: scale(1.2); }
+        }
+        @keyframes decisionSnap {
+          0% { transform: scale(0.97); opacity: 0.7; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes detailFadeIn {
+          0% { opacity: 0; transform: translateY(4px); }
+          100% { opacity: 1; transform: translateY(0); }
         }
         button:hover {
           filter: brightness(1.15);
