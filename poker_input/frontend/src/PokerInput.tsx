@@ -2105,7 +2105,13 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         setStep("card2_rank")
       } else if (step === "card2_suit") {
         setGameState((s) => ({ ...s, card2: card }))
-        setStep("action")
+        // AUTO-SKIP: UTG preflop — nobody can have acted before us, always "Nobody Bet Yet"
+        if (gameState.position === "UTG" && gameState.street === "preflop") {
+          setGameState((s) => ({ ...s, card2: card, action_facing: "none", we_are_aggressor: false }))
+          proceedAfterLastInput()
+        } else {
+          setStep("action")
+        }
       } else if (step === "board_suit") {
         const newBoard = [...gameState.board_cards]
         newBoard[boardEntryIndex] = card
@@ -2126,7 +2132,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         }
       }
     },
-    [pendingRank, step, gameState, boardEntryIndex]
+    [pendingRank, step, gameState, boardEntryIndex, proceedAfterLastInput]
   )
 
   // ---- Auto-skip villain_type when session default is set ----
@@ -2189,7 +2195,13 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         setAmountLabel(action?.amountLabel || "Their raise to $")
         setAmountContext(null)
         setAmountStr("")
-        setStep("player_count")
+        // AUTO-SKIP: Preflop 3-bet/4-bet → always heads-up, skip player count
+        if (gameState.street === "preflop" && (actionId === "3bet" || actionId === "4bet")) {
+          setGameState((s) => ({ ...s, num_players: 2 }))
+          setStep("villain_position")
+        } else {
+          setStep("player_count")
+        }
       } else if (gameState.street !== "preflop") {
         // FIX C4: "Checked to Me" postflop — must collect player count for multiway logic
         setStep("player_count")
