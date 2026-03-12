@@ -325,6 +325,87 @@ function roundCalculation(calc: string): string {
   })
 }
 
+// =============================================================================
+// AUDIO OUTPUT — Speaks decisions aloud so eyes stay on the poker table
+// =============================================================================
+
+function amountToSpoken(amount: number): string {
+  const rounded = Math.round(amount * 100) / 100
+  if (rounded === Math.floor(rounded)) {
+    return `${Math.floor(rounded)} dollars`
+  }
+  const dollars = Math.floor(rounded)
+  const cents = Math.round((rounded - dollars) * 100)
+  if (dollars === 0) return `${cents} cents`
+  if (cents === 50) return `${dollars} fifty`
+  return `${dollars} dollars and ${cents} cents`
+}
+
+function displayToSpokenText(display: string): string {
+  const d = display.toUpperCase()
+  const amountMatch = display.match(/\$([\d,]+\.?\d*)/)
+  const rawAmount = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, "")) : null
+  const spoken = rawAmount !== null ? amountToSpoken(rawAmount) : null
+
+  if (d.includes("ALL-IN") || d.includes("ALL IN")) return "All in"
+  if (d.includes("FOLD")) return "Fold"
+  if (d.includes("CHECK")) return "Check"
+  if (d.includes("4-BET") && spoken) return `Four bet to ${spoken}`
+  if (d.includes("3-BET") && spoken) return `Three bet to ${spoken}`
+  if (d.includes("RE-RAISE") && spoken) return `Re-raise to ${spoken}`
+  if (d.includes("ISO") && spoken) return `Raise to ${spoken}`
+  if (d.includes("RAISE") && spoken) return `Raise to ${spoken}`
+  if (d.includes("CALL") && spoken) return `Call ${spoken}`
+  if (d.includes("BET") && spoken) return `Bet ${spoken}`
+  // Fallback: strip symbols, speak raw text
+  return display.replace(/\$/g, "").replace(/[^a-zA-Z0-9\s.]/g, "")
+}
+
+function decisionToSpeech(
+  decision: DecisionResult
+): string {
+  // Bluff choice — speak the recommended action with context
+  if (decision.alternative) {
+    const rec = displayToSpokenText(decision.display)
+    return `Your call. Recommended: ${rec}.`
+  }
+  return displayToSpokenText(decision.display)
+}
+
+let _speechVoicesLoaded = false
+function ensureVoicesLoaded(): void {
+  if (_speechVoicesLoaded || !window.speechSynthesis) return
+  // Chrome loads voices async — this primes the cache
+  window.speechSynthesis.getVoices()
+  _speechVoicesLoaded = true
+}
+
+function speakDecision(text: string, volume: number = 1.0): void {
+  if (!window.speechSynthesis || !text) return
+  // Cancel anything currently speaking
+  window.speechSynthesis.cancel()
+
+  const utterance = new SpeechSynthesisUtterance(text)
+  utterance.rate = 1.05    // Slightly brisk — not rushed, not slow
+  utterance.pitch = 0.95   // Slightly lower pitch — calm, authoritative
+  utterance.volume = volume
+
+  // Select a natural-sounding voice if available
+  const voices = window.speechSynthesis.getVoices()
+  // Prefer: macOS "Samantha"/"Daniel", Chrome "Google US English", Windows "David"/"Zira"
+  const preferred = voices.find(
+    (v) =>
+      v.name.includes("Samantha") ||
+      v.name.includes("Daniel") ||
+      v.name.includes("Google US English") ||
+      (v.name.includes("David") && v.lang.startsWith("en")) ||
+      (v.name.includes("Zira") && v.lang.startsWith("en"))
+  ) || voices.find((v) => v.lang.startsWith("en") && v.localService)
+  if (preferred) utterance.voice = preferred
+
+  window.speechSynthesis.speak(utterance)
+}
+
 function suitSymbol(suit: string): string {
   const s = SUITS.find((x) => x.key === suit)
   return s ? s.symbol : suit
@@ -841,6 +922,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   // NEW: Track which table the decision is for (Python should send this back)
   const decisionTableId = (args["decision_table_id"] as number) || 1
   const defaultVillain = (args["default_villain"] as string) || ""  // Session-level villain default
+  const audioEnabledFromPython = !!(args["audio_enabled"])  // Session-level audio output toggle
   const showSecondTableFromPython = args["show_second_table"] as boolean | undefined
   const activeTableFromPython = args["active_table"] as (1 | 2) | undefined
   const primaryHoldsTableFromPython = args["primary_holds_table"] as (1 | 2) | undefined
@@ -1053,6 +1135,15 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   const [keyboardActive, setKeyboardActive] = useState(mode !== "standard")
   const [showOverlay, setShowOverlay] = useState(false)
   const [showCloseConfirm, setShowCloseConfirm] = useState(false)
+  // Audio output state — persists in sessionStorage across Streamlit reruns
+  const [audioEnabled, setAudioEnabled] = useState<boolean>(() => {
+    try {
+      const stored = window.sessionStorage.getItem("nameless_audio_enabled")
+      if (stored !== null) return stored === "true"
+    } catch {}
+    return audioEnabledFromPython
+  })
+  const lastSpokenDecisionRef = useRef<string | null>(null)
 
   // =========================================================================
   // PERSIST HAND STATE TO SESSION STORAGE (survives Streamlit session resets)
@@ -1221,7 +1312,48 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       setT2Step("showing_decision")
     }
     setPendingDecisionTable(null)
+
+    // AUDIO OUTPUT: Speak the decision immediately
+    if (audioEnabled && decisionFromPython) {
+      const speechText = decisionToSpeech(decisionFromPython)
+      if (speechText && speechText !== lastSpokenDecisionRef.current) {
+        lastSpokenDecisionRef.current = speechText
+        speakDecision(speechText)
+      }
+    }
   }, [decisionFromPython, decisionTableId, primaryHoldsTable])
+
+  // =========================================================================
+  // AUDIO OUTPUT: Persist toggle & prime speech synthesis
+  // =========================================================================
+  useEffect(() => {
+    ensureVoicesLoaded()
+    // Chrome fires voiceschanged async — re-prime when available
+    if (window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = () => { ensureVoicesLoaded() }
+    }
+  }, [])
+
+  useEffect(() => {
+    try { window.sessionStorage.setItem("nameless_audio_enabled", String(audioEnabled)) } catch {}
+  }, [audioEnabled])
+
+  // Sync from Python prop on mount (but sessionStorage takes priority if set)
+  useEffect(() => {
+    try {
+      const stored = window.sessionStorage.getItem("nameless_audio_enabled")
+      if (stored === null) setAudioEnabled(audioEnabledFromPython)
+    } catch {
+      setAudioEnabled(audioEnabledFromPython)
+    }
+  }, [audioEnabledFromPython])
+
+  // Reset spoken ref when hand resets so next hand's decision can be spoken
+  useEffect(() => {
+    if (step === "position") {
+      lastSpokenDecisionRef.current = null
+    }
+  }, [step])
 
   // =========================================================================
   // TWO-TABLE MODE: SWITCH TABLE FUNCTION (NEW)
@@ -4210,6 +4342,24 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             >
               ?
             </button>
+            {/* Audio toggle */}
+            <button
+              onClick={() => setAudioEnabled(!audioEnabled)}
+              title={audioEnabled ? "Audio coaching ON — click to mute" : "Audio coaching OFF — click to enable"}
+              style={{
+                background: audioEnabled ? "rgba(0,200,83,0.08)" : "none",
+                border: audioEnabled ? "1px solid rgba(0,200,83,0.25)" : `1px solid ${theme.borderLight}`,
+                borderRadius: 6,
+                padding: "3px 8px",
+                color: audioEnabled ? theme.green : theme.textDim,
+                fontSize: 13,
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+                lineHeight: 1,
+              }}
+            >
+              {audioEnabled ? "🔊" : "🔇"}
+            </button>
             <span
               style={{
                 fontSize: 11,
@@ -5604,6 +5754,24 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               ?
             </button>
           )}
+          {/* Audio toggle */}
+          <button
+            onClick={() => setAudioEnabled(!audioEnabled)}
+            title={audioEnabled ? "Audio coaching ON — click to mute" : "Audio coaching OFF — click to enable"}
+            style={{
+              background: audioEnabled ? "rgba(0,200,83,0.08)" : "none",
+              border: audioEnabled ? "1px solid rgba(0,200,83,0.25)" : `1px solid ${theme.borderLight}`,
+              borderRadius: 6,
+              padding: "3px 8px",
+              color: audioEnabled ? theme.green : theme.textDim,
+              fontSize: 13,
+              cursor: "pointer",
+              transition: "all 0.2s ease",
+              lineHeight: 1,
+            }}
+          >
+            {audioEnabled ? "🔊" : "🔇"}
+          </button>
           <span
             style={{
               fontSize: 11,

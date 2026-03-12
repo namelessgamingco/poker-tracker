@@ -45,6 +45,7 @@ def poker_input(
     hand_log=None,
     session_active=True,
     clear_recovery=False,
+    audio_enabled=False,
     key=None,
 ):
     """
@@ -75,6 +76,7 @@ def poker_input(
         restore_state: Dict with game state to restore after rerun
         session_active: Whether session is active
         clear_recovery: If True, tells React to clear sessionStorage and start fresh (new session)
+        audio_enabled: If True, React speaks decision results aloud via browser speech synthesis
         key: Streamlit component key
 
     Returns:
@@ -106,6 +108,7 @@ def poker_input(
         hand_log=hand_log,
         session_active=session_active,
         clear_recovery=clear_recovery,
+        audio_enabled=audio_enabled,
         key=key,
         default=None,
     )

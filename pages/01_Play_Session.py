@@ -1568,6 +1568,21 @@ def render_setup_mode():
 
     st.markdown('</div>', unsafe_allow_html=True)
 
+    # ── Audio Coaching ──
+    st.markdown('<div class="setup-section"><div class="setup-section-title">Audio Coaching</div>',
+                unsafe_allow_html=True)
+
+    audio_enabled = st.toggle("Speak decisions aloud", value=st.session_state.get("audio_enabled", False),
+                               key="audio_toggle")
+    st.session_state.audio_enabled = audio_enabled
+
+    if audio_enabled:
+        st.caption("🔊 Decisions are spoken aloud so your eyes stay on the table. Toggle on/off anytime with the speaker icon during play.")
+    else:
+        st.caption("Enable to hear decisions spoken aloud — saves ~1 second per hand by keeping your eyes on the poker table.")
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
     # ── Bankroll check ──
     required_buy_ins = mode_config["buy_ins"]
     override = True
@@ -1776,6 +1791,7 @@ def render_play_mode():
         hand_log=st.session_state.get("hand_log_entries", []),
         session_active=True,
         clear_recovery=st.session_state.get("_clear_recovery", False),
+        audio_enabled=st.session_state.get("audio_enabled", False),
         key="poker_input_main",
     )
 
