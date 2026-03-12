@@ -1993,6 +1993,10 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           } else if (gameState.action_facing === "limp") {
             setAmountStr(gameState.num_limpers > 0 ? gameState.num_limpers.toString() : "")
             setStep("limper_count")
+          } else if (gameState.position === "UTG" && gameState.street === "preflop") {
+            // UTG preflop: action was auto-skipped, go back to cards
+            setGameState((s) => ({ ...s, card2: null, action_facing: "none" }))
+            setStep("card2_rank")
           } else {
             setStep("action")
           }
@@ -2105,13 +2109,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         setStep("card2_rank")
       } else if (step === "card2_suit") {
         setGameState((s) => ({ ...s, card2: card }))
-        // AUTO-SKIP: UTG preflop — nobody can have acted before us, always "Nobody Bet Yet"
-        if (gameState.position === "UTG" && gameState.street === "preflop") {
-          setGameState((s) => ({ ...s, card2: card, action_facing: "none", we_are_aggressor: false }))
-          proceedAfterLastInput()
-        } else {
-          setStep("action")
-        }
+        setStep("action")
       } else if (step === "board_suit") {
         const newBoard = [...gameState.board_cards]
         newBoard[boardEntryIndex] = card
@@ -2132,7 +2130,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         }
       }
     },
-    [pendingRank, step, gameState, boardEntryIndex, proceedAfterLastInput]
+    [pendingRank, step, gameState, boardEntryIndex]
   )
 
   // ---- Auto-skip villain_type when session default is set ----
@@ -2366,6 +2364,15 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     },
     []
   )
+
+  // ---- AUTO-SKIP: UTG preflop always "Nobody Bet Yet" ----
+  // Nobody can act before UTG, so skip the action step entirely
+  useEffect(() => {
+    if (step === "action" && gameState.position === "UTG" && gameState.street === "preflop") {
+      setGameState((s) => ({ ...s, action_facing: "none", we_are_aggressor: false }))
+      proceedAfterLastInput()
+    }
+  }, [step, gameState.position, gameState.street, proceedAfterLastInput])
 
   // ---- Auto-submit when step is "ready" ----
   useEffect(() => {
