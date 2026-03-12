@@ -1259,6 +1259,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   const amountRef = useRef<HTMLInputElement>(null)
   const plInputRef = useRef<HTMLInputElement>(null)
   const potRef = useRef<HTMLInputElement>(null)
+  const pendingPotEstimateRef = useRef<number>(0)  // Stores pot estimate calculated during street transitions (before state resets)
   const villainOverrideRef = useRef(false)  // Tracks manual villain type override this hand
   const t2VillainOverrideRef = useRef(false)  // Same, for table 2
 
@@ -1568,6 +1569,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     setDecision(null)
     setChosenBluffAction(null)
     villainOverrideRef.current = false
+    pendingPotEstimateRef.current = 0
     clearSessionStorage()
   }, [])
 
@@ -2124,10 +2126,10 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         const needed = requiredBoardCards(gameState.street)
         if (nextIdx >= needed) {
           setBoardEntryIndex(nextIdx)
-          // Auto-fill pot estimate for turn/river (previous pot + 2x our last bet)
-          if (gameState.pot_size > 0 && decision?.amount) {
-            const estimate = Math.round(gameState.pot_size + 2 * decision.amount)
-            setPotStr(estimate.toString())
+          // Pre-fill pot estimate (calculated during street transition, stored in ref)
+          if (pendingPotEstimateRef.current > 0) {
+            setPotStr(pendingPotEstimateRef.current.toString())
+            pendingPotEstimateRef.current = 0
           }
           setStep("pot_size")
         } else {
@@ -2284,6 +2286,37 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     (street: Street) => {
       const newBoardEntryIndex = street === "flop" ? 0 : street === "turn" ? 3 : 4
       
+      // POT AUTO-CALC: Calculate before state resets (decision/facing_bet get cleared)
+      if (street === "flop") {
+        // Preflop → Flop: estimate from preflop action data
+        const ourBet = decision?.amount || 0
+        const theirBet = gameState.facing_bet || 0
+        const effectiveRaise = Math.max(ourBet, theirBet)
+        let estimate = 0
+        if (effectiveRaise > 0) {
+          // Raised pot: each player × raise + ~1 BB dead money (folded blinds)
+          estimate = Math.round(effectiveRaise * gameState.num_players + bbSize)
+        } else if (gameState.num_limpers > 0) {
+          // Limped pot: limpers × 1 BB + blinds
+          estimate = Math.round(bbSize * (gameState.num_limpers + 1) + bbSize * 0.5)
+        } else {
+          // Walk or unusual — just show blinds
+          estimate = Math.round(bbSize * 1.5)
+        }
+        pendingPotEstimateRef.current = estimate > 0 ? estimate : 0
+      } else {
+        // Turn/River: previous pot + roughly 2× our last action (bet + call ≈ doubled)
+        const lastBet = decision?.amount || 0
+        if (gameState.pot_size > 0 && lastBet > 0) {
+          pendingPotEstimateRef.current = Math.round(gameState.pot_size + 2 * lastBet)
+        } else if (gameState.pot_size > 0) {
+          // Checked through — pot stays the same
+          pendingPotEstimateRef.current = Math.round(gameState.pot_size)
+        } else {
+          pendingPotEstimateRef.current = 0
+        }
+      }
+
       setGameState((s) => {
         let wasAggressor = false
         if (decision) {
@@ -2352,7 +2385,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         table2_board_entry_index: table2BoardEntryIndex,
       })
     },
-    [decision, gameState, activeTable, primaryHoldsTable, showSecondTable, t2GameState, t2Step, t2Decision]
+    [decision, gameState, bbSize, activeTable, primaryHoldsTable, showSecondTable, t2GameState, t2Step, t2Decision]
   )
 
   // ---- Preflop submit (skip board) ----
@@ -5329,7 +5362,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
                 value={amountStr}
                 onChange={(e) => setAmountStr(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") {
+                  if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault()
                     confirmAmount()
                   }
@@ -5412,7 +5445,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
                 value={potStr}
                 onChange={(e) => setPotStr(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") {
+                  if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault()
                     confirmPotSize()
                   }
@@ -5779,7 +5812,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
                 inputMode="decimal"
                 value={plInputStr}
                 onChange={(e) => setPlInputStr(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); confirmPlInput() } }}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); confirmPlInput() } }}
                 placeholder="Total Pot"
                 style={{
                   ...S.input,
@@ -6306,7 +6339,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               value={amountStr}
               onChange={(e) => setAmountStr(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") {
+                if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault()
                   confirmAmount()
                 }
@@ -6389,7 +6422,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               value={potStr}
               onChange={(e) => setPotStr(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") {
+                if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault()
                   confirmPotSize()
                 }
@@ -6756,7 +6789,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               inputMode="decimal"
               value={plInputStr}
               onChange={(e) => setPlInputStr(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); confirmPlInput() } }}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); confirmPlInput() } }}
               placeholder="Total Pot"
               style={{
                 ...S.input,
