@@ -3429,19 +3429,16 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               </div>
             )
           })()}
-          {/* Explanation + calculation: delayed fade-in so they don't compete with the action */}
-          <div style={{ animation: "detailFadeIn 0.4s ease-out 0.3s both" }}>
-            {decision.explanation && (
-              <div style={{ fontSize: 13, color: textColor, opacity: 0.75, marginTop: 8, lineHeight: 1.4 }}>
-                {humanizeExplanation(decision.explanation)}
-              </div>
-            )}
-            {decision.calculation && (
-              <div style={{ fontSize: 11, color: textColor, opacity: 0.5, marginTop: 4, fontFamily: theme.mono }}>
-                {roundCalculation(decision.calculation)}
-              </div>
-            )}
-          </div>
+          {decision.explanation && (
+            <div style={{ fontSize: 13, color: textColor, opacity: 0.75, marginTop: 8, lineHeight: 1.4 }}>
+              {humanizeExplanation(decision.explanation)}
+            </div>
+          )}
+          {decision.calculation && (
+            <div style={{ fontSize: 11, color: textColor, opacity: 0.5, marginTop: 4, fontFamily: theme.mono }}>
+              {roundCalculation(decision.calculation)}
+            </div>
+          )}
         </div>
 
         {/* Post-decision actions */}
@@ -4409,10 +4406,6 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           @keyframes decisionSnap {
             0% { transform: scale(0.97); opacity: 0.7; }
             100% { transform: scale(1); opacity: 1; }
-          }
-          @keyframes detailFadeIn {
-            0% { opacity: 0; transform: translateY(4px); }
-            100% { opacity: 1; transform: translateY(0); }
           }
           button:hover {
             filter: brightness(1.15);
@@ -5825,10 +5818,6 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         @keyframes decisionSnap {
           0% { transform: scale(0.97); opacity: 0.7; }
           100% { transform: scale(1); opacity: 1; }
-        }
-        @keyframes detailFadeIn {
-          0% { opacity: 0; transform: translateY(4px); }
-          100% { opacity: 1; transform: translateY(0); }
         }
         button:hover {
           filter: brightness(1.15);
