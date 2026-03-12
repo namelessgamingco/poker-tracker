@@ -1956,7 +1956,13 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             setStep("showing_decision")
           } else {
             setGameState((s) => ({ ...s, facing_bet: 0 }))
-            if (gameState.villain_position !== null) {
+            // If villain_position was auto-filled (HJ preflop), skip back to player_count
+            if (gameState.villain_position !== null &&
+                gameState.position === "HJ" && gameState.street === "preflop" &&
+                gameState.villain_position === "UTG") {
+              setGameState((s) => ({ ...s, villain_position: null }))
+              setStep("player_count")
+            } else if (gameState.villain_position !== null) {
               setStep("villain_position")
             } else if (gameState.num_players > 0) {
               setStep("player_count")
@@ -2240,11 +2246,17 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       // "Checked to Me" — player count collected, proceed to submit or villain_type
       proceedAfterLastInput()
     } else if (af === "raise" || af === "bet") {
-      setStep("villain_position")
+      // AUTO-SKIP: HJ facing a preflop raise — only UTG can have raised
+      if (gameState.position === "HJ" && gameState.street === "preflop" && af === "raise") {
+        setGameState((s) => ({ ...s, num_players: count, villain_position: "UTG" }))
+        setStep("amount")
+      } else {
+        setStep("villain_position")
+      }
     } else {
       setStep("amount")
     }
-  }, [gameState.action_facing, proceedAfterLastInput])
+  }, [gameState.action_facing, gameState.position, gameState.street, proceedAfterLastInput])
 
   // ---- FIX 1.3: Handle villain position selection ----
   const confirmVillainPosition = useCallback((pos: string) => {
