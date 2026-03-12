@@ -373,11 +373,70 @@ function decisionToSpeech(
 }
 
 let _speechVoicesLoaded = false
+let _speechWarmedUp = false
+let _cachedVoice: SpeechSynthesisVoice | null = null
+
 function ensureVoicesLoaded(): void {
   if (_speechVoicesLoaded || !window.speechSynthesis) return
-  // Chrome loads voices async — this primes the cache
   window.speechSynthesis.getVoices()
   _speechVoicesLoaded = true
+  _cachedVoice = null  // Re-select voice when voices change
+}
+
+function selectBestVoice(): SpeechSynthesisVoice | null {
+  if (_cachedVoice) return _cachedVoice
+  const voices = window.speechSynthesis?.getVoices() || []
+  if (voices.length === 0) return null
+
+  // Priority order — newer macOS voices first (dramatically better than Samantha/Fred),
+  // then high-quality network voices, then legacy voices as last resort.
+  // Each entry: [nameMatch, mustBeLocal] — local voices have zero latency (critical for poker)
+  const priorities: [string, boolean][] = [
+    // Tier 1: Modern macOS voices (Sonoma+) — natural, warm, fast
+    ["Reed (English (United States))", true],
+    ["Eddy (English (United States))", true],
+    ["Sandy (English (United States))", true],
+    ["Shelley (English (United States))", true],
+    ["Flo (English (United States))", true],
+    ["Rocko (English (United States))", true],
+    // Tier 2: Other good macOS en-US voices
+    ["Aaron", true],
+    ["Nicky", true],
+    // Tier 3: Windows quality voices
+    ["Microsoft David", true],
+    ["Microsoft Zira", true],
+    ["Microsoft Mark", true],
+    // Tier 4: Network voices (good quality but may add ~200ms latency)
+    ["Google US English", false],
+    // Tier 5: Legacy macOS (recognizable but robotic)
+    ["Samantha", true],
+    ["Daniel", true],
+  ]
+
+  for (const [name, mustBeLocal] of priorities) {
+    const match = voices.find(
+      (v) => v.name === name || v.name.startsWith(name)
+    )
+    if (match && (!mustBeLocal || match.localService)) {
+      _cachedVoice = match
+      return match
+    }
+  }
+
+  // Fallback: any local English voice
+  const fallback = voices.find((v) => v.lang.startsWith("en") && v.localService)
+  _cachedVoice = fallback || null
+  return _cachedVoice
+}
+
+function warmUpSpeech(): void {
+  // Fire a silent utterance on first load to prime the speech engine.
+  // Without this, the first real utterance has ~300ms of dead air.
+  if (_speechWarmedUp || !window.speechSynthesis) return
+  _speechWarmedUp = true
+  const warmup = new SpeechSynthesisUtterance("")
+  warmup.volume = 0
+  window.speechSynthesis.speak(warmup)
 }
 
 function speakDecision(text: string, volume: number = 1.0): void {
@@ -390,18 +449,8 @@ function speakDecision(text: string, volume: number = 1.0): void {
   utterance.pitch = 0.95   // Slightly lower pitch — calm, authoritative
   utterance.volume = volume
 
-  // Select a natural-sounding voice if available
-  const voices = window.speechSynthesis.getVoices()
-  // Prefer: macOS "Samantha"/"Daniel", Chrome "Google US English", Windows "David"/"Zira"
-  const preferred = voices.find(
-    (v) =>
-      v.name.includes("Samantha") ||
-      v.name.includes("Daniel") ||
-      v.name.includes("Google US English") ||
-      (v.name.includes("David") && v.lang.startsWith("en")) ||
-      (v.name.includes("Zira") && v.lang.startsWith("en"))
-  ) || voices.find((v) => v.lang.startsWith("en") && v.localService)
-  if (preferred) utterance.voice = preferred
+  const voice = selectBestVoice()
+  if (voice) utterance.voice = voice
 
   window.speechSynthesis.speak(utterance)
 }
@@ -1330,12 +1379,19 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     ensureVoicesLoaded()
     // Chrome fires voiceschanged async — re-prime when available
     if (window.speechSynthesis) {
-      window.speechSynthesis.onvoiceschanged = () => { ensureVoicesLoaded() }
+      window.speechSynthesis.onvoiceschanged = () => {
+        ensureVoicesLoaded()
+        // Re-warm with the newly loaded voice
+        if (audioEnabled) warmUpSpeech()
+      }
     }
+    // Warm up immediately so first decision has zero delay
+    if (audioEnabled) warmUpSpeech()
   }, [])
 
   useEffect(() => {
     try { window.sessionStorage.setItem("nameless_audio_enabled", String(audioEnabled)) } catch {}
+    if (audioEnabled) warmUpSpeech()
   }, [audioEnabled])
 
   // Sync from Python prop on mount (but sessionStorage takes priority if set)
