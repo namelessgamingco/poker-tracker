@@ -2502,8 +2502,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         return
       }
 
-      // P/L input: Enter to confirm
-      if (step === "outcome_pl_input" && key === "Enter") {
+      // P/L input: Enter or Space to confirm
+      if (step === "outcome_pl_input" && (key === "enter" || key === " ")) {
         e.preventDefault()
         confirmPlInput()
         return
@@ -2553,8 +2553,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         return
       }
 
-      // Enter confirms pre-selected villain type default
-      if (step === "villain_type" && key === "Enter") {
+      // Enter or Space confirms pre-selected villain type default
+      if (step === "villain_type" && (key === "enter" || key === " ")) {
         e.preventDefault()
         selectVillainType(gameState.villain_type || "unknown")
         return
@@ -2573,7 +2573,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         confirmPlayerCount(parseInt(key))
         return
       }
-      if (step === "player_count" && key === "enter") {
+      if (step === "player_count" && (key === "enter" || key === " ")) {
         e.preventDefault()
         confirmPlayerCount(2)
         return
@@ -2584,11 +2584,11 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         if (key === "1") { e.preventDefault(); confirmVillainPosition("HJ"); return }
         if (key === "2") { e.preventDefault(); confirmVillainPosition("CO"); return }
         if (key === "3") { e.preventDefault(); confirmVillainPosition("BTN"); return }
-        if (key === "enter") { e.preventDefault(); confirmVillainPosition("CO"); return }
+        if (key === "enter" || key === " ") { e.preventDefault(); confirmVillainPosition("CO"); return }
       }
 
-      // Enter to confirm amount/pot/limper count
-      if (key === "enter") {
+      // Enter or Space to confirm amount/pot/limper count
+      if (key === "enter" || key === " ") {
         e.preventDefault()
         if (step === "amount") confirmAmount()
         if (step === "pot_size") confirmPotSize()
@@ -3552,9 +3552,9 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
                 textAlign: "center",
               }}>
                 {handOver ? (
-                  <>Press <span style={{ color: theme.textMuted, fontWeight: 600 }}>N</span> to record and start next hand</>
+                  <>Press <span style={{ color: theme.textMuted, fontWeight: 600 }}>Space</span> to record and start next hand</>
                 ) : (
-                  <>Continue on the next street, or press <span style={{ color: theme.textMuted, fontWeight: 600 }}>N</span> when the hand is over</>
+                  <>Continue on the next street, or press <span style={{ color: theme.textMuted, fontWeight: 600 }}>Space</span> when the hand is over</>
                 )}
               </div>
             </div>
@@ -3721,7 +3721,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
         return "What's your hand strength?"
       case "villain_type":
         if (defaultVillain && keyboardActive) {
-          return "Enter to confirm default · or 1/2/3 to change"
+          return "Space to confirm default · or 1/2/3 to change"
         }
         return keyboardActive ? "Press 1 if unsure, 2 for weak player, 3 for good player..." : "What type of player are you against? Pick 'Not Sure' if unsure."
       case "ready":
@@ -3738,18 +3738,18 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               const isCall = d2.includes("CALL")
               
               if (isFld || isAllIn2) {
-                return "Hand complete · Press N to start new hand"
+                return "Hand complete · Press Space to start new hand"
               }
               if (isAgg) {
-                return "Press R if they re-raised · N for new hand · or continue to next street →"
+                return "Press R if they re-raised · Space for new hand · or continue to next street →"
               }
               if (isChk && gameState.street !== "preflop") {
-                return "Press B if they bet · N for new hand · or continue to next street →"
+                return "Press B if they bet · Space for new hand · or continue to next street →"
               }
               if (isCall) {
-                return "Press N for new hand · or continue to next street →"
+                return "Press Space for new hand · or continue to next street →"
               }
-              return "Press N for new hand · or continue to next street →"
+              return "Press Space for new hand · or continue to next street →"
             }
             case "outcome_select":
               return keyboardActive ? "Press 1 Won · 2 Lost · 3 Folded" : "How did this hand end?"
@@ -4512,9 +4512,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               ["l", "Limper(s)"],
               ["r", "Raise / Facing bet"],
               ["e", "3-Bet"],
-              ["Esc", "Undo / Reset"],
-              ["Enter", "Confirm amount"],
-              ["N / Space", "New hand"],
+              ["Esc", "Undo / Go back"],
+              ["Space", "Confirm / New hand"],
               ["1,2,3", "Continue → Flop/Turn/River"],
             ].map(([key, desc]) => (
               <div
@@ -5023,14 +5022,14 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             )}
             {step === "villain_type" && (
               <>
-                {defaultVillain && <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Enter</span> confirm</span>}
+                {defaultVillain && <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Space</span> confirm</span>}
                 <span><span style={{ color: "rgba(255,255,255,0.5)" }}>1</span> not sure</span>
                 <span><span style={{ color: "rgba(255,255,255,0.5)" }}>2</span> weak player</span>
                 <span><span style={{ color: "rgba(255,255,255,0.5)" }}>3</span> good player</span>
               </>
             )}
             {(step === "amount" || step === "pot_size") && (
-              <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Enter</span> confirm</span>
+              <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Space</span> confirm</span>
             )}
             {step === "limper_count" && (
               <>
@@ -5062,7 +5061,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               </>
             )}
             {step === "outcome_pl_input" && (
-              <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Enter</span> confirm</span>
+              <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Space</span> confirm</span>
             )}
             <span style={{ marginLeft: "auto" }}>
               <span style={{ color: "rgba(255,255,255,0.5)" }}>Esc</span> back
@@ -5561,7 +5560,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             </div>
             {defaultVillain && (
               <div style={{ textAlign: "center", marginTop: 8, fontSize: 11, color: theme.textDim }}>
-                {keyboardActive ? "Press Enter to confirm default · or pick another" : "Tap to confirm or change"}
+                {keyboardActive ? "Press Space to confirm default · or pick another" : "Tap to confirm or change"}
               </div>
             )}
           </div>
@@ -5927,9 +5926,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             ["l", "Limper(s)"],
             ["r", "Raise / Facing bet"],
             ["e", "3-Bet"],
-            ["Esc", "Undo / Reset"],
-            ["Enter", "Confirm amount"],
-            ["N / Space", "New hand"],
+            ["Esc", "Undo / Go back"],
+            ["Space", "Confirm / New hand"],
             ["1,2,3", "Continue → Flop/Turn/River"],
           ].map(([key, desc]) => (
             <div
@@ -6539,7 +6537,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           </div>
           {defaultVillain && (
             <div style={{ textAlign: "center", marginTop: 8, fontSize: 11, color: theme.textDim }}>
-              {keyboardActive ? "Press Enter to confirm default · or pick another" : "Tap to confirm or change"}
+              {keyboardActive ? "Press Space to confirm default · or pick another" : "Tap to confirm or change"}
             </div>
           )}
         </div>
@@ -6828,14 +6826,14 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           )}
           {step === "villain_type" && (
             <>
-              {defaultVillain && <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Enter</span> confirm</span>}
+              {defaultVillain && <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Space</span> confirm</span>}
               <span><span style={{ color: "rgba(255,255,255,0.5)" }}>1</span> not sure</span>
               <span><span style={{ color: "rgba(255,255,255,0.5)" }}>2</span> weak player</span>
               <span><span style={{ color: "rgba(255,255,255,0.5)" }}>3</span> good player</span>
             </>
           )}
           {(step === "amount" || step === "pot_size") && (
-            <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Enter</span> confirm</span>
+            <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Space</span> confirm</span>
           )}
           {step === "limper_count" && (
             <>
@@ -6867,7 +6865,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             </>
           )}
           {step === "outcome_pl_input" && (
-            <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Enter</span> confirm</span>
+            <span><span style={{ color: "rgba(255,255,255,0.5)" }}>Space</span> confirm</span>
           )}
           <span style={{ marginLeft: "auto" }}>
             <span style={{ color: "rgba(255,255,255,0.5)" }}>Esc</span> back
