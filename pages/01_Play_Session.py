@@ -1769,6 +1769,7 @@ def render_play_mode():
         st.session_state._intentional_rerun = False
 
     restore = st.session_state.get("two_table_restore")
+
     component_value = poker_input(
         mode=st.session_state.input_mode,
         stakes=stakes,

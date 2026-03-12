@@ -388,29 +388,25 @@ function selectBestVoice(): SpeechSynthesisVoice | null {
   const voices = window.speechSynthesis?.getVoices() || []
   if (voices.length === 0) return null
 
-  // Priority order — newer macOS voices first (dramatically better than Samantha/Fred),
-  // then high-quality network voices, then legacy voices as last resort.
-  // Each entry: [nameMatch, mustBeLocal] — local voices have zero latency (critical for poker)
+  // Priority order — tested on Connor's Mac, Samantha was "not bad",
+  // modern macOS voices sounded dated. Samantha with tuned rate/pitch is the best option.
+  // Network voices (Google) are backup for non-Mac users.
   const priorities: [string, boolean][] = [
-    // Tier 1: Modern macOS voices (Sonoma+) — natural, warm, fast
+    // Tier 1: Best tested voice for coaching tone
+    ["Samantha", true],
+    // Tier 2: Other decent macOS voices
+    ["Nicky", true],
+    ["Karen", true],
+    // Tier 3: Modern macOS voices (fallback — less warm)
     ["Reed (English (United States))", true],
     ["Eddy (English (United States))", true],
     ["Sandy (English (United States))", true],
-    ["Shelley (English (United States))", true],
-    ["Flo (English (United States))", true],
-    ["Rocko (English (United States))", true],
-    // Tier 2: Other good macOS en-US voices
-    ["Aaron", true],
-    ["Nicky", true],
-    // Tier 3: Windows quality voices
+    // Tier 4: Windows voices
     ["Microsoft David", true],
     ["Microsoft Zira", true],
     ["Microsoft Mark", true],
-    // Tier 4: Network voices (good quality but may add ~200ms latency)
+    // Tier 5: Network voices (good quality, may add slight latency)
     ["Google US English", false],
-    // Tier 5: Legacy macOS (recognizable but robotic)
-    ["Samantha", true],
-    ["Daniel", true],
   ]
 
   for (const [name, mustBeLocal] of priorities) {
@@ -445,7 +441,7 @@ function speakDecision(text: string, volume: number = 1.0): void {
   window.speechSynthesis.cancel()
 
   const utterance = new SpeechSynthesisUtterance(text)
-  utterance.rate = 1.05    // Slightly brisk — not rushed, not slow
+  utterance.rate = 1.15    // Brisk and clear — every fraction of a second matters
   utterance.pitch = 0.95   // Slightly lower pitch — calm, authoritative
   utterance.volume = volume
 
@@ -1362,7 +1358,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     }
     setPendingDecisionTable(null)
 
-    // AUDIO OUTPUT: Speak the decision immediately
+    // AUDIO OUTPUT: Speak the decision immediately via browser TTS
     if (audioEnabled && decisionFromPython) {
       const speechText = decisionToSpeech(decisionFromPython)
       if (speechText && speechText !== lastSpokenDecisionRef.current) {
