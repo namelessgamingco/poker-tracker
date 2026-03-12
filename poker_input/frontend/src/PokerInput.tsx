@@ -3357,7 +3357,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           style={{
             background: bg,
             borderRadius: 16,
-            padding: amountPart ? "26px 28px 22px" : "30px 28px",
+            padding: amountPart ? "28px 32px 22px" : "32px 32px",
             textAlign: "center",
             boxShadow: isFoldDecision ? "none" : glow,
             // Snap-in animation: scale from 97% to 100% — catches peripheral attention
@@ -3368,20 +3368,20 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             <>
               {/* Action word — smaller, uppercase label */}
               <div style={{
-                fontSize: 14,
+                fontSize: 15,
                 fontWeight: 700,
                 fontFamily: theme.mono,
                 color: textColor,
                 opacity: 0.7,
                 letterSpacing: "0.12em",
                 textTransform: "uppercase" as const,
-                marginBottom: 4,
+                marginBottom: 2,
               }}>
                 {actionWord}
               </div>
               {/* Amount — huge, unmissable */}
               <div style={{
-                fontSize: 44,
+                fontSize: 52,
                 fontWeight: 900,
                 fontFamily: theme.mono,
                 color: textColor,
@@ -3394,7 +3394,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           ) : (
             /* Single word decisions: FOLD, CHECK, ALL-IN */
             <div style={{
-              fontSize: 40,
+              fontSize: 48,
               fontWeight: 900,
               fontFamily: theme.mono,
               color: textColor,
