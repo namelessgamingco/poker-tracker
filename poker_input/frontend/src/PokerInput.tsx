@@ -3191,6 +3191,213 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   }
 
   // ==========================================================================
+  // POSITION TABLE — Visual poker table layout
+  // ==========================================================================
+
+  const renderPositionTable = (compact: boolean = false) => {
+    // Position metadata: color tints for subliminal range coaching
+    const positionMeta: Record<string, { tint: string; label: string; dealerChip: boolean }> = {
+      UTG: { tint: "rgba(255,75,92,0.08)", label: "First to Act", dealerChip: false },
+      HJ:  { tint: "rgba(255,179,0,0.06)", label: "Early-Middle", dealerChip: false },
+      CO:  { tint: "rgba(0,200,83,0.06)", label: "Before Dealer", dealerChip: false },
+      BTN: { tint: "rgba(0,200,83,0.10)", label: "Dealer", dealerChip: true },
+      SB:  { tint: "rgba(75,163,255,0.06)", label: "Small Blind", dealerChip: false },
+      BB:  { tint: "rgba(75,163,255,0.06)", label: "Big Blind", dealerChip: false },
+    }
+
+    // Layout: 3 rows simulating an oval table from the player's perspective
+    // Row 1 (far side):   UTG  HJ
+    // Row 2 (sides):      BB       CO
+    // Row 3 (near side):  SB   BTN
+    const rows: { left: typeof POSITIONS[0]; right: typeof POSITIONS[0] }[] = [
+      { left: POSITIONS[0], right: POSITIONS[1] },  // UTG, HJ
+      { left: POSITIONS[5], right: POSITIONS[2] },  // BB, CO
+      { left: POSITIONS[4], right: POSITIONS[3] },  // SB, BTN
+    ]
+
+    const seatSize = compact ? 64 : 80
+    const fontSize = compact ? 14 : 18
+    const labelSize = compact ? 0 : 10  // Hide labels in compact mode
+    const gapH = compact ? 60 : 90      // Horizontal gap between seats
+    const gapV = compact ? 6 : 10       // Vertical gap between rows
+    const tableH = compact ? 130 : 180  // Table oval height
+    const tablePadV = compact ? 16 : 24
+
+    const renderSeat = (pos: typeof POSITIONS[0]) => {
+      const meta = positionMeta[pos.id]
+      const isSelected = gameState.position === pos.id
+
+      return (
+        <button
+          key={pos.id}
+          onClick={() => selectPosition(pos.id)}
+          style={{
+            width: seatSize,
+            height: seatSize,
+            borderRadius: "50%",
+            border: isSelected
+              ? `2px solid ${theme.accent}`
+              : `1.5px solid rgba(255,255,255,0.12)`,
+            background: isSelected
+              ? (mode === "two_table" && activeTable === 2
+                ? "rgba(255,179,0,0.15)"
+                : "rgba(75,163,255,0.15)")
+              : meta.tint,
+            color: isSelected ? theme.accent : "rgba(255,255,255,0.85)",
+            cursor: "pointer",
+            transition: "all 0.12s ease",
+            display: "flex",
+            flexDirection: "column" as const,
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 1,
+            position: "relative" as const,
+            fontFamily: theme.mono,
+            padding: 0,
+            outline: "none",
+            boxShadow: isSelected ? `0 0 16px rgba(75,163,255,0.2)` : "none",
+          }}
+        >
+          {/* Keyboard shortcut hint */}
+          {keyboardActive && (
+            <span style={{
+              position: "absolute",
+              top: compact ? 2 : 4,
+              right: compact ? 4 : 6,
+              fontSize: 9,
+              fontWeight: 600,
+              color: "rgba(255,255,255,0.35)",
+              fontFamily: theme.mono,
+            }}>
+              {pos.key}
+            </span>
+          )}
+          {/* Dealer chip indicator */}
+          {meta.dealerChip && (
+            <span style={{
+              position: "absolute",
+              top: -6,
+              right: -6,
+              width: 20,
+              height: 20,
+              borderRadius: "50%",
+              background: "linear-gradient(135deg, #FFD54F, #FFB300)",
+              color: "#000",
+              fontSize: 10,
+              fontWeight: 900,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 2px 8px rgba(255,179,0,0.4)",
+              border: "1.5px solid rgba(0,0,0,0.15)",
+            }}>
+              D
+            </span>
+          )}
+          {/* Position abbreviation */}
+          <span style={{
+            fontSize,
+            fontWeight: 800,
+            letterSpacing: "0.02em",
+            lineHeight: 1,
+          }}>
+            {pos.label}
+          </span>
+          {/* Plain-language label (hidden in compact mode) */}
+          {labelSize > 0 && (
+            <span style={{
+              fontSize: labelSize,
+              fontWeight: 500,
+              color: isSelected ? theme.accent : "rgba(255,255,255,0.4)",
+              lineHeight: 1.2,
+              marginTop: 2,
+            }}>
+              {meta.label}
+            </span>
+          )}
+        </button>
+      )
+    }
+
+    return (
+      <div>
+        <div style={S.sectionLabel}>Your Seat Position</div>
+
+        {/* Table container */}
+        <div style={{
+          position: "relative",
+          padding: `${tablePadV}px 0`,
+          marginBottom: compact ? 8 : 12,
+        }}>
+          {/* Table oval — the felt */}
+          <div style={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: "85%",
+            height: tableH,
+            borderRadius: "50%",
+            border: "1.5px solid rgba(255,255,255,0.06)",
+            background: "rgba(255,255,255,0.015)",
+          }} />
+
+          {/* Seats arranged around the table */}
+          <div style={{
+            position: "relative",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: gapV,
+          }}>
+            {rows.map((row, i) => (
+              <div
+                key={i}
+                style={{
+                  display: "flex",
+                  justifyContent: "center",
+                  gap: i === 1 ? gapH * 2.2 : gapH,
+                  width: "100%",
+                }}
+              >
+                {renderSeat(row.left)}
+                {renderSeat(row.right)}
+              </div>
+            ))}
+          </div>
+
+          {/* "YOU" indicator at bottom center */}
+          {!compact && (
+            <div style={{
+              textAlign: "center",
+              marginTop: 8,
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: "0.15em",
+              color: theme.textDim,
+              fontFamily: theme.mono,
+            }}>
+              ▲ YOU
+            </div>
+          )}
+        </div>
+
+        {/* Minimal help — just a small tip, not a full panel */}
+        {!compact && (
+          <div style={{
+            textAlign: "center",
+            fontSize: 10,
+            color: theme.textDim,
+            lineHeight: 1.4,
+          }}>
+            Tap your seat · The gold <span style={{ color: "#FFB300", fontWeight: 700 }}>D</span> marks the dealer button
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // ==========================================================================
   // CARD DISPLAY
   // ==========================================================================
 
@@ -5146,108 +5353,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   function renderStepUI() {
     return (
       <>
-        {/* POSITION BAR */}
-        {step === "position" && (
-          <div>
-            <div style={S.sectionLabel}>Your Seat Position</div>
-            
-            {/* Visual order indicator */}
-            <div style={{ 
-              display: "flex", 
-              alignItems: "center", 
-              justifyContent: "center",
-              gap: 4,
-              marginBottom: 16,
-              padding: "10px 16px",
-              background: "rgba(255,255,255,0.02)",
-              borderRadius: 8,
-              border: `1px solid ${theme.border}`,
-            }}>
-              <span style={{ fontSize: 10, color: theme.textDim, marginRight: 6, fontFamily: theme.mono }}>ACTION ORDER:</span>
-              {POSITIONS.map((pos, i) => (
-                <React.Fragment key={pos.id}>
-                  <span style={{ 
-                    fontSize: 11, 
-                    fontWeight: 600, 
-                    color: theme.textMuted,
-                    fontFamily: theme.mono,
-                  }}>
-                    {pos.label}
-                  </span>
-                  {i < POSITIONS.length - 1 && (
-                    <span style={{ color: theme.textDim, fontSize: 10 }}>→</span>
-                  )}
-                </React.Fragment>
-              ))}
-            </div>
-
-            {/* Position grid */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
-              {POSITIONS.map((pos) => (
-                <button
-                  key={pos.id}
-                  onClick={() => selectPosition(pos.id)}
-                  style={{
-                    ...S.btn,
-                    flexDirection: "column" as const,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 4,
-                    padding: "14px 10px",
-                    position: "relative",
-                    ...(gameState.position === pos.id ? S.btnActive : {}),
-                  }}
-                >
-                  {keyboardActive && <span style={S.hint}>{pos.key}</span>}
-                  <span style={{
-                    position: "absolute",
-                    top: 6,
-                    left: 8,
-                    fontSize: 9,
-                    fontWeight: 700,
-                    color: theme.textDim,
-                    fontFamily: theme.mono,
-                    background: "rgba(255,255,255,0.05)",
-                    padding: "2px 5px",
-                    borderRadius: 3,
-                  }}>
-                    {pos.order}
-                  </span>
-                  <span style={{ fontSize: 18, fontWeight: 800, letterSpacing: "0.02em" }}>{pos.label}</span>
-                  <span style={{ fontSize: 10, color: theme.accent, fontWeight: 600, opacity: 0.8 }}>{pos.fullName}</span>
-                  <span style={{ fontSize: 9, color: theme.textDim, fontWeight: 400, textAlign: "center", lineHeight: 1.3 }}>{pos.desc}</span>
-                </button>
-              ))}
-            </div>
-
-            {/* Helper for different table sizes */}
-            <div style={{
-              marginTop: 14,
-              padding: "10px 14px",
-              background: "rgba(255,179,0,0.05)",
-              border: "1px solid rgba(255,179,0,0.15)",
-              borderRadius: 8,
-            }}>
-              <div style={{
-                fontSize: 11,
-                color: theme.amber,
-                fontWeight: 600,
-                marginBottom: 4,
-              }}>
-                Playing with fewer than 6 players?
-              </div>
-              <div style={{
-                fontSize: 10,
-                color: theme.textMuted,
-                lineHeight: 1.5,
-              }}>
-                Select the position that best matches where you sit relative to the button. 
-                At a 4-handed table, use <span style={{ color: theme.text, fontWeight: 600 }}>CO</span>, <span style={{ color: theme.text, fontWeight: 600 }}>BTN</span>, <span style={{ color: theme.text, fontWeight: 600 }}>SB</span>, <span style={{ color: theme.text, fontWeight: 600 }}>BB</span>. 
-                The key is your distance from the button — closer = wider range.
-              </div>
-            </div>
-          </div>
-        )}
+        {/* POSITION TABLE */}
+        {step === "position" && renderPositionTable(showSecondTable || mode === "two_table")}
 
         {/* RANK GRID */}
         {(step === "card1_rank" || step === "card2_rank" || step === "board_rank") && (
@@ -6123,108 +6230,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           </div>
         )}
 
-      {/* POSITION BAR */}
-      {step === "position" && (
-        <div>
-          <div style={S.sectionLabel}>Your Seat Position</div>
-          
-          {/* Visual order indicator */}
-          <div style={{ 
-            display: "flex", 
-            alignItems: "center", 
-            justifyContent: "center",
-            gap: 4,
-            marginBottom: 16,
-            padding: "10px 16px",
-            background: "rgba(255,255,255,0.02)",
-            borderRadius: 8,
-            border: `1px solid ${theme.border}`,
-          }}>
-            <span style={{ fontSize: 10, color: theme.textDim, marginRight: 6, fontFamily: theme.mono }}>ACTION ORDER:</span>
-            {POSITIONS.map((pos, i) => (
-              <React.Fragment key={pos.id}>
-                <span style={{ 
-                  fontSize: 11, 
-                  fontWeight: 600, 
-                  color: theme.textMuted,
-                  fontFamily: theme.mono,
-                }}>
-                  {pos.label}
-                </span>
-                {i < POSITIONS.length - 1 && (
-                  <span style={{ color: theme.textDim, fontSize: 10 }}>→</span>
-                )}
-              </React.Fragment>
-            ))}
-          </div>
-
-          {/* Position grid */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
-            {POSITIONS.map((pos) => (
-              <button
-                key={pos.id}
-                onClick={() => selectPosition(pos.id)}
-                style={{
-                  ...S.btn,
-                  flexDirection: "column" as const,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 4,
-                  padding: "14px 10px",
-                  position: "relative",
-                  ...(gameState.position === pos.id ? S.btnActive : {}),
-                }}
-              >
-                {keyboardActive && <span style={S.hint}>{pos.key}</span>}
-                <span style={{
-                  position: "absolute",
-                  top: 6,
-                  left: 8,
-                  fontSize: 9,
-                  fontWeight: 700,
-                  color: theme.textDim,
-                  fontFamily: theme.mono,
-                  background: "rgba(255,255,255,0.05)",
-                  padding: "2px 5px",
-                  borderRadius: 3,
-                }}>
-                  {pos.order}
-                </span>
-                <span style={{ fontSize: 18, fontWeight: 800, letterSpacing: "0.02em" }}>{pos.label}</span>
-                <span style={{ fontSize: 10, color: theme.accent, fontWeight: 600, opacity: 0.8 }}>{pos.fullName}</span>
-                <span style={{ fontSize: 9, color: theme.textDim, fontWeight: 400, textAlign: "center", lineHeight: 1.3 }}>{pos.desc}</span>
-              </button>
-            ))}
-          </div>
-
-          {/* Helper for different table sizes */}
-          <div style={{
-            marginTop: 14,
-            padding: "10px 14px",
-            background: "rgba(255,179,0,0.05)",
-            border: "1px solid rgba(255,179,0,0.15)",
-            borderRadius: 8,
-          }}>
-            <div style={{
-              fontSize: 11,
-              color: theme.amber,
-              fontWeight: 600,
-              marginBottom: 4,
-            }}>
-              Playing with fewer than 6 players?
-            </div>
-            <div style={{
-              fontSize: 10,
-              color: theme.textMuted,
-              lineHeight: 1.5,
-            }}>
-              Select the position that best matches where you sit relative to the button. 
-              At a 4-handed table, use <span style={{ color: theme.text, fontWeight: 600 }}>CO</span>, <span style={{ color: theme.text, fontWeight: 600 }}>BTN</span>, <span style={{ color: theme.text, fontWeight: 600 }}>SB</span>, <span style={{ color: theme.text, fontWeight: 600 }}>BB</span>. 
-              The key is your distance from the button — closer = wider range.
-            </div>
-          </div>
-        </div>
-      )}
+      {/* POSITION TABLE */}
+      {step === "position" && renderPositionTable(false)}
 
       {/* RANK GRID */}
       {(step === "card1_rank" || step === "card2_rank" || step === "board_rank") && (
