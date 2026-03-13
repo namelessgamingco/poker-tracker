@@ -3215,13 +3215,13 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
       { left: POSITIONS[4], right: POSITIONS[3] },  // SB, BTN
     ]
 
-    const seatSize = compact ? 64 : 80
-    const fontSize = compact ? 14 : 18
-    const labelSize = compact ? 0 : 10  // Hide labels in compact mode
-    const gapH = compact ? 60 : 90      // Horizontal gap between seats
+    const seatSize = compact ? 72 : 96
+    const fontSize = compact ? 16 : 22
+    const labelSize = compact ? 0 : 11  // Hide labels in compact mode
+    const gapH = compact ? 50 : 80      // Horizontal gap between seats
     const gapV = compact ? 6 : 10       // Vertical gap between rows
-    const tableH = compact ? 130 : 180  // Table oval height
-    const tablePadV = compact ? 16 : 24
+    const tableH = compact ? 150 : 210  // Table oval height
+    const tablePadV = compact ? 16 : 28
 
     const renderSeat = (pos: typeof POSITIONS[0]) => {
       const meta = positionMeta[pos.id]
@@ -3236,8 +3236,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             height: seatSize,
             borderRadius: "50%",
             border: isSelected
-              ? `2px solid ${theme.accent}`
-              : `1.5px solid rgba(255,255,255,0.12)`,
+              ? `2.5px solid ${theme.accent}`
+              : `1.5px solid rgba(255,255,255,0.10)`,
             background: isSelected
               ? (mode === "two_table" && activeTable === 2
                 ? "rgba(255,179,0,0.15)"
@@ -3255,18 +3255,28 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             fontFamily: theme.mono,
             padding: 0,
             outline: "none",
-            boxShadow: isSelected ? `0 0 16px rgba(75,163,255,0.2)` : "none",
+            boxShadow: isSelected
+              ? `0 0 20px rgba(75,163,255,0.25), inset 0 0 12px rgba(75,163,255,0.08)`
+              : `0 2px 8px rgba(0,0,0,0.2)`,
           }}
         >
           {/* Keyboard shortcut hint */}
           {keyboardActive && (
             <span style={{
               position: "absolute",
-              top: compact ? 2 : 4,
-              right: compact ? 4 : 6,
-              fontSize: 9,
-              fontWeight: 600,
-              color: "rgba(255,255,255,0.35)",
+              top: compact ? -4 : -6,
+              left: compact ? -4 : -6,
+              width: compact ? 20 : 24,
+              height: compact ? 20 : 24,
+              borderRadius: "50%",
+              background: "rgba(255,255,255,0.08)",
+              border: "1px solid rgba(255,255,255,0.2)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: compact ? 10 : 12,
+              fontWeight: 700,
+              color: "rgba(255,255,255,0.6)",
               fontFamily: theme.mono,
             }}>
               {pos.key}
@@ -3276,20 +3286,20 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           {meta.dealerChip && (
             <span style={{
               position: "absolute",
-              top: -6,
-              right: -6,
-              width: 20,
-              height: 20,
+              top: -7,
+              right: -7,
+              width: 24,
+              height: 24,
               borderRadius: "50%",
               background: "linear-gradient(135deg, #FFD54F, #FFB300)",
               color: "#000",
-              fontSize: 10,
+              fontSize: 12,
               fontWeight: 900,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              boxShadow: "0 2px 8px rgba(255,179,0,0.4)",
-              border: "1.5px solid rgba(0,0,0,0.15)",
+              boxShadow: "0 2px 10px rgba(255,179,0,0.5)",
+              border: "2px solid rgba(0,0,0,0.15)",
             }}>
               D
             </span>
@@ -3297,8 +3307,8 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           {/* Position abbreviation */}
           <span style={{
             fontSize,
-            fontWeight: 800,
-            letterSpacing: "0.02em",
+            fontWeight: 900,
+            letterSpacing: "0.03em",
             lineHeight: 1,
           }}>
             {pos.label}
@@ -3310,7 +3320,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
               fontWeight: 500,
               color: isSelected ? theme.accent : "rgba(255,255,255,0.4)",
               lineHeight: 1.2,
-              marginTop: 2,
+              marginTop: 3,
             }}>
               {meta.label}
             </span>
@@ -3335,11 +3345,11 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
-            width: "85%",
+            width: "88%",
             height: tableH,
             borderRadius: "50%",
-            border: "1.5px solid rgba(255,255,255,0.06)",
-            background: "rgba(255,255,255,0.015)",
+            border: "1.5px solid rgba(255,255,255,0.08)",
+            background: "linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.01) 100%)",
           }} />
 
           {/* Seats arranged around the table */}
