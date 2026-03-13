@@ -3972,43 +3972,43 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
   const getPrompt = (): string => {
     switch (step) {
       case "position":
-        return keyboardActive ? "Press 1-6 for your seat..." : "Where are you sitting?"
+        return keyboardActive ? "Where are you sitting? Press 1-6 or tap your seat" : "Where are you sitting? Tap your seat on the table"
       case "card1_rank":
-        return keyboardActive ? "First card — type rank (a,k,q,j,t,9...)..." : "Your first card rank..."
+        return "What's your first card?"
       case "card1_suit":
-        return `${pendingRank} — pick the suit...`
+        return `${pendingRank} — which suit?`
       case "card2_rank":
-        return keyboardActive ? "Second card — type rank..." : "Your second card rank..."
+        return "What's your second card?"
       case "card2_suit":
-        return `${pendingRank} — pick the suit...`
+        return `${pendingRank} — which suit?`
       case "action":
         return gameState.street === "preflop" ? "What happened before your turn?" : "What happened on this street?"
       case "amount":
-        return `${amountLabel} Type amount, then Enter...`
+        return amountLabel
       case "limper_count":
-        return "How many players limped in? Enter..."
+        return "How many players limped?"
       case "player_count":
-        return keyboardActive ? "Press 2-5 · how many players in this pot?" : "How many players are in this pot?"
+        return "How many players in this pot?"
       case "villain_position":
-        return keyboardActive ? "Press 1 near blinds · 2 middle · 3 at button" : "Where is the raiser sitting relative to the Dealer button?"
+        return "Where is the raiser sitting?"
       case "board_rank": {
         const needed = requiredBoardCards(gameState.street)
         const have = gameState.board_cards.filter((c) => c !== null).length
-        return `Board card ${have + 1} of ${needed} — type rank...`
+        return `Board card ${have + 1} of ${needed}`
       }
       case "board_suit":
-        return `${pendingRank} — now pick the suit...`
+        return `${pendingRank} — which suit?`
       case "pot_size":
-        return "How much is in the pot? Type amount, then Enter..."
+        return "How much is in the pot?"
       case "board_texture":
-        return "Select board texture..."
+        return "What does the board look like?"
       case "hand_strength":
         return "What's your hand strength?"
       case "villain_type":
         if (defaultVillain && keyboardActive) {
           return "Space to confirm default · or 1/2/3 to change"
         }
-        return keyboardActive ? "Press 1 if unsure, 2 for weak player, 3 for good player..." : "What type of player are you against? Pick 'Not Sure' if unsure."
+        return "What type of player are you against?"
       case "ready":
         return "Calculating..."
       case "showing_decision": {
