@@ -3220,7 +3220,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
     const labelSize = compact ? 0 : 11  // Hide labels in compact mode
     const gapH = compact ? 50 : 80      // Horizontal gap between seats
     const gapV = compact ? 6 : 10       // Vertical gap between rows
-    const tableH = compact ? 150 : 210  // Table oval height
+    const tableH = compact ? 160 : 230  // Table height
     const tablePadV = compact ? 16 : 28
 
     const renderSeat = (pos: typeof POSITIONS[0]) => {
@@ -3339,17 +3339,18 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           padding: `${tablePadV}px 0`,
           marginBottom: compact ? 8 : 12,
         }}>
-          {/* Table oval — the felt */}
+          {/* Table — rounded shape */}
           <div style={{
             position: "absolute",
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
-            width: "88%",
+            width: compact ? tableH * 1.5 : tableH * 1.45,
             height: tableH,
             borderRadius: "50%",
             border: "1.5px solid rgba(255,255,255,0.08)",
             background: "linear-gradient(180deg, rgba(255,255,255,0.02) 0%, rgba(255,255,255,0.01) 100%)",
+            maxWidth: compact ? "95%" : "80%",
           }} />
 
           {/* Seats arranged around the table */}
@@ -3366,7 +3367,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
                 style={{
                   display: "flex",
                   justifyContent: "center",
-                  gap: i === 1 ? gapH * 2.2 : gapH,
+                  gap: i === 1 ? gapH * 1.8 : gapH,
                   width: "100%",
                 }}
               >
@@ -3400,7 +3401,7 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
             color: theme.textDim,
             lineHeight: 1.4,
           }}>
-            Tap your seat · The gold <span style={{ color: "#FFB300", fontWeight: 700 }}>D</span> marks the dealer button
+            Tap your seat · The gold <span style={{ color: "#FFB300", fontWeight: 700 }}> D </span> marks the dealer button
           </div>
         )}
       </div>
