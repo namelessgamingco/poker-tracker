@@ -3393,15 +3393,18 @@ const PokerInputComponent: React.FC<ComponentProps> = (props) => {
           )}
         </div>
 
-        {/* Minimal help — just a small tip, not a full panel */}
+        {/* Help text */}
         {!compact && (
           <div style={{
             textAlign: "center",
             fontSize: 10,
             color: theme.textDim,
-            lineHeight: 1.4,
+            lineHeight: 1.6,
           }}>
-            Tap your seat · The gold <span style={{ color: "#FFB300", fontWeight: 700 }}> D </span> marks the dealer button
+            <div>Tap your seat · The gold <span style={{ color: "#FFB300", fontWeight: 700 }}> D </span> marks the dealer button</div>
+            <div style={{ color: "rgba(255,255,255,0.2)", marginTop: 2 }}>
+              4 or 5 players? Skip UTG & HJ — use the seats closest to the dealer
+            </div>
           </div>
         )}
       </div>
