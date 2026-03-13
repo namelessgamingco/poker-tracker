@@ -836,7 +836,7 @@ def render_inline_table_check():
     </style>
     """, unsafe_allow_html=True)
     
-    with st.expander("🎯  Quick Table Check — Rate your table in 30 seconds", expanded=st.session_state.get("table_check_active", False)):
+    with st.expander("🎯  Is your table making you money? — Quick 30-second check", expanded=st.session_state.get("table_check_active", False)):
         st.markdown("""
         <div style="
             background: linear-gradient(135deg, rgba(255,179,0,0.08), rgba(255,111,0,0.04));
@@ -846,66 +846,70 @@ def render_inline_table_check():
             border-bottom: 1px solid rgba(255,179,0,0.2);
         ">
             <div style="font-size: 13px; color: rgba(255,255,255,0.7); line-height: 1.6;">
-                A good table is worth <strong style="color: #FFB300;">+2-3 BB/100 more</strong> than a tough one — that's 
-                $20-30/hour extra at $1/$2. The best players don't just play well, they pick the right tables.
+                The right table is worth <strong style="color: #FFB300;">$20-30/hour more</strong> at your stakes.
+                The best players don't just play well — they pick the right tables.
                 Answer 3 quick questions and we'll tell you if you should stay or move.
             </div>
         </div>
         """, unsafe_allow_html=True)
-        players_to_flop = st.radio("How many players typically see the flop?", ["2-3 (Tight)", "3-4 (Average)", "4-5 (Loose)", "5-6 (Very Loose)"], key="tc_q1", horizontal=True)
-        has_limpers = st.radio("Are there limpers?", ["Yes", "No"], key="tc_q2", horizontal=True)
-        three_bet_freq = st.radio("Is anyone 3-betting a lot?", ["No (Good)", "Sometimes", "Yes (Reg-heavy)"], key="tc_q3", horizontal=True)
+        players_to_flop = st.radio("How many players typically see the flop?", ["2-3 (Tight — mostly folding)", "3-4 (Average)", "4-5 (Loose — lots of action)", "5-6 (Very Loose — great spot)"], key="tc_q1", horizontal=True)
+        has_limpers = st.radio("Are players just calling instead of raising?", ["Yes — limpers at the table", "No — mostly raising or folding"], key="tc_q2", horizontal=True)
+        three_bet_freq = st.radio("Is anyone re-raising a lot?", ["No — easy table", "Sometimes", "Yes — tough opponents"], key="tc_q3", horizontal=True)
         
         score = 50
         if "5-6" in players_to_flop: score += 30
         elif "4-5" in players_to_flop: score += 20
         elif "3-4" in players_to_flop: score += 10
         else: score -= 10
-        score += 15 if has_limpers == "Yes" else -5
+        score += 15 if "Yes" in has_limpers else -5
         if "No" in three_bet_freq: score += 15
         elif "Yes" in three_bet_freq: score -= 15
         score = max(0, min(100, score))
         
         tips = []
         if "5-6" in players_to_flop:
-            tips.append("Lots of multiway pots — your big hands get paid off more. Raise larger preflop (4-5x) to thin the field when you want to.")
+            tips.append("💰 **Jackpot table.** Lots of multiway pots means your big hands get paid off more. Raise larger preflop (4-5x) to thin the field when you want to.")
         elif "4-5" in players_to_flop:
-            tips.append("Good action. Size up your value bets — these players are calling too much postflop.")
+            tips.append("💰 **Good action.** Size up your value bets — these players are calling too much postflop. That's profit for you.")
         elif "3-4" in players_to_flop:
-            tips.append("Standard table. Play your normal ranges and focus on position.")
+            tips.append("📊 **Standard table.** Play your normal ranges and focus on position. Nothing special to exploit — just solid poker.")
         else:
-            tips.append("Tight table — fewer profitable spots. Open wider from late position to steal blinds, but be ready to fold to 3-bets.")
-        if has_limpers == "Yes":
-            tips.append("Limpers are profit. Iso-raise to 4-5x + 1x per limper from position. You'll often take it down preflop or play heads-up with a range advantage.")
+            tips.append("⚠️ **Tight table — fewer profitable spots.** Open wider from late position to steal blinds, but be ready to fold to 3-bets. Consider moving if a softer table is available.")
+        if "Yes" in has_limpers:
+            tips.append("🎯 **Limpers are profit.** Iso-raise to 4-5x + 1x per limper from position. You'll often take it down preflop or play heads-up with a range advantage.")
         else:
-            tips.append("No limpers means tighter, more aware opponents. Respect their opens and tighten your calling ranges.")
+            tips.append("🔍 **No limpers means tighter opponents.** They know what they're doing. Respect their opens and tighten your calling ranges.")
         if "Yes" in three_bet_freq:
-            tips.append("Active 3-bettors at the table. Tighten your opening range from early positions. Consider 4-betting light from the button if the same player keeps 3-betting you.")
+            tips.append("🛡️ **Active re-raisers at the table.** Tighten your opening range from early positions. Consider 4-betting light from the button if the same player keeps targeting you.")
         elif "Sometimes" in three_bet_freq:
-            tips.append("Some 3-betting activity. Pay attention to who is doing it — if it's one player, adjust your opens when they're behind you.")
+            tips.append("👀 **Some re-raising activity.** Pay attention to who's doing it — if it's one player, adjust your opens when they're sitting behind you.")
         
         if score >= 70:
-            headline = f"✅ **{score}/100 — Great table, stay and play.**"
+            headline = f"✅ **{score}/100 — Great table. You're in the right spot.**"
+            btn_label = "✅ Stay and keep grinding"
         elif score >= 50:
-            headline = f"👍 **{score}/100 — Good spot, keep playing.**"
+            headline = f"👍 **{score}/100 — Solid table. Keep playing.**"
+            btn_label = "👍 Sounds good — keep playing"
         elif score >= 35:
-            headline = f"⚠️ **{score}/100 — Borderline. Consider a table change.**"
+            headline = f"⚠️ **{score}/100 — This table is borderline. Consider switching.**"
+            btn_label = "⚠️ Noted — I'll keep an eye on it"
         else:
-            headline = f"🚨 **{score}/100 — Bad table. Move now.**"
+            headline = f"🚨 **{score}/100 — Tough table. Your edge is shrinking here. Find a softer game.**"
+            btn_label = "🔄 Got it — looking for a better table"
         
         st.markdown(headline)
         for tip in tips:
-            st.markdown(f"- {tip}")
+            st.markdown(tip)
         
         last_score = st.session_state.get("last_table_score")
         if last_score is not None:
             diff = score - last_score
             if diff > 10:
-                st.success(f"↑ Table improved since last check (+{diff} points)")
+                st.success(f"↑ Table has gotten softer since last check (+{diff} points) — great news")
             elif diff < -10:
-                st.error(f"↓ Table got tougher since last check ({diff} points)")
+                st.error(f"↓ Table has gotten tougher since last check ({diff} points) — consider moving")
         
-        if st.button("✅ Done", type="primary", use_container_width=True, key="tc_done"):
+        if st.button(btn_label, type="primary", use_container_width=True, key="tc_done"):
             st.session_state.last_table_check = datetime.now(timezone.utc)
             st.session_state.last_table_score = score
             st.session_state.table_check_due = False
@@ -1157,26 +1161,26 @@ def render_table_check_modal(data: dict) -> bool:
 
     st.markdown("""
     <div class="outcome-card">
-        <div class="outcome-title">🎯 Quick Table Check</div>
-        <div class="outcome-message">3 questions about the last 10 hands</div>
+        <div class="outcome-title">🎯 Is Your Table Making You Money?</div>
+        <div class="outcome-message">3 quick questions about your current table</div>
     </div>
     """, unsafe_allow_html=True)
 
     players_to_flop = st.radio(
         "How many players typically see the flop?",
-        ["2-3 (Tight)", "3-4 (Average)", "4-5 (Loose)", "5-6 (Very Loose)"],
+        ["2-3 (Tight — mostly folding)", "3-4 (Average)", "4-5 (Loose — lots of action)", "5-6 (Very Loose — great spot)"],
         key="tc_q1", horizontal=True
     )
 
     has_limpers = st.radio(
-        "Are there limpers?",
-        ["Yes", "No"],
+        "Are players just calling instead of raising?",
+        ["Yes — limpers at the table", "No — mostly raising or folding"],
         key="tc_q2", horizontal=True
     )
 
     three_bet_freq = st.radio(
-        "Is anyone 3-betting a lot?",
-        ["No (Good)", "Sometimes", "Yes (Reg-heavy)"],
+        "Is anyone re-raising a lot?",
+        ["No — easy table", "Sometimes", "Yes — tough opponents"],
         key="tc_q3", horizontal=True
     )
 
@@ -1186,7 +1190,7 @@ def render_table_check_modal(data: dict) -> bool:
     elif "4-5" in players_to_flop: score += 20
     elif "3-4" in players_to_flop: score += 10
     else: score -= 10
-    score += 15 if has_limpers == "Yes" else -5
+    score += 15 if "Yes" in has_limpers else -5
     if "No" in three_bet_freq: score += 15
     elif "Yes" in three_bet_freq: score -= 15
     score = max(0, min(100, score))
@@ -1197,33 +1201,36 @@ def render_table_check_modal(data: dict) -> bool:
         st.markdown(f"""
         <div class="alert-banner success">
             <span class="alert-icon">✅</span>
-            <div><span class="alert-title">Score: {score}/100 — Good table, stay!</span></div>
+            <div><span class="alert-title">Score: {score}/100 — Great table. You're in the right spot.</span></div>
         </div>
         """, unsafe_allow_html=True)
+        btn_label = "✅ Stay and keep grinding"
     elif score >= 40:
         st.markdown(f"""
         <div class="alert-banner warning">
             <span class="alert-icon">⚠️</span>
-            <div><span class="alert-title">Score: {score}/100 — Average table</span></div>
+            <div><span class="alert-title">Score: {score}/100 — Borderline. Keep an eye on it.</span></div>
         </div>
         """, unsafe_allow_html=True)
+        btn_label = "⚠️ Noted — I'll watch it"
     else:
         st.markdown(f"""
         <div class="alert-banner danger">
-            <span class="alert-icon">🔴</span>
-            <div><span class="alert-title">Score: {score}/100 — Tough table, consider moving</span></div>
+            <span class="alert-icon">🚨</span>
+            <div><span class="alert-title">Score: {score}/100 — Tough table. Your edge is shrinking here.</span></div>
         </div>
         """, unsafe_allow_html=True)
+        btn_label = "🔄 Got it — looking for a better table"
 
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("Done", type="primary", use_container_width=True, key="tc_done"):
+        if st.button(btn_label, type="primary", use_container_width=True, key="tc_done"):
             st.session_state.last_table_check = datetime.now(timezone.utc)
             st.session_state.table_check_due = False
             dismiss_modal()
             st.rerun()
     with col2:
-        if st.button("Skip", use_container_width=True, key="tc_skip"):
+        if st.button("Skip for now", use_container_width=True, key="tc_skip"):
             st.session_state.table_check_due = False
             dismiss_modal()
             st.rerun()
